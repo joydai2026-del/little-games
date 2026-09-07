@@ -1,0 +1,56 @@
+// Programmable policy for one room. Nothing here is a literal buried in game
+// logic: the host can override any RoomOptions field at create time (clamped
+// by normalizeOptions), and everything else is a wrangler var read by the
+// worker. See docs/plans/2026-09-07-mvp-plan.md, "Programmable policy".
+
+import type { Phase, RoomOptions } from './types';
+
+/** Defaults applied when the host does not override a field at create time. */
+export const DEFAULT_ROOM_OPTIONS: RoomOptions = {
+  rounds: 5,
+  captionSeconds: 60,
+  voteSeconds: 30,
+  revealSeconds: 10,
+  botCount: 2,
+};
+
+/** Config that is not a per-room option (fixed policy, not host-tunable). */
+export const MAX_HUMAN_PLAYERS = 8;
+export const MAX_BOTS = 4;
+export const CAPTION_MAX_CHARS = 120;
+export const ROOM_TTL_HOURS = 2;
+
+/** Polling cadence the server tells clients to use, per phase. 0 = stop polling. */
+export function nextPollMsFor(phase: Phase): number {
+  switch (phase) {
+    case 'lobby':
+      return 2000;
+    case 'caption':
+    case 'vote':
+    case 'reveal':
+      return 1500;
+    case 'done':
+      return 0;
+  }
+}
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  const n = Number.isFinite(value) ? Math.trunc(value) : fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Merges a partial host override onto the defaults, clamping every field to a
+ * sane range so a bad client request can never produce an unplayable room
+ * (e.g. a 0-second timer or 50 bots).
+ */
+export function normalizeOptions(partial?: Partial<RoomOptions>): RoomOptions {
+  const merged = { ...DEFAULT_ROOM_OPTIONS, ...partial };
+  return {
+    rounds: clamp(merged.rounds, 1, 20, DEFAULT_ROOM_OPTIONS.rounds),
+    captionSeconds: clamp(merged.captionSeconds, 15, 180, DEFAULT_ROOM_OPTIONS.captionSeconds),
+    voteSeconds: clamp(merged.voteSeconds, 10, 120, DEFAULT_ROOM_OPTIONS.voteSeconds),
+    revealSeconds: clamp(merged.revealSeconds, 3, 60, DEFAULT_ROOM_OPTIONS.revealSeconds),
+    botCount: clamp(merged.botCount, 0, MAX_BOTS, DEFAULT_ROOM_OPTIONS.botCount),
+  };
+}
