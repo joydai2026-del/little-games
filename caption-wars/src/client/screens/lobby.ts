@@ -21,15 +21,32 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
     startButton.textContent = 'Start the game';
   };
 
+  // True from the tap until the server answers. While it is true, update() must
+  // not repaint the button.
+  //
+  // The window is real and it lands on the first tap of the game: the server
+  // holds the start request while it downloads round 1's photo (0.5-2s), a
+  // friend tapping Join in that second bumps `version`, so the host's next lobby
+  // poll carries fresh state, and update() used to re-enable the button reading
+  // "Start the game" with the first start still in flight. The host, who has
+  // just watched nothing happen, taps again and gets "This game already
+  // started." at the exact moment the game starts, in front of the room.
+  let sending = false;
+
   startButton.addEventListener('click', () => {
+    if (sending || startButton.disabled) return;
+    sending = true;
     startButton.disabled = true;
     startButton.textContent = 'Starting...';
     // Put the button back whatever happens. A failed first tap (both photo
     // hosts down, so the server answers 502) used to leave it disabled reading
     // "Starting..." for ever: update() only runs when a poll carries new state,
     // and a quiet lobby answers `unchanged`. The host could not start the game.
-    void ctx.actions.start().then((ok) => {
-      if (!ok) paintStartButton();
+    // On success this screen is torn down and replaced, so repainting it is a
+    // no-op rather than a flash.
+    void ctx.actions.start().then(() => {
+      sending = false;
+      paintStartButton();
     });
   });
 
@@ -55,7 +72,7 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
       const host = isHost(view, ctx.playerId);
       startButton.hidden = !host;
       waitLine.hidden = host;
-      if (host) paintStartButton();
+      if (host && !sending) paintStartButton();
       const bots = view.players.filter((p) => p.isBot).length;
       const parts = [
         `${view.options.rounds} ${view.options.rounds === 1 ? 'round' : 'rounds'}`,

@@ -7,6 +7,7 @@
 // Every reply carries the server's clock, which we hand straight to state.ts
 // so countdowns run off the server's schedule, not the phone's clock.
 
+import { ACTION_TIMEOUT_MS, POLL_TIMEOUT_MS } from '../shared/config';
 import type {
   CreateResponse,
   Identity,
@@ -55,43 +56,98 @@ function authHeaders(identity?: Identity): Record<string, string> {
   };
 }
 
+/** What one HTTP round trip gives back, once the body has been read. */
+export interface RawReply {
+  ok: boolean;
+  status: number;
+  text: string;
+  /**
+   * The local clock when the HEADERS landed, not when the body finished: the
+   * offset would otherwise absorb a whole round trip and every countdown would
+   * run that much generous.
+   */
+  arrivedAt: number;
+}
+
+/**
+ * One request with a deadline on it.
+ *
+ * Nothing in the browser used to bound a request. A fetch that never settles is
+ * the normal shape of a phone dropping off wifi, and it is worse than an error:
+ * the poll loop's `catch` never runs, so it never retries and never reschedules.
+ * The countdown ticks to zero and the phone sits there for ever with no message
+ * and no way back but a reload. A tapped button stays disabled just as long.
+ *
+ * The race is what bounds it (an abort alone cannot reject a promise the fetch
+ * implementation never settles); the abort is what releases the real socket. A
+ * timeout is deliberately reported as the same status-0 error a dead network
+ * gives, because every caller already handles that correctly: the poll loop
+ * retries with backoff, and every action button comes back.
+ *
+ * Exported with an injectable `fetchImpl` so the deadline is testable in node
+ * with no DOM and no network.
+ */
+export async function requestWithTimeout(
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+  fetchImpl: typeof fetch = fetch
+): Promise<RawReply> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new ApiError(plainError(0), 0));
+    }, timeoutMs);
+  });
+
+  const attempt = async (): Promise<RawReply> => {
+    const response = await fetchImpl(path, { ...init, signal: controller.signal });
+    const arrivedAt = Date.now();
+    const text = await response.text();
+    return { ok: response.ok, status: response.status, text, arrivedAt };
+  };
+
+  try {
+    return await Promise.race([attempt(), deadline]);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(plainError(0), 0);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function call<T extends RoomEnvelope>(
   path: string,
   init: RequestInit,
-  identity?: Identity
+  identity?: Identity,
+  timeoutMs: number = ACTION_TIMEOUT_MS
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
+  const reply = await requestWithTimeout(
+    path,
+    {
       ...init,
       headers: { ...(init.headers as Record<string, string> | undefined), ...authHeaders(identity) },
-    });
-  } catch {
-    throw new ApiError(plainError(0), 0);
-  }
-  // Stamp the local clock the moment the headers land, not after the body has
-  // been read and parsed: otherwise the offset absorbs a whole round trip and
-  // every countdown runs that much generous.
-  const arrivedAt = Date.now();
+    },
+    timeoutMs
+  );
 
-  const text = await response.text();
   let data: unknown = null;
   try {
-    data = text ? JSON.parse(text) : null;
+    data = reply.text ? JSON.parse(reply.text) : null;
   } catch {
     data = null;
   }
 
-  if (!response.ok) {
+  if (!reply.ok) {
     const fromServer = (data as { error?: string } | null)?.error;
-    throw new ApiError(
-      fromServer ? asSentence(fromServer) : plainError(response.status),
-      response.status
-    );
+    throw new ApiError(fromServer ? asSentence(fromServer) : plainError(reply.status), reply.status);
   }
 
   const envelope = (data ?? {}) as T;
-  noteServerTime(envelope.serverTime ?? envelope.state?.serverTime, arrivedAt);
+  noteServerTime(envelope.serverTime ?? envelope.state?.serverTime, reply.arrivedAt);
   return envelope;
 }
 
@@ -158,27 +214,35 @@ export function nextRound(code: string, identity: Identity): Promise<RoomEnvelop
   );
 }
 
-/** One poll. `version` lets the server answer `unchanged` for free. */
+/**
+ * One poll. `version` lets the server answer `unchanged` for free.
+ *
+ * The player id used to ride along as `?p=`, which the worker has never read
+ * (identity is the headers). It bought nothing and wrote player ids into every
+ * access log, so it is gone.
+ */
 export function fetchRoom(
   code: string,
   identity: Identity,
   version?: number
 ): Promise<RoomEnvelope> {
-  const query = new URLSearchParams({ p: identity.playerId });
+  const query = new URLSearchParams();
   if (typeof version === 'number') query.set('v', String(version));
+  const suffix = query.toString();
   return call<RoomEnvelope>(
-    `/api/rooms/${encodeURIComponent(code)}?${query.toString()}`,
+    `/api/rooms/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`,
     { method: 'GET' },
-    identity
+    identity,
+    POLL_TIMEOUT_MS
   );
 }
 
 /**
  * The photo for one round, served by the worker from Durable Object storage.
- * An <img> cannot send headers, so the player id rides along as a query
- * parameter; the secret never does.
+ * No query string: an <img> cannot send headers, and the route is deliberately
+ * open (it answers a missing photo and a missing room identically), so there is
+ * nothing for a player id to do here except end up in a log.
  */
-export function photoUrl(code: string, round: number, playerId: string): string {
-  const query = new URLSearchParams({ p: playerId });
-  return `/api/rooms/${encodeURIComponent(code)}/photo/${round}?${query.toString()}`;
+export function photoUrl(code: string, round: number): string {
+  return `/api/rooms/${encodeURIComponent(code)}/photo/${round}`;
 }

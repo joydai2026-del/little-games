@@ -400,6 +400,10 @@ describe('the bot content guard', () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toMatch(/Your last answer described the PEOPLE/);
     expect(prompts[1]).toMatch(/Your last answer described the PEOPLE/);
+    // The retry NAMES the words that tripped. Without that the model is
+    // guessing which part of its answer was the problem, and a second trip
+    // means no caption at all this round.
+    expect(prompts[1]).toContain('"black people"');
     expect(applied).toEqual([
       { kind: 'caption', botId: 'b1', value: 'Everyone waiting for a bus that is never coming.' },
     ]);

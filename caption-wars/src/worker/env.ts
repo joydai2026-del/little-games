@@ -14,6 +14,7 @@ import {
   BOT_TIMEOUT_MS,
   CAPTION_MAX_CHARS,
   PHOTO_MAX_BYTES,
+  PHOTO_TIMEOUT_MS,
   REVEAL_MIN_MS,
   VISION_MAX_BYTES,
 } from '../shared/config';
@@ -27,6 +28,7 @@ export interface Env {
   PHOTO_WIDTH: string;
   PHOTO_HEIGHT: string;
   PHOTO_MAX_BYTES: string;
+  PHOTO_TIMEOUT_MS: string;
   VISION_MAX_BYTES: string;
   VISION_MODEL: string;
   VISION_MODEL_FALLBACK: string;
@@ -43,6 +45,7 @@ export interface Settings {
   photoWidth: number;
   photoHeight: number;
   photoMaxBytes: number;
+  photoTimeoutMs: number;
   visionMaxBytes: number;
   visionModel: string;
   visionModelFallback: string;
@@ -79,6 +82,7 @@ export function settings(env: Env): Settings {
     photoWidth: num(env.PHOTO_WIDTH, 800),
     photoHeight: num(env.PHOTO_HEIGHT, 600),
     photoMaxBytes: num(env.PHOTO_MAX_BYTES, PHOTO_MAX_BYTES),
+    photoTimeoutMs: num(env.PHOTO_TIMEOUT_MS, PHOTO_TIMEOUT_MS),
     visionMaxBytes: num(env.VISION_MAX_BYTES, VISION_MAX_BYTES),
     visionModel: str(env.VISION_MODEL, DEFAULT_VISION_MODEL),
     visionModelFallback: str(env.VISION_MODEL_FALLBACK, DEFAULT_VISION_MODEL_FALLBACK),

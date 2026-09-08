@@ -125,7 +125,7 @@ export function photoFrame(
     el,
     set(view: RoomView) {
       const round = view.photo?.round ?? view.round;
-      const src = view.photo?.url ?? photoUrl(ctx.code, round, ctx.playerId);
+      const src = view.photo?.url ?? photoUrl(ctx.code, round);
       if (!view.photo || src === shown) return;
       shown = src;
       fallback.textContent = 'The photo is on its way.';

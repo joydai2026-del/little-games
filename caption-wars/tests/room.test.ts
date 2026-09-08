@@ -15,7 +15,7 @@ import {
 } from '../src/shared/room';
 import { normalizeOptions, REVEAL_MIN_MS } from '../src/shared/config';
 import { sanitizeCaption, sanitizeName, cleanModelCaption } from '../src/shared/text';
-import type { PhotoMeta, Player, RoomState } from '../src/shared/types';
+import type { BotJob, PhotoMeta, Player, RoomState } from '../src/shared/types';
 
 const PHOTO: PhotoMeta = { round: 1, source: 'loremflickr', credit: 'loremflickr.com', sha256: 'a'.repeat(64), bytes: 1234 };
 const PHOTO_2: PhotoMeta = { ...PHOTO, round: 2, sha256: 'b'.repeat(64) };
@@ -23,6 +23,16 @@ const T0 = 1_700_000_000_000;
 
 function bot(id: string, name: string): Player {
   return { id, name, isBot: true, score: 0, lastSeenAt: T0 };
+}
+
+/** One bot job row, for the tests that need a bot to have already given up. */
+function job(
+  botId: string,
+  round: number,
+  phase: 'caption' | 'vote',
+  status: BotJob['status']
+): BotJob {
+  return { jobId: `${botId}-${round}-${phase}`, botId, round, phase, dueAt: T0, deadline: T0 + 20_000, status };
 }
 
 function twoRoundRoom(): RoomState {
@@ -364,6 +374,36 @@ describe('void round', () => {
     expect(state.phase).toBe('reveal');
     expect(state.history[0].captions).toEqual([]);
     expect(state.history[0].winnerCaptionIds).toEqual([]);
+  });
+
+  it('says WHY the round was void, so the reveal can tell a player who did nothing wrong', () => {
+    // Nobody wrote anything at all.
+    let quiet = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    quiet = endCaptionPhase(quiet, quiet.phaseEndsAt!).state;
+    expect(quiet.history[0].voidReason).toBe('no-captions');
+
+    // The other shape, and the one JJ hits playing alone: she captioned, and
+    // both AI players' jobs ended `failed` because the model was down. "Not
+    // enough captions" reads as an accusation; this is what actually happened.
+    let dead = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    dead = {
+      ...dead,
+      botJobs: [
+        job('b1', dead.round, 'caption', 'failed'),
+        job('b2', dead.round, 'caption', 'failed'),
+      ],
+    };
+    dead = submitCaption(dead, 'host', 'the only one', 'c1', T0 + 1).state;
+    expect(dead.phase).toBe('reveal'); // a failed bot counts as having acted
+    expect(dead.history[0].winnerCaptionIds).toEqual([]);
+    expect(dead.history[0].voidReason).toBe('bots-failed');
+  });
+
+  it('leaves voidReason off a round that actually produced a winner', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1);
+    expect(state.history[0].winnerCaptionIds).toEqual(['c-host-1']);
+    expect(state.history[0].voidReason).toBeUndefined();
   });
 });
 

@@ -19,15 +19,24 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
     againButton.textContent = 'Play again';
   };
 
+  // Same in-flight guard as the lobby and the reveal: while a tap is in flight
+  // nothing else may repaint this button. update() is unreachable at `done`
+  // today (the server sends nextPollMs: 0 and polling stops for good), but the
+  // guard is what keeps that from becoming a bug the day it is reachable.
+  let sending = false;
+
   againButton.addEventListener('click', () => {
+    if (sending || againButton.disabled) return;
+    sending = true;
     againButton.disabled = true;
     againButton.textContent = 'Making a new room...';
     // The done screen has stopped polling for good (the server sends
     // nextPollMs: 0 here), so update() can never run again and this is the only
     // place the button can come back to life. Without it any transient failure
     // leaves the champion screen with a dead "Making a new room..." button.
-    void ctx.actions.playAgain().then((ok) => {
-      if (!ok) paintAgainButton();
+    void ctx.actions.playAgain().then(() => {
+      sending = false;
+      paintAgainButton();
     });
   });
 
@@ -64,7 +73,7 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
           : '';
       }
       board.replaceChildren(scoreboard(view, ctx.playerId, 'Final scores'));
-      paintAgainButton();
+      if (!sending) paintAgainButton();
     },
     tick() {
       // the game is over: no clock

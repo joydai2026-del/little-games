@@ -12,6 +12,7 @@ const SETTINGS = {
   photoWidth: 800,
   photoHeight: 600,
   photoMaxBytes: 2_000_000,
+  photoTimeoutMs: 8_000,
 };
 
 /** A deterministic "random" so the tag sequence in a test is predictable. */
@@ -141,6 +142,49 @@ describe('fetchPhoto', () => {
     });
     expect(result.meta.bytes).toBe(1000);
     expect(result.meta.sha256).toBe(await sha256Hex(bytes));
+  });
+
+  it('rejects an SVG, which is an image that can also run script', async () => {
+    // Neither host serves SVG today. This is the belt to the nosniff header's
+    // braces: these bytes come back from OUR origin, where the room's
+    // playerSecret lives in sessionStorage.
+    await expect(
+      fetchPhoto(SETTINGS, 'ABCD', 1, {
+        random: fixedRandom([0]),
+        fetchImpl: async () =>
+          new Response('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>', {
+            status: 200,
+            headers: { 'content-type': 'image/svg+xml' },
+          }),
+      })
+    ).rejects.toThrow(/can carry script/);
+  });
+
+  it('passes a deadline into the fetch, so a stalled host cannot park the room', async () => {
+    // The signal is the whole point: the photo download happens inside settle(),
+    // which every authenticated request runs, so a host that accepts the
+    // connection and then says nothing used to park every player's poll in the
+    // same never-resolving fetch. The fake honours the signal the way a real
+    // fetch does, and never resolves otherwise.
+    const signals: Array<AbortSignal | undefined> = [];
+    const started = Date.now();
+
+    await expect(
+      fetchPhoto({ ...SETTINGS, photoTimeoutMs: 40 }, 'ABCD', 1, {
+        random: fixedRandom([0, 0]),
+        fetchImpl: (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            signals.push(init?.signal);
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          }),
+      })
+    ).rejects.toThrow(/could not load a photo/);
+
+    // All three attempts (two loremflickr tags, then picsum) got a live signal,
+    // and the whole thing ended in well under the 8s production deadline.
+    expect(signals).toHaveLength(3);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(3_000);
   });
 
   it('gives up with one error naming every attempt when nothing works', async () => {

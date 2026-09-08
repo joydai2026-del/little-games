@@ -41,6 +41,32 @@ export const BOT_TIMEOUT_MS = 20000;
 export const PHOTO_MAX_BYTES = 2_000_000;
 
 /**
+ * Hard deadline on one outbound photo request, overridable through the wrangler
+ * var PHOTO_TIMEOUT_MS.
+ *
+ * This one is load-bearing for the whole room, not just the picture: the photo
+ * download happens inside `settle()`, which every authenticated request runs, so
+ * a stalled image host at a round rollover parks every player's poll inside the
+ * same never-resolving fetch. With a deadline the fetch throws, which is already
+ * the path that records the failure, backs off, and ends the game honestly after
+ * PHOTO_MAX_ATTEMPTS. 8s is generous: a good loremflickr answer measured 40-110
+ * KB on 2026-09-07.
+ */
+export const PHOTO_TIMEOUT_MS = 8_000;
+
+/**
+ * Deadlines on the browser's own requests. A fetch that never settles leaves the
+ * poll loop with no rejection to catch, so it never retries and never
+ * reschedules: the countdown ticks to zero and the phone sits there for ever,
+ * with no error and no way back but a reload. A tapped button in the same state
+ * stays disabled for ever. The poll deadline is the tighter of the two because a
+ * missed poll costs nothing (the next one is seconds away), while an action is
+ * something the player typed and would have to redo.
+ */
+export const POLL_TIMEOUT_MS = 10_000;
+export const ACTION_TIMEOUT_MS = 20_000;
+
+/**
  * Separate, smaller cap on the bytes handed to the vision model, overridable
  * through the wrangler var VISION_MAX_BYTES. A photo bigger than this is still
  * stored and still served to every player: only the bot skips its caption for

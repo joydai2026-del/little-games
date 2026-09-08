@@ -23,6 +23,8 @@ export interface PhotoSettings {
   photoWidth: number;
   photoHeight: number;
   photoMaxBytes: number;
+  /** Hard deadline on ONE attempt. See PHOTO_TIMEOUT_MS in src/shared/config.ts. */
+  photoTimeoutMs: number;
 }
 
 export interface FetchedPhoto {
@@ -31,7 +33,29 @@ export interface FetchedPhoto {
   meta: PhotoMeta;
 }
 
-export type FetchLike = (url: string, init?: { redirect?: 'follow' }) => Promise<Response>;
+export type FetchLike = (
+  url: string,
+  init?: { redirect?: 'follow'; signal?: AbortSignal }
+) => Promise<Response>;
+
+/**
+ * An SVG is an image content type that also runs script. The photo route serves
+ * these bytes from our own origin with the stored content type, and the room's
+ * `playerSecret` lives in sessionStorage on that origin, so an SVG opened
+ * directly would be same-origin script with access to it. Neither host serves
+ * SVG today; this is the belt to the nosniff header's braces.
+ */
+const BANNED_CONTENT_TYPES = ['image/svg+xml', 'image/svg'];
+
+/**
+ * A deadline for one attempt. AbortSignal.timeout exists in workerd and Node
+ * 18+; guard anyway so a missing implementation degrades to "no timeout"
+ * instead of throwing (same guard as src/worker/bots.ts).
+ */
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  const ctor = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
+  return typeof ctor.timeout === 'function' ? ctor.timeout(ms) : undefined;
+}
 
 export interface PhotoDeps {
   fetchImpl?: FetchLike;
@@ -95,16 +119,26 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 async function attempt(
   url: string,
   maxBytes: number,
+  timeoutMs: number,
   fetchImpl: FetchLike,
   rejectDefaultImage: boolean
 ): Promise<{ bytes: Uint8Array; contentType: string }> {
-  const response = await fetchImpl(url, { redirect: 'follow' });
+  // The deadline covers the whole attempt, body included: an abort throws, which
+  // is the failure path that already backs the room off instead of parking every
+  // player's poll inside a download that never finishes.
+  const response = await fetchImpl(url, {
+    redirect: 'follow',
+    signal: timeoutSignal(timeoutMs),
+  });
 
   if (response.status !== 200) throw new PhotoError(`photo host answered ${response.status}`);
 
   const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
   if (!contentType.startsWith('image/')) {
     throw new PhotoError(`photo host answered with ${contentType || 'no content type'}`);
+  }
+  if (BANNED_CONTENT_TYPES.some((banned) => contentType.startsWith(banned))) {
+    throw new PhotoError(`photo host answered with ${contentType}, which can carry script`);
   }
 
   // loremflickr's "no photo matched that tag" placeholder is a perfectly valid
@@ -145,7 +179,7 @@ export async function fetchPhoto(
 ): Promise<FetchedPhoto> {
   const fetchImpl = deps.fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
   const random = deps.random ?? Math.random;
-  const { photoWidth: w, photoHeight: h, photoMaxBytes: cap } = settings;
+  const { photoWidth: w, photoHeight: h, photoMaxBytes: cap, photoTimeoutMs: deadline } = settings;
 
   const firstTag = pickTag(settings.photoTags, random);
   const secondTag = pickTag(settings.photoTags, random, firstTag);
@@ -159,7 +193,7 @@ export async function fetchPhoto(
   const failures: string[] = [];
   for (const t of tries) {
     try {
-      const { bytes, contentType } = await attempt(t.url, cap, fetchImpl, t.guardDefault);
+      const { bytes, contentType } = await attempt(t.url, cap, deadline, fetchImpl, t.guardDefault);
       return {
         bytes,
         contentType,

@@ -6,7 +6,10 @@
 // uses. Three rules hold no matter what a model does:
 //
 //   1. Humans never wait on a bot. A job that fails, times out, or answers
-//      nonsense is recorded `failed` and the round ends on its timer.
+//      nonsense is recorded `failed`, and a `failed` job counts as that bot
+//      having acted (plan amendment 29): the round ends as soon as everyone
+//      still playing has acted, and on its timer at the latest. Nobody watches
+//      a 60-second countdown for a bot that is never going to answer.
 //   2. A job re-checks `{ phase, round, version }` after its await and drops its
 //      result if the room moved on, so a slow bot can never write into the wrong
 //      round.
@@ -111,6 +114,13 @@ export function textFromModel(result: unknown): string | null {
  * real people, so the model is told, every call, that the joke is about the
  * SITUATION. Output is checked as well (see the guard in runBotJob): a prompt
  * is a request, not a guarantee.
+ *
+ * What the OUTPUT CHECK covers, exactly: race, ethnicity, religion, skin colour,
+ * body, age and disability. Gender is in the rule below because the model should
+ * hear it, but it is deliberately not in the word list: the words that would
+ * catch it (woman, women, girl, guy, men) are the very people-nouns the guard
+ * uses, so listing them would flag almost every caption with a person in it.
+ * The plan's rule 30 says the same thing.
  */
 const CONTENT_RULE =
   'Joke about the situation in the photo, never about anyone in it. ' +
@@ -118,18 +128,29 @@ const CONTENT_RULE =
   'gender, religion, age or disability, and never use a slur. If there are ' +
   'people in the photo, describe what is HAPPENING, not who they are.';
 
-/** Added to the ONE retry a bot gets after its first answer tripped the guard. */
-const STRICTER_RULE =
-  'Your last answer described the PEOPLE in the photo instead of what is going on. ' +
-  'Write about the action, the objects or the situation only. Do not name or ' +
-  'describe any person or group.';
+/**
+ * Added to the ONE retry a bot gets after its first answer tripped the guard.
+ *
+ * It names the exact words that tripped, because a retry that only says "you
+ * described the people" leaves the model guessing which words were the problem,
+ * and a second trip means the bot sits the round out.
+ */
+function stricterRule(flagged: string): string {
+  return (
+    'Your last answer described the PEOPLE in the photo instead of what is going on: ' +
+    `it used "${flagged}", which labels who they are. Do not use those words or ` +
+    'anything like them. Write about the action, the objects or the situation only. ' +
+    'Do not name or describe any person or group.'
+  );
+}
 
-export function captionPrompt(persona: Persona, stricter = false): string {
+/** `flagged` is the term the guard caught on the previous attempt, or null on the first. */
+export function captionPrompt(persona: Persona, flagged: string | null = null): string {
   return [
     'You are playing a party game. Look at this photo and write ONE funny caption for it.',
     persona.style,
     CONTENT_RULE,
-    stricter ? STRICTER_RULE : '',
+    flagged ? stricterRule(flagged) : '',
     `Rules: one line, at most ${CAPTION_MAX_CHARS} characters, no quotation marks,`,
     'no preamble, no explanation. Reply with the caption text and nothing else.',
   ]
@@ -153,11 +174,11 @@ export async function generateBotCaption(
   models: BotModels,
   persona: Persona,
   bytes: Uint8Array,
-  stricter = false
+  flagged: string | null = null
 ): Promise<string | null> {
   const image = Array.from(bytes);
   const input = {
-    prompt: captionPrompt(persona, stricter),
+    prompt: captionPrompt(persona, flagged),
     image,
     max_tokens: 96,
     temperature: 0.9,
@@ -279,18 +300,21 @@ export async function runBotJob(
 
       // Two attempts at most: one normal, then one stricter retry if the first
       // answer read as a label on the people in the photo instead of a joke
-      // about what is happening. Two strikes and the bot sits the round out,
-      // which is already a first-class outcome everywhere else (the round ends
-      // on its timer, or as soon as the humans are done).
+      // about what is happening. The retry names the words that tripped, so the
+      // model is not guessing. Two strikes and the bot sits the round out, which
+      // is already a first-class outcome everywhere else: the round ends on its
+      // timer, or as soon as everyone still playing has acted (a `failed` job
+      // counts as having acted, plan amendment 29).
       let text = '';
+      let flagged: string | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await generateBotCaption(models, persona, bytes, attempt > 0);
+        const raw = await generateBotCaption(models, persona, bytes, flagged);
         if (raw === null) return 'failed';
 
         const candidate = cleanModelCaption(raw);
         if (candidate.length === 0) return 'failed';
 
-        const flagged = labellingMatch(candidate);
+        flagged = labellingMatch(candidate);
         if (!flagged) {
           text = candidate;
           break;

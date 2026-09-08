@@ -198,3 +198,38 @@ test('labellingMatch lets ordinary captions through', () => {
   assert.equal(looksLikeLabelling('This is what happens when the map says turn left.'), false);
   assert.equal(looksLikeLabelling('The black cat has decided this is its chair now.'), false);
 });
+
+test('labellingMatch covers body, age and disability, not just race', () => {
+  // The agent and the worker read the SAME src/shared/blocked-terms.json, so
+  // these assertions are deliberately the twin of tests/caption-guard.test.ts:
+  // if only one side were updated, one of the two files would go red.
+  assert.equal(labellingMatch('Fat guy just standing there.'), 'fat guy');
+  assert.equal(labellingMatch('Old woman just standing there.'), 'old woman');
+  assert.equal(labellingMatch('Disabled people waiting in line.'), 'disabled people');
+  assert.equal(
+    labellingMatch('A group of people of color waiting for the bus.'),
+    'people of color'
+  );
+  assert.equal(looksLikeLabelling('A group of people of colour waiting for the bus.'), true);
+});
+
+test('labellingMatch does not fire on the ordinary captions a photo game is full of', () => {
+  for (const caption of [
+    'Black Friday crowd control, level: expert',
+    'the black cat lady strikes again',
+    'a black tie couple who peaked in 2009',
+    'black and white family photo energy',
+    'the white wine guy has opinions',
+    'his white dress lady is unimpressed',
+    'korean bbq family reunion, day three',
+    'the chinese food guy knows my order',
+  ]) {
+    assert.equal(labellingMatch(caption), null, caption);
+  }
+});
+
+test('labellingMatch still catches colour-word labels on people', () => {
+  assert.equal(labellingMatch('black people just standing there'), 'black people');
+  assert.equal(labellingMatch('two white guys and a ladder'), 'white guys');
+  assert.equal(labellingMatch('brown folks at the market'), 'brown folks');
+});

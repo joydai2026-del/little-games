@@ -27,9 +27,14 @@ export function identityKey(code: string): string {
 
 /** A room code as the server wants it: 4 characters from the server alphabet. */
 export function normalizeCode(raw: string): string {
-  // Room codes use the server alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (src/shared/ids.ts):
-  // letters minus I and O, digits 2 to 9. Keep both.
-  return raw.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 4);
+  // Room codes use the server alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789
+  // (src/shared/ids.ts): letters minus I and O, digits 2 to 9. I and O are
+  // dropped here too, rather than passed through: they are exactly the
+  // characters someone reads off a screen instead of 1 and 0, and letting them
+  // stand made a mistyped code a "no room with that code" 404 when the honest
+  // answer is "check the code". Now the character simply never appears in the
+  // box and the join button explains what a code is made of.
+  return raw.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, '').slice(0, 4);
 }
 
 function sessionStore(): StorageLike | null {

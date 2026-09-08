@@ -258,6 +258,11 @@ describe('RoomDO photo route', () => {
     const res = await room.fetch(get('photo/1'));
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/jpeg');
+    // These bytes came from a third-party image host and are served from OUR
+    // origin, where the room's playerSecret lives in sessionStorage. nosniff
+    // stops a browser deciding for itself that they are something executable;
+    // photo.ts refuses image/svg+xml on the way in as well.
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
   it('gives a missing photo and a missing room the SAME 404 body', async () => {
@@ -609,5 +614,119 @@ describe('RoomDO start under concurrency', () => {
     const { room } = await build(seededRoom()); // already in `caption`
     const res = await room.fetch(hostPost('start'));
     expect(res.status).toBe(409);
+  });
+});
+
+describe('RoomDO photo retries on the host Start path', () => {
+  /** A lobby with no bots, so `start` is the only thing that can move it. */
+  function lobbyRoom(over: Partial<RoomState> = {}): RoomState {
+    const lobby = createRoom(
+      'ABCD',
+      { id: 'host', name: 'JJ' },
+      normalizeOptions({ rounds: 2, botCount: 0 }),
+      [],
+      Date.now()
+    );
+    return { ...lobby, ...over };
+  }
+
+  it('does not fetch at all while a failed fetch is still backing off', async () => {
+    resetPhotoControl();
+    const { room } = await build(
+      lobbyRoom({ photoRetry: { attempts: 1, nextAttemptAt: Date.now() + 30_000 } })
+    );
+
+    const res = await room.fetch(hostPost('start'));
+
+    // Same shape as the Next path: the host gets the room as it stands and the
+    // dead image host is left alone. Ten frustrated taps used to be thirty
+    // outbound requests that consumed no attempt at all.
+    expect(res.status).toBe(200);
+    expect(photoControl.calls).toBe(0);
+    expect(((await res.json()) as { state: { phase: string } }).state.phase).toBe('lobby');
+  });
+
+  it('records the failure, so Start consumes attempts like every other rollover', async () => {
+    resetPhotoControl({ fail: true });
+    const { room, storage } = await build(lobbyRoom());
+
+    const res = await room.fetch(hostPost('start'));
+
+    expect(res.status).toBe(502);
+    const after = storage.map.get('state') as RoomState;
+    expect(after.photoRetry?.attempts).toBe(1);
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThan(Date.now());
+  });
+
+  it('ends the game with a reason once the attempts run out', async () => {
+    resetPhotoControl({ fail: true });
+    const { room } = await build(
+      lobbyRoom({ photoRetry: { attempts: 2, nextAttemptAt: Date.now() - 1 } })
+    );
+
+    const res = await room.fetch(hostPost('start'));
+
+    // Third failure. A game that cannot get its first photo says so instead of
+    // leaving the host tapping Start for two hours.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { state: { phase: string; endedReason?: string } };
+    expect(body.state.phase).toBe('done');
+    expect(body.state.endedReason).toBe('photo-unavailable');
+  });
+
+  it('measures the retry backoff from AFTER the download, not before it', async () => {
+    resetPhotoControl({ fail: true, delayMs: 80 });
+    const { room, storage } = await build(lobbyRoom());
+    const before = Date.now();
+
+    await room.fetch(hostPost('start'));
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60 + 5_000);
+  });
+});
+
+describe('RoomDO orphan photo bytes', () => {
+  // Bytes are committed BEFORE the reducer runs (a join landing in that window
+  // must not be erased), so a bail-out on the final re-check can in principle
+  // leave `photo:<round>` for a round the room never opened. The cleanup is
+  // deliberately conservative: it only removes bytes for a round AHEAD of the
+  // live one that the live state does not name. That "only" is what this test
+  // pins down, because the failure mode worth guarding is deleting a photo
+  // players are still looking at, not leaving a stray key behind. The bail-out
+  // branch itself is not reachable through this harness (every interleaving that
+  // moves the room past the stamp also commits the same bytes and opens that
+  // round), so it stays proven by reading, not by running.
+  it('keeps the bytes when the rollover actually happened', async () => {
+    resetPhotoControl();
+    const { room, storage } = await build(revealingRoom());
+
+    const res = await room.fetch(hostPost('next'));
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { state: { round: number } }).state.round).toBe(2);
+    expect(storage.map.has('photo:2')).toBe(true);
+  });
+
+  it('keeps the bytes of the round a joiner is still looking at', async () => {
+    // The same rollover, with a player joining inside the download window: the
+    // room ends up in round 2 naming photo:2, and round 1's bytes are still on
+    // disk for anyone whose <img> has not loaded yet.
+    const { room, storage } = await build(revealingRoom());
+    resetPhotoControl({
+      during: () =>
+        room.fetch(
+          new Request('https://room/join', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Late' }),
+          })
+        ),
+    });
+
+    await room.fetch(hostPost('next'));
+
+    expect(storage.map.has('photo:1')).toBe(true);
+    expect(storage.map.has('photo:2')).toBe(true);
   });
 });

@@ -131,7 +131,7 @@ export function renderHome(root: HTMLElement): () => void {
     if (!name) return;
     const code = normalizeCode(codeInput.value);
     if (code.length !== 4) {
-      toast('A room code is 4 letters or numbers. Ask the host for theirs.');
+      toast('A room code is 4 characters: letters (never I or O) and numbers 2 to 9.');
       codeInput.focus();
       return;
     }

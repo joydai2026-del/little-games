@@ -77,6 +77,7 @@ in `src/shared/config.ts` if the var is missing.
 | `PHOTO_TAGS` | `dog,cat,funny,awkward,party,baby,goat,costume,fail` | the tag pool loremflickr draws from |
 | `PHOTO_WIDTH` / `PHOTO_HEIGHT` | `800` / `600` | requested photo size |
 | `PHOTO_MAX_BYTES` | `2000000` | hard byte cap, enforced while the image streams in |
+| `PHOTO_TIMEOUT_MS` | `8000` | deadline on one outbound photo request. The download happens inside the request every player polls, so a stalled image host without this parks the whole room |
 | `VISION_MAX_BYTES` | `1000000` | separate, smaller cap on what the vision model is fed. A bigger photo is still served to every player; the bot skips that round |
 | `VISION_MODEL` | `@cf/meta/llama-3.2-11b-vision-instruct` | writes bot captions |
 | `VISION_MODEL_FALLBACK` | `@cf/llava-hf/llava-1.5-7b-hf` | tried once if the primary fails |
@@ -99,12 +100,21 @@ the people in the frame, so there are now two defences:
    there are people in the photo, describe what is happening, not who they are.
 2. The bot's answer is checked (`src/shared/caption-guard.ts`, term list in
    `src/shared/blocked-terms.json`). A caption that reads as a label on the people gets **one**
-   regeneration with a stricter instruction; if that trips too, the bot sits the round out (its job
-   is recorded `failed`, the reason is logged, and the round carries on without it).
+   regeneration with a stricter instruction that names the words that tripped; if that trips too, the
+   bot sits the round out (its job is recorded `failed`, the reason is logged, and the round carries
+   on without it).
+
+The check covers race, ethnicity, religion, skin colour, body, age and disability. Gender is in the
+prompt but deliberately not in the word list: the words that would catch it (woman, women, girl, guy,
+men) are the very people-nouns the guard matches against, so listing them would flag almost every
+caption with a person in it.
 
 Edit `blocked-terms.json` to tune it: it is short on purpose, since a guard that fires on ordinary
-captions just makes the bots go quiet. **Humans are never filtered.** Their captions are their own,
-and the game does not moderate players.
+captions just makes the bots go quiet, and two quiet bots in a solo game void the round. Colour words
+(black / white / brown) live there as explicit two-word phrases rather than bare descriptors, because
+as adjectives they belong to objects ("black cat", "white wine", "black tie", "Black Friday") far more
+often than to people. **Humans are never filtered.** Their captions are their own, and the game does
+not moderate players.
 
 ## Deploy and smoke test
 
@@ -173,11 +183,13 @@ node agent/play.mjs --room CODE --name "Claude" --brain claude
 |---|---|---|
 | `BRAIN_TIMEOUT_MS` | `60000` | Caps how long a brain process may run before it is killed |
 | `CAPTION_WARS_MAX_POLL_FAILURES` | `10` | Consecutive poll failures before the agent gives up |
+| `CAPTION_WARS_FETCH_TIMEOUT_MS` | `15000` | Deadline on every HTTP request the agent makes, so a stalled server cannot park the loop |
 | `CODEX_MODEL` | `gpt-5.5` | Model id for the codex brain |
 | `CLAUDE_BIN` / `CODEX_BIN` / `GROK_BIN` | found on `PATH` | Override which binary a brain runs |
 
-A brain that errors, times out, or gives an unusable answer never crashes the script: the action for
-that round is skipped and polling continues. The agent stops on its own when the room answers 404 or
+A brain that errors, times out, or gives an unusable answer never crashes the script: the agent sits
+that round out and polling continues. Sitting out is remembered for the round, so the brain is asked
+once per round rather than once per poll. The agent stops on its own when the room answers 404 or
 403 (gone, or this player is no longer in it) and after `CAPTION_WARS_MAX_POLL_FAILURES` consecutive
 failures of any other kind.
 

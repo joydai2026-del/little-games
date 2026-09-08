@@ -83,6 +83,14 @@ export interface RoundResult {
   captions: Caption[];
   votes: Record<string, string>;
   winnerCaptionIds: string[];
+  /**
+   * Set only on a void round (fewer than 2 captions, so no winner is possible).
+   * `bots-failed` means at least one AI player's job for the round ended
+   * `failed`: the model was down or its answers were unusable. That is a
+   * different sentence on screen from "nobody wrote anything", because the
+   * player did nothing wrong and should not be left guessing.
+   */
+  voidReason?: 'no-captions' | 'bots-failed';
 }
 
 export interface RoomState {

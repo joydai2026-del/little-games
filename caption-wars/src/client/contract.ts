@@ -54,6 +54,12 @@ export interface RoundResultView {
   captions: CaptionView[];
   votes: Record<string, string>;
   winnerCaptionIds: string[];
+  /**
+   * Present only on a void round: 'no-captions' (nobody wrote one) or
+   * 'bots-failed' (the AI players' jobs failed, so there was nothing to vote
+   * on). Optional, so an older worker that does not send it still renders.
+   */
+  voidReason?: string;
 }
 
 /** What `publicView(state, viewerId, now)` returns, minus anything private. */

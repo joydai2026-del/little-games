@@ -360,3 +360,177 @@ test('a vote the server already recorded (yourVote) is never cast again', async 
 
   assert.equal(fake.calls.vote, 0, 'the agent must honour state.yourVote and not re-vote');
 });
+
+/**
+ * A caption phase that sits there for several polls, so every poll is another
+ * chance for the agent to run the whole caption routine again. The phase only
+ * ends when the script says so, never because of anything the agent does.
+ */
+function stuckCaptionPhaseFetch() {
+  let room = baseRoom({ phase: 'caption', round: 1, roundPlayerIds: ['p1', 'npc1'] });
+  const calls = { photo: 0, caption: 0 };
+  let polls = 0;
+
+  const fetchImpl = async (input, init) => {
+    const { method, parts } = describeRequest(input, init);
+
+    if (method === 'POST' && parts.length === 4 && parts[3] === 'join') {
+      return jsonResponse({
+        playerId: 'p1',
+        playerSecret: PLAYER_SECRET,
+        state: room,
+        serverTime: Date.now(),
+      });
+    }
+
+    if (method === 'GET' && parts.length === 3) {
+      polls++;
+      // Two more polls in `caption` (each one a chance to redo the work), then
+      // end the game so the run terminates.
+      room = { ...room, version: room.version + 1, ...(polls >= 3 ? { phase: 'done', championIds: ['npc1'] } : {}) };
+      return jsonResponse({ state: room, serverTime: Date.now() });
+    }
+
+    if (method === 'GET' && parts.length === 5 && parts[3] === 'photo') {
+      calls.photo++;
+      return new Response(PHOTO_BYTES, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    }
+
+    if (method === 'POST' && parts.length === 4 && parts[3] === 'caption') {
+      calls.caption++;
+      return jsonResponse({ state: room, serverTime: Date.now() });
+    }
+
+    return jsonResponse({ error: 'not found' }, 404);
+  };
+
+  return { fetchImpl, calls };
+}
+
+/** A brain table whose caption answer is under the test's control. */
+function scriptedBrains(answer) {
+  const calls = { caption: 0, vote: 0 };
+  return {
+    calls,
+    brains: {
+      echo: {
+        degraded: false,
+        describe: () => 'scripted test brain',
+        async run({ kind }) {
+          calls[kind] += 1;
+          return kind === 'vote' ? { ok: true, text: '1', error: null } : answer;
+        },
+      },
+    },
+  };
+}
+
+test('a brain failure is a skip the agent REMEMBERS: one attempt, not one per poll', async () => {
+  const fake = stuckCaptionPhaseFetch();
+  const brain = scriptedBrains({ ok: false, text: '', error: 'claude exited 1' });
+
+  await runAgent(['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'], {
+    fetchImpl: fake.fetchImpl,
+    brains: brain.brains,
+  });
+
+  // Three polls sat in the same caption round. Before this fix each one
+  // re-downloaded the photo and spawned the model again, for the whole round.
+  assert.equal(brain.calls.caption, 1, 'the brain must be asked once per round, not once per poll');
+  assert.equal(fake.calls.photo, 1, 'the photo must be downloaded once per round');
+  assert.equal(fake.calls.caption, 0, 'a failed brain submits nothing');
+});
+
+test('a caption the content guard trips twice is also remembered as a skip', async () => {
+  const fake = stuckCaptionPhaseFetch();
+  // The exact caption from the live game on 2026-09-07.
+  const brain = scriptedBrains({ ok: true, text: 'Black people just standing there.', error: null });
+
+  await runAgent(['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'], {
+    fetchImpl: fake.fetchImpl,
+    brains: brain.brains,
+  });
+
+  // Two attempts (one normal, one stricter retry) for the round, and then the
+  // agent sits it out instead of trying again on every poll.
+  assert.equal(brain.calls.caption, 2, 'one attempt plus one stricter retry, for the whole round');
+  assert.equal(fake.calls.photo, 1, 'the photo must be downloaded once per round');
+  assert.equal(fake.calls.caption, 0, 'a caption that trips the guard is never submitted');
+});
+
+test('an empty answer is remembered as a skip too', async () => {
+  const fake = stuckCaptionPhaseFetch();
+  const brain = scriptedBrains({ ok: true, text: '   ', error: null });
+
+  await runAgent(['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'], {
+    fetchImpl: fake.fetchImpl,
+    brains: brain.brains,
+  });
+
+  assert.equal(brain.calls.caption, 1);
+  assert.equal(fake.calls.photo, 1);
+  assert.equal(fake.calls.caption, 0);
+});
+
+/**
+ * The caption the server already has: the submit landed and its reply was lost.
+ * The room hands the viewer their OWN caption back during `caption`, which is
+ * the only signal the agent needs to stop redoing the round.
+ */
+function alreadyCaptionedFetch() {
+  let room = baseRoom({
+    phase: 'caption',
+    round: 1,
+    roundPlayerIds: ['p1', 'npc1'],
+    captions: [{ id: 'own-cap', playerId: 'p1', text: 'the one that landed' }],
+  });
+  const calls = { photo: 0, caption: 0 };
+  let polls = 0;
+
+  const fetchImpl = async (input, init) => {
+    const { method, parts } = describeRequest(input, init);
+
+    if (method === 'POST' && parts.length === 4 && parts[3] === 'join') {
+      return jsonResponse({
+        playerId: 'p1',
+        playerSecret: PLAYER_SECRET,
+        state: room,
+        serverTime: Date.now(),
+      });
+    }
+
+    if (method === 'GET' && parts.length === 3) {
+      polls++;
+      room = { ...room, version: room.version + 1, ...(polls >= 2 ? { phase: 'done', championIds: ['npc1'] } : {}) };
+      return jsonResponse({ state: room, serverTime: Date.now() });
+    }
+
+    if (method === 'GET' && parts.length === 5 && parts[3] === 'photo') {
+      calls.photo++;
+      return new Response(PHOTO_BYTES, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    }
+
+    if (method === 'POST' && parts.length === 4 && parts[3] === 'caption') {
+      calls.caption++;
+      return jsonResponse({ state: room, serverTime: Date.now() });
+    }
+
+    return jsonResponse({ error: 'not found' }, 404);
+  };
+
+  return { fetchImpl, calls };
+}
+
+test('a caption the server already has is never written twice', async () => {
+  const fake = alreadyCaptionedFetch();
+  const brain = scriptedBrains({ ok: true, text: 'a fresh caption', error: null });
+
+  await runAgent(['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'], {
+    fetchImpl: fake.fetchImpl,
+    brains: brain.brains,
+  });
+
+  assert.equal(fake.calls.caption, 0, 'the server already has our caption');
+  assert.equal(fake.calls.photo, 0, 'and there is nothing to download or think about');
+  assert.equal(brain.calls.caption, 0);
+});

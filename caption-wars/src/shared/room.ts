@@ -387,10 +387,25 @@ export function tally(
 }
 
 /**
+ * Why a void round scored nothing, in the terms a player can act on.
+ *
+ * A solo game with two AI players and a model that is down produces a round
+ * where the only human wrote a caption and nothing else arrived. "Not enough
+ * captions" reads as an accusation; "the AI players had nothing to say" is what
+ * actually happened. Any `failed` bot job this round is the tell.
+ */
+function voidReasonFor(state: RoomState): 'no-captions' | 'bots-failed' {
+  const botsFailed = state.botJobs.some(
+    (j) => j.round === state.round && j.phase === 'caption' && j.status === 'failed'
+  );
+  return botsFailed ? 'bots-failed' : 'no-captions';
+}
+
+/**
  * Ends the vote phase into reveal, if it is actually over. Points = votes
  * received, awarded to every tied top caption's author. A round with fewer
  * than 2 captions is void: no winner, no points, represented as
- * `winnerCaptionIds: []` on the RoundResult.
+ * `winnerCaptionIds: []` plus a `voidReason` on the RoundResult.
  */
 export function endVotePhase(state: RoomState, now: number): RoomResult {
   if (state.phase !== 'vote') return { state };
@@ -418,6 +433,7 @@ export function endVotePhase(state: RoomState, now: number): RoomResult {
     captions: state.captions,
     votes: state.votes,
     winnerCaptionIds,
+    ...(isVoid ? { voidReason: voidReasonFor(state) } : {}),
   };
 
   return {

@@ -105,8 +105,12 @@ export const BLOCKED_TERMS = JSON.parse(
   fs.readFileSync(new URL('../src/shared/blocked-terms.json', import.meta.url), 'utf8')
 );
 
-/** How far after a descriptor a people-noun still counts ("black young men"). */
-const MAX_GAP = 2;
+/**
+ * How far after a descriptor a people-noun still counts. 1 = the very next word.
+ * Must stay identical to MAX_GAP in src/shared/caption-guard.ts, and the reason
+ * for the number is written there.
+ */
+const MAX_GAP = 1;
 
 function normalizeTerm(text) {
   return String(text ?? '')
@@ -131,7 +135,9 @@ export function labellingMatch(text, terms = BLOCKED_TERMS) {
     if (standalone.has(word)) return word;
   }
 
-  const descriptors = new Set(terms.descriptors.map(normalizeTerm));
+  const descriptors = new Set(
+    [...terms.descriptors, ...(terms.bodyAgeDisabilityDescriptors ?? [])].map(normalizeTerm)
+  );
   const peopleNouns = new Set(terms.peopleNouns.map(normalizeTerm));
   for (let i = 0; i < words.length; i++) {
     if (!descriptors.has(words[i])) continue;

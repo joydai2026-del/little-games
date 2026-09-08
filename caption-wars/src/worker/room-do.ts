@@ -210,9 +210,15 @@ export class RoomDO implements DurableObject {
       // their secret survived: they would authenticate and then be told they
       // are not in the room. So the reducer runs on the FRESH state, with no
       // await between this check and the assignment (amendment 9).
-      if (!this.room || !roundMatches(this.room, stamp)) return;
+      if (!this.room || !roundMatches(this.room, stamp)) {
+        await this.discardOrphanPhoto(nextRound);
+        return;
+      }
       const adv = advance(this.room, 'timer', Date.now(), pending.meta, this.set.revealMinMs);
-      if (adv.state === this.room) return;
+      if (adv.state === this.room) {
+        await this.discardOrphanPhoto(nextRound);
+        return;
+      }
       this.room = adv.state;
       await this.save();
       await this.syncBotJobs(Date.now());
@@ -274,6 +280,24 @@ export class RoomDO implements DurableObject {
     });
     // Only the newest two rounds of bytes are kept.
     if (round >= 3) await this.ctx.storage.delete(photoKey(round - 2));
+  }
+
+  /**
+   * Drops bytes written for a rollover that then bailed out.
+   *
+   * Bytes are committed BEFORE the reducer runs (rule 6), so a bail-out on the
+   * final re-check leaves a `photo:<round>` for a round the room never opened.
+   * They were harmless (identical bytes, overwritten at the real rollover, and
+   * `deleteAll()` takes them with the room), but nothing is served from a round
+   * the room never entered, so they are simply rubbish.
+   *
+   * Deliberately conservative: it only removes bytes for a round AHEAD of the
+   * live one that the live state does not name. Rotation of older rounds stays
+   * with commitPhotoBytes.
+   */
+  private async discardOrphanPhoto(round: number): Promise<void> {
+    if (this.room && (this.room.photo?.round === round || this.room.round >= round)) return;
+    await this.ctx.storage.delete(photoKey(round));
   }
 
   private async photoBytes(round: number): Promise<Uint8Array | null> {
@@ -579,10 +603,29 @@ export class RoomDO implements DurableObject {
     if (room.phase !== 'lobby') return json({ error: 'this game already started' }, 409);
     if (playerId !== room.hostId) return json({ error: 'only the host can start' }, 403);
 
+    // Start goes through the SAME photo-retry path the timer and the host's Next
+    // do. Without it, every tap on a dead image host fired three fresh outbound
+    // requests, consumed no attempt, and could be repeated for ever: the one
+    // rollover path that was still unbounded.
+    if (photoRetryBlocked(room, now)) return this.envelope(playerId);
+
     // The photo is I/O, so stamp, fetch, re-check, and only then write.
     const stamp = stampOf(room);
     const pending = await this.fetchPhotoOnce(1);
-    if (!pending) return json({ error: 'could not load a photo, try again' }, 502);
+    const settledAt = Date.now(); // after the download, never the pre-fetch clock
+    if (!this.room) return json({ error: ROOM_GONE }, 404);
+    if (!pending) {
+      // Phase and round, not version: see the same check in settle().
+      if (roundMatches(this.room, stamp)) {
+        const failed = notePhotoFailure(this.room, settledAt);
+        this.room = failed.state;
+        await this.save();
+        // The attempt cap ran out. The game is over before it began, but it says
+        // so honestly instead of leaving the host tapping a button for ever.
+        if (this.room.phase === 'done') return this.envelope(playerId);
+      }
+      return json({ error: 'could not load a photo, try again' }, 502);
+    }
     // Phase and round, NOT version. A friend joining during the second the photo
     // took to download bumps the version, and telling the host "this game
     // already started" when it has not is the one dead end a party host cannot
@@ -596,10 +639,14 @@ export class RoomDO implements DurableObject {
     // included), with no await in between.
     await this.commitPhotoBytes(1, pending);
     if (!this.room || !roundMatches(this.room, stamp)) {
+      await this.discardOrphanPhoto(1);
       return json({ error: 'this game already started' }, 409);
     }
     const result = start(this.room, playerId, pending.meta, Date.now());
-    if (result.error) return json({ error: result.error }, 409);
+    if (result.error) {
+      await this.discardOrphanPhoto(1);
+      return json({ error: result.error }, 409);
+    }
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());
@@ -673,7 +720,10 @@ export class RoomDO implements DurableObject {
       // Bytes first, then the reducer on the freshest state (a join can land in
       // this window), with no await between the check and the assignment.
       await this.commitPhotoBytes(nextRound, pending);
-      if (!this.room || !roundMatches(this.room, stamp)) return this.envelope(playerId);
+      if (!this.room || !roundMatches(this.room, stamp)) {
+        await this.discardOrphanPhoto(nextRound);
+        return this.envelope(playerId);
+      }
     }
 
     const result = advance(
@@ -714,6 +764,11 @@ export class RoomDO implements DurableObject {
       headers: {
         'Content-Type': stored.contentType || 'image/jpeg',
         'Cache-Control': 'private, max-age=3600',
+        // These bytes came from a third-party image host and are served from our
+        // own origin, where the room's playerSecret lives in sessionStorage.
+        // nosniff stops a browser deciding for itself that they are something
+        // executable; photo.ts refuses image/svg+xml on the way in as well.
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }

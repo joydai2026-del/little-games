@@ -30,11 +30,33 @@ function countVotes(view: RoomView): Record<string, number> {
  * into `history` when the vote phase ends; the tally below is only a fallback
  * for a server that has not pushed the round yet.
  */
-function winnerIds(view: RoomView, counts: Record<string, number>): string[] {
-  const recorded =
+/** The server's record of the round on screen, if it has pushed it yet. */
+function recordedRound(view: RoomView): RoomView['history'][number] | undefined {
+  const found =
     view.history.find((entry) => entry.round === view.round) ??
     view.history[view.history.length - 1];
-  if (recorded && recorded.round === view.round) return recorded.winnerCaptionIds;
+  return found && found.round === view.round ? found : undefined;
+}
+
+/**
+ * The banner for a round that scored nothing.
+ *
+ * "Not enough captions" is the truth but not the whole of it: playing solo with
+ * two AI players whose model is down produces exactly this screen, and the
+ * player is left thinking they did something wrong. The server says which one it
+ * was on the round result.
+ */
+function voidBanner(view: RoomView): string {
+  const reason = recordedRound(view)?.voidReason;
+  if (reason === 'bots-failed') {
+    return `Round ${view.round}: the AI players had nothing to say this round. No points.`;
+  }
+  return `Round ${view.round}: not enough captions. No points.`;
+}
+
+function winnerIds(view: RoomView, counts: Record<string, number>): string[] {
+  const recorded = recordedRound(view);
+  if (recorded) return recorded.winnerCaptionIds;
   const best = Math.max(0, ...Object.values(counts));
   if (best <= 0) return [];
   return Object.entries(counts)
@@ -158,7 +180,7 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
       cards.replaceChildren(...rows);
 
       if (view.captions.length < 2) {
-        banner.textContent = `Round ${view.round}: not enough captions. No points.`;
+        banner.textContent = voidBanner(view);
       } else if (winners.size === 0) {
         banner.textContent = `Round ${view.round}: nobody voted. No points.`;
       } else {

@@ -101,6 +101,7 @@ export function startPolling(options: PollOptions): () => void {
   let stopped = false;
   let timer = 0;
   let failures = 0;
+  let inFlight = false;
 
   const schedule = (ms: number): void => {
     if (stopped || ms <= 0) return;
@@ -108,7 +109,11 @@ export function startPolling(options: PollOptions): () => void {
   };
 
   async function run(): Promise<void> {
-    if (stopped) return;
+    // `inFlight` is not belt and braces: the visibility listener below can fire
+    // while a poll is already out, and two live chains would each schedule their
+    // own timer, doubling the poll rate every time it happened.
+    if (stopped || inFlight) return;
+    inFlight = true;
     try {
       const envelope = await options.fetchOnce(options.getVersion());
       if (stopped) return;
@@ -125,13 +130,31 @@ export function startPolling(options: PollOptions): () => void {
       failures += 1;
       options.onError(error instanceof Error ? error : new Error('The room stopped answering.'));
       schedule(errorPollDelay(failures, hidden()));
+    } finally {
+      inFlight = false;
     }
   }
+
+  /**
+   * A phone that was locked or in another app is polling at the hidden cadence
+   * (10s). Coming back should not mean staring at the PREVIOUS round for up to
+   * ten seconds: the moment the tab is visible again, drop the pending timer and
+   * poll right now. The screen-rebuild fix makes that recovery correct; this is
+   * what makes it quick.
+   */
+  const onVisibilityChange = (): void => {
+    if (stopped || hidden()) return;
+    window.clearTimeout(timer);
+    void run();
+  };
+  const canWatchVisibility = typeof document !== 'undefined';
+  if (canWatchVisibility) document.addEventListener('visibilitychange', onVisibilityChange);
 
   void run();
 
   return () => {
     stopped = true;
     window.clearTimeout(timer);
+    if (canWatchVisibility) document.removeEventListener('visibilitychange', onVisibilityChange);
   };
 }
