@@ -1004,9 +1004,33 @@ describe('parseJudgeVerdict on a malformed answer', () => {
     expect(parseJudgeVerdict({ response: 'not caption' })).toBe('unknown');
   });
 
+  it('reads the hyphenated and hedged denials as unknown too', () => {
+    // Codex review round 8, should-fix 2. Round 7 matched the exact phrase only,
+    // so every one of these fell through to the substring scan and was recorded
+    // as an APPROVAL: a judge failure reported as a pass.
+    expect(parseJudgeVerdict('non-caption')).toBe('unknown');
+    expect(parseJudgeVerdict('verdict: noncaption')).toBe('unknown');
+    expect(parseJudgeVerdict('non caption')).toBe('unknown');
+    expect(parseJudgeVerdict('not-caption')).toBe('unknown');
+    expect(parseJudgeVerdict('this is not really a caption')).toBe('unknown');
+    expect(parseJudgeVerdict('not quite a caption')).toBe('unknown');
+    expect(parseJudgeVerdict({ response: 'it is not actually a caption' })).toBe('unknown');
+    expect(parseJudgeVerdict('not necessarily a caption')).toBe('unknown');
+  });
+
   it('still reads a plain verdict word, and prefers refusal over the others', () => {
     expect(parseJudgeVerdict('caption')).toBe('caption');
     expect(parseJudgeVerdict('I would call this a refusal, not a caption')).toBe('refusal');
     expect(parseJudgeVerdict({ verdict: 'caption' })).toBe('caption');
+    // The denial window cannot cross a comma or a full stop, so an answer that
+    // says what it is NOT and then what it IS is still read as an acceptance.
+    // (The scan order is refusal, description, caption, so an answer containing
+    // either of the other two words reads as that one, which is unchanged and is
+    // the safe direction: it costs a regeneration.)
+    expect(parseJudgeVerdict('this is not an insult, it is a caption')).toBe('caption');
+    // And the structured field always wins over any of this.
+    expect(parseJudgeVerdict({ verdict: 'caption', note: 'not a caption-like refusal' })).toBe(
+      'caption'
+    );
   });
 });

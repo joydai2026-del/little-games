@@ -36,8 +36,13 @@ export interface PhotoMetaView {
   credit?: string;
   sha256?: string;
   bytes?: number;
-  /** Pre-amendment field: a direct image URL. Used only if `round` is absent. */
-  url?: string;
+  // ROUND 8 (Claude nit 3): a `url?: string` used to live here, left over from a
+  // pre-amendment design, and `common.ts` assigned it straight to `img.src`. The
+  // SERVER-side PhotoMeta (src/shared/types.ts) has never carried it, so it was
+  // dead in every round; dead or not, it was an unchecked scheme reaching an
+  // `img.src` if anything ever populated it. Photo bytes come from
+  // `GET /api/rooms/:code/photo/:round` and nowhere else, which is what
+  // `photoUrl()` builds.
 }
 
 /**

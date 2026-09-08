@@ -837,6 +837,153 @@ describe('noteAiOffline', () => {
     const after = noteAiOffline(state, T0 + 5_000).state;
     expect(publicView(after, 'host', T0 + 5_001).aiOffline).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // ROUND 8, must-fix 1: THE WALL ARRIVING MID-ROUND MUST NOT DELETE THE ROUND.
+  //
+  // Round 7 fixed the wall arriving BEFORE a game. A daily allowance actually
+  // runs out on a specific model call, and a round spends several, so the wall
+  // lands inside a round in progress far more often than between games. Ending
+  // the room from whatever phase it was in threw away captions the player had
+  // already written: never scored, never revealed, `history: []`, and a champion
+  // screen saying "0 points over 0 rounds". These three cases are the reviewer's
+  // A, B and C.
+  // -------------------------------------------------------------------------
+
+  it('case A: two captions already in, so the caption phase finishes instead of vanishing', () => {
+    let state = startedWithJobs();
+    state = submitCaption(state, 'host', 'the goat won again', 'c-h1', T0 + 1_000).state;
+    state = submitCaption(state, 'b1', 'i regret the hat', 'c-b1', T0 + 2_000).state;
+    expect(state.phase).toBe('caption'); // still waiting on b2
+
+    const after = noteAiOffline(state, T0 + 3_000).state;
+
+    // NOT done. The flag is set, the jobs are failed, and the round survives.
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('caption');
+    expect(after.endedReason).toBeUndefined();
+    expect(after.captions).toHaveLength(2);
+
+    // botGaveUp counts the offline bots as having acted, so the next settle
+    // closes the caption phase and opens a real 2-caption ballot.
+    const voting = advanceIfDue(after, T0 + 3_100).state;
+    expect(voting.phase).toBe('vote');
+    expect(voting.captions).toHaveLength(2);
+
+    // The lone human votes, the round is scored and revealed.
+    const revealed = submitVote(voting, 'host', 'c-b1', T0 + 4_000).state;
+    expect(revealed.phase).toBe('reveal');
+    expect(revealed.history).toHaveLength(1);
+    expect(revealed.history[0].voidReason).toBeUndefined();
+    expect(revealed.history[0].winnerCaptionIds).toEqual(['c-b1']);
+    expect(revealed.players.find((p) => p.id === 'b1')?.score).toBe(1);
+
+    // And only THEN does the game end, once, with the honest reason.
+    const done = advance(revealed, 'timer', T0 + 60_000).state;
+    expect(done.phase).toBe('done');
+    expect(done.endedReason).toBe('ai-unavailable');
+    expect(done.championIds).toEqual(['b1']);
+    expect(done.history).toHaveLength(1);
+  });
+
+  it('case B: a round already in the book keeps its scores, and the round in progress is played out', () => {
+    // Round 1 played normally (host wins 2), then the wall lands in round 2's
+    // caption phase with two captions in.
+    let state = startedWithJobs();
+    state = playRoundHostWins(state, T0 + 1_000);
+    expect(state.phase).toBe('reveal');
+    state = advance(state, 'timer', T0 + 60_000, PHOTO_2).state;
+    expect(state.round).toBe(2);
+    expect(state.players.find((p) => p.id === 'host')?.score).toBe(2);
+
+    state = submitCaption(state, 'host', 'round two, same goat', 'c-h2', T0 + 61_000).state;
+    state = submitCaption(state, 'b1', 'still the hat', 'c-b1-2', T0 + 62_000).state;
+
+    const after = noteAiOffline(state, T0 + 63_000).state;
+    expect(after.phase).toBe('caption');
+    expect(after.history).toHaveLength(1);
+
+    const voting = advanceIfDue(after, T0 + 63_100).state;
+    expect(voting.phase).toBe('vote');
+    const revealed = submitVote(voting, 'host', 'c-b1-2', T0 + 64_000).state;
+    expect(revealed.history).toHaveLength(2);
+    expect(revealed.history[1].voidReason).toBeUndefined();
+
+    const done = advance(revealed, 'timer', T0 + 120_000).state;
+    expect(done.phase).toBe('done');
+    expect(done.endedReason).toBe('ai-unavailable');
+    // Round 2 is in the book, and JJ's two points from round 1 still win it.
+    expect(done.history).toHaveLength(2);
+    expect(done.championIds).toEqual(['host']);
+  });
+
+  it('case C: a live three-caption ballot is not thrown away', () => {
+    let state = startedWithJobs();
+    state = submitCaption(state, 'host', 'nobody asked', 'c-h1', T0 + 1_000).state;
+    state = submitCaption(state, 'b1', 'i peaked in 2009', 'c-b1', T0 + 2_000).state;
+    state = submitCaption(state, 'b2', 'the dog knows', 'c-b2', T0 + 3_000).state;
+    expect(state.phase).toBe('vote'); // the last caption flipped the phase
+
+    const after = noteAiOffline(state, T0 + 4_000).state;
+
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('vote');
+    expect(after.endedReason).toBeUndefined();
+    expect(after.captions).toHaveLength(3);
+
+    const revealed = submitVote(after, 'host', 'c-b2', T0 + 5_000).state;
+    expect(revealed.phase).toBe('reveal');
+    expect(revealed.history).toHaveLength(1);
+    expect(revealed.history[0].captions).toHaveLength(3);
+    expect(revealed.history[0].winnerCaptionIds).toEqual(['c-b2']);
+  });
+
+  it('a two-human room keeps its ballot when the wall lands in the vote phase', () => {
+    let state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    state = submitCaption(state, 'host', 'one', 'c-h1', T0 + 1_000).state;
+    state = submitCaption(state, 'p2', 'two', 'c-p2', T0 + 1_100).state;
+    state = submitCaption(state, 'b1', 'three', 'c-b1', T0 + 1_200).state;
+    state = submitCaption(state, 'b2', 'four', 'c-b2', T0 + 1_300).state;
+    expect(state.phase).toBe('vote');
+
+    const after = noteAiOffline(state, T0 + 2_000).state;
+    expect(after.phase).toBe('vote');
+    expect(after.captions).toHaveLength(4);
+    expect(after.endedReason).toBeUndefined();
+  });
+
+  it('the game ends at the ROLLOVER once the last playable round is in the book', () => {
+    // must-fix 1(ii): with the shortcut narrowed, `advance` is what stops a solo
+    // offline room. Before this guard it opened round 2 with a one-name roster.
+    let state = startedWithJobs();
+    state = submitCaption(state, 'host', 'a', 'c-h1', T0 + 1_000).state;
+    state = submitCaption(state, 'b1', 'b', 'c-b1', T0 + 2_000).state;
+    state = noteAiOffline(state, T0 + 3_000).state;
+    state = advanceIfDue(state, T0 + 3_100).state;
+    state = submitVote(state, 'host', 'c-b1', T0 + 4_000).state;
+    expect(state.phase).toBe('reveal');
+
+    // A photo is available, so nothing but the guard can stop round 2 opening.
+    const done = advance(state, 'timer', T0 + 60_000, PHOTO_2).state;
+    expect(done.phase).toBe('done');
+    expect(done.endedReason).toBe('ai-unavailable');
+    expect(done.round).toBe(1);
+  });
+
+  it('the rollover guard does NOT fire on a healthy one-phone room', () => {
+    // A solo room with botCount 0 is a legal (if pointless) game and has nothing
+    // to do with the AI. It must not be told the AI players are unavailable.
+    const options = normalizeOptions({ rounds: 2, captionSeconds: 60, voteSeconds: 30, revealSeconds: 10, botCount: 0 });
+    let state = createRoom('ABCD', { id: 'host', name: 'JJ' }, options, [], T0);
+    state = start(state, 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'alone with a goat', 'c-h1', T0 + 1_000).state;
+    expect(state.phase).toBe('reveal'); // one caption is void, straight through
+
+    const next = advance(state, 'timer', T0 + 60_000, PHOTO_2).state;
+    expect(next.phase).toBe('caption');
+    expect(next.round).toBe(2);
+    expect(next.endedReason).toBeUndefined();
+  });
 });
 
 describe('computeChampionIds (through advance)', () => {

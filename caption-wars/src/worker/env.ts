@@ -42,6 +42,16 @@ export interface Env {
   AI_TRY_MAX_SAMPLES: string;
   AI_TRY_MAX_MODEL_CALLS: string;
 
+  /**
+   * Cloudflare's rate-limit binding, capping how many rooms one IP can create
+   * (review round 8, should-fix 4). Configured in wrangler.jsonc, so the numbers
+   * are policy rather than source. OPTIONAL on purpose: the worker must run
+   * without it (the vitest suite builds an Env by hand, and an environment that
+   * has not got the binding yet should degrade to today's behaviour rather than
+   * throw on every room creation).
+   */
+  ROOM_CREATE_LIMITER?: RateLimit;
+
   /** wrangler secret, set with `npx wrangler secret put SMOKE_TOKEN`. Absent = /api/ai-smoke is off. */
   SMOKE_TOKEN?: string;
 }

@@ -261,8 +261,17 @@ describe('fetchPhoto', () => {
 
     const elapsed = Date.now() - started;
     expect(attempts.length).toBeGreaterThan(1); // it really did try the fallbacks
-    expect(elapsed).toBeLessThan(budget + 200);
-    // and the per-attempt behaviour is unchanged for a single slow host
+    // ROUND 8 (should-fix 2, the sibling sweep): the upper bound is derived from
+    // the two hypotheses rather than guessed. One whole-call budget spends 300ms;
+    // the bug it guards against (one budget PER ATTEMPT) spends 3 x 300 = 900ms.
+    // Anything strictly between the two separates them, so the bar sits at 700ms
+    // and hands 400ms to scheduling slack instead of the old 200ms. The old bound
+    // was tight enough to be a load-dependent coin flip on a busy machine, which
+    // is exactly the class of assertion rule 61 is about.
+    expect(elapsed).toBeLessThan(700);
+    // and the per-attempt behaviour is unchanged for a single slow host. The 50ms
+    // of slack under the budget covers an abort timer delivering a millisecond
+    // early in Date.now() terms, which real timers do.
     expect(elapsed).toBeGreaterThanOrEqual(budget - 50);
   });
 

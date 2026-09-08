@@ -716,6 +716,13 @@ export class RoomDO implements DurableObject {
     // reading the screen and their tap landing. Asking to move on from a game
     // that is already over got what it asked for, so it is a 200 with the state,
     // not an error the champion screen has to apologise for.
+    //
+    // THE ASYMMETRY WITH caption/vote IS DELIBERATE (round 8, Claude nit 4).
+    // `handleCaption` and `handleVote` on a `done` room answer 409 through the
+    // reducer, and that is also right: those ask the room to RECORD something,
+    // and a write that silently does nothing is worse than an error. `next` only
+    // asks the room to move to a state it has already reached. Do not "fix" one
+    // to match the other.
     if (room.phase === 'done') return this.envelope(playerId);
     if (room.phase !== 'reveal') return json({ error: 'nothing to move on from' }, 409);
 

@@ -85,6 +85,32 @@ describe('POST /api/ai-try: the model-call cap', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('says TRUNCATED only when the cap actually refused a call', async () => {
+    // Round 8, Claude nit 1. `ai:try` used to call a request saturated whenever
+    // `model_calls === model_call_cap`, which fails a run that measured
+    // everything it set out to measure and simply landed on the number. Only a
+    // refusal (or a photo loop that stopped early) is truncation.
+    const cut = countingEnv({ AI_TRY_MAX_MODEL_CALLS: '3' });
+    const cutBody = (await (await handleAiTry(request({ photos: 2 }), cut.env)).json()) as {
+      summary: { truncated: boolean; model_calls_refused: number };
+    };
+    expect(cutBody.summary.truncated).toBe(true);
+    expect(cutBody.summary.model_calls_refused).toBeGreaterThan(0);
+
+    // Exactly the calls one persona on one photo makes: 1 description + 1 rung +
+    // 1 caption judge + 1 relevance judge. Nothing was refused.
+    const exact = countingEnv({ AI_TRY_MAX_MODEL_CALLS: '4' });
+    const exactBody = (await (
+      await handleAiTry(request({ photos: 1, personas: ['daisy-deadpan'] }), exact.env)
+    ).json()) as {
+      summary: { model_calls: number; model_call_cap: number; truncated: boolean; model_calls_refused: number };
+    };
+    expect(exactBody.summary.model_calls).toBe(4);
+    expect(exactBody.summary.model_call_cap).toBe(4);
+    expect(exactBody.summary.model_calls_refused).toBe(0);
+    expect(exactBody.summary.truncated).toBe(false);
+  });
+
   it('reports the judge verdicts, so the extra call per caption is visible', async () => {
     const { env } = countingEnv();
     const res = await handleAiTry(request({ photos: 1, personas: ['daisy-deadpan'] }), env);

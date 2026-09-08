@@ -53,19 +53,32 @@ export interface CallBudget {
   reserve(): boolean;
   used(): number;
   cap(): number;
+  /**
+   * How many calls the cap actually REFUSED (round 8, Claude nit 1). `used ===
+   * cap` is not the same claim: a run that spends its last slot on its last call
+   * is a complete measurement, and `ai:try` was failing those as "truncated". A
+   * refusal is the only thing that means a model call the code wanted to make
+   * did not happen.
+   */
+  refused(): number;
 }
 
 export function makeCallBudget(max: number): CallBudget {
   let used = 0;
+  let refused = 0;
   const ceiling = Math.max(0, Math.trunc(max));
   return {
     reserve() {
-      if (used >= ceiling) return false;
+      if (used >= ceiling) {
+        refused += 1;
+        return false;
+      }
       used += 1;
       return true;
     },
     used: () => used,
     cap: () => ceiling,
+    refused: () => refused,
   };
 }
 
@@ -526,7 +539,20 @@ export function parseJudgeVerdict(result: unknown): CaptionJudgeVerdict {
   // `description` either, because the sentence does not say which it is, so it
   // is `unknown`: the judge fails open and the regex verdict stands, which is
   // exactly what an unparseable answer already means here.
-  const deniesCaption = /\bnot\s+(?:a\s+|an\s+)?caption\b/.test(flat);
+  //
+  // ROUND 8 (Codex should-fix 2): round 7's version read only the exact phrase
+  // "not a caption". "non-caption", "not-caption" and "not really a caption" all
+  // fell through to the substring scan below and were recorded as APPROVAL, which
+  // is a judge failure reported as a pass. The window is deliberately short (up
+  // to three words between "not" and "caption", and it cannot cross a comma or a
+  // full stop, because `\w+` stops at both), so "this is not a description, it is
+  // a caption" still reads as `caption`. The asymmetry settles the trade: a false
+  // `unknown` costs nothing a player sees (the judge fails open and the regex
+  // verdict stands, exactly as a timeout does), a false `caption` puts a
+  // non-caption on the table.
+  const deniesCaption =
+    /\bnon[\s-]?caption\b/.test(flat) ||
+    /\bnot[\s-]+(?:[\w-]+[\s-]+){0,3}(?:an?[\s-]+)?caption\b/.test(flat);
   for (const verdict of known) {
     if (verdict === 'caption' && deniesCaption) return 'unknown';
     if (flat.includes(verdict)) return verdict;

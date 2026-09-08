@@ -356,7 +356,9 @@ describe('the done screen says what actually happened', () => {
     try {
       expect(text).toContain('The AI players are offline today');
       expect(text).toContain('daily free AI allowance is used up');
-      expect(text).toContain('back after midnight UTC');
+      expect(text).toContain('back when the daily allowance resets');
+      // Round 8, should-fix 5: no promise the code has never watched itself keep.
+      expect(text).not.toContain('midnight');
       expect(text).toContain('Add a friend to play.');
       // No neurons, no error code, no plan tier: grandma reads this screen.
       expect(text).not.toContain('4006');

@@ -22,6 +22,24 @@ const photoControl = vi.hoisted(() => ({
   calls: 0,
   delayMs: 0,
   during: null as null | (() => Promise<unknown>),
+  /**
+   * `Date.now()` read INSIDE the mock, after its delay and before it returns or
+   * throws (review round 8, should-fix 2). Tests that care about "the DO read
+   * the clock AFTER the download" compare against this, not against a
+   * `Date.now()` taken before the call plus the nominal delay: `setTimeout(80)`
+   * does not guarantee 80ms of `Date.now()`, because libuv arms the timer
+   * against the event loop's cached time, so the timer can deliver at 79.
+   * Measured on this machine (node 22, `setTimeout(N)` then `Date.now()`):
+   *   idle,        setTimeout(80):  14/2000 short, min delta 79
+   *   5ms of busy JS first,     80:  11/300  short, min delta 79
+   *   10ms of busy JS first,    80:   2/300  short, min delta 79
+   *   10ms of busy JS first,    60:   8/300  short, min delta 59
+   * Always short by exactly 1ms, never more, which is the signature of the
+   * cached-clock arming rather than of a slow machine. That 1ms is the whole
+   * bug: it made `tests/room-do.test.ts:573` fail 1 run in 33 for the round-8
+   * reviewer, on the run they fired concurrently with `tsc`.
+   */
+  resolvedAt: 0,
 }));
 
 vi.mock('../src/worker/photo', () => ({
@@ -35,6 +53,10 @@ vi.mock('../src/worker/photo', () => ({
     if (photoControl.delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, photoControl.delayMs));
     }
+    // The last thing the "download" does, success or failure. Anything the DO
+    // reads from the clock afterwards is at or after this instant, by
+    // construction rather than by arithmetic on a nominal delay.
+    photoControl.resolvedAt = Date.now();
     if (photoControl.fail) throw new Error('both photo hosts are down');
     return {
       meta: { round, source: 'picsum', sha256: 'e'.repeat(64), bytes: 4 },
@@ -462,6 +484,7 @@ function resetPhotoControl(over: Partial<typeof photoControl> = {}): void {
   photoControl.calls = 0;
   photoControl.delayMs = 0;
   photoControl.during = null;
+  photoControl.resolvedAt = 0;
   Object.assign(photoControl, over);
 }
 
@@ -524,9 +547,14 @@ describe('RoomDO photo retries on the host Next path', () => {
     await room.fetch(hostPost('next'));
 
     const after = storage.map.get('state') as RoomState;
-    // 5s is the first backoff step. The clock is real, so allow a little slack
-    // on the sleep itself; the point is that it is measured from after it.
-    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60 + 5_000);
+    // 5s is the first backoff step, and it is measured from the instant the
+    // download finished, which the mock stamps. Comparing against
+    // `before + delay` instead would be asserting that setTimeout(80) delivers
+    // 80ms of Date.now(), which it does not (see photoControl.resolvedAt).
+    expect(photoControl.resolvedAt).toBeGreaterThan(before);
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(
+      photoControl.resolvedAt + 5_000
+    );
   });
 });
 
@@ -569,8 +597,12 @@ describe('RoomDO round rollover under concurrency', () => {
     const after = storage.map.get('state') as RoomState;
     expect(after.phase).toBe('caption');
     // Using the pre-fetch clock handed players a caption timer already short by
-    // however long the photo took.
-    expect(after.phaseStartedAt).toBeGreaterThanOrEqual(before + 80);
+    // however long the photo took. The bar is the instant the download actually
+    // finished, not `before + 80`: that arithmetic assumes setTimeout(80) gives
+    // 80ms of Date.now(), and it is the assumption that made this line flaky
+    // (see photoControl.resolvedAt).
+    expect(photoControl.resolvedAt).toBeGreaterThan(before);
+    expect(after.phaseStartedAt).toBeGreaterThanOrEqual(photoControl.resolvedAt);
     expect(after.phaseEndsAt).toBe(after.phaseStartedAt + after.options.captionSeconds * 1000);
   });
 });
@@ -706,7 +738,10 @@ describe('RoomDO photo retries on the host Start path', () => {
     await room.fetch(hostPost('start'));
 
     const after = storage.map.get('state') as RoomState;
-    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60 + 5_000);
+    expect(photoControl.resolvedAt).toBeGreaterThan(before);
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(
+      photoControl.resolvedAt + 5_000
+    );
   });
 });
 

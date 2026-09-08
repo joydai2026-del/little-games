@@ -81,7 +81,56 @@ function callRoom(
   return roomStub(env, code).fetch(new Request(`https://room/${path}`, init));
 }
 
+/**
+ * The only unauthenticated endpoint that CREATES anything (review round 8,
+ * should-fix 4).
+ *
+ * Every call spins up a Durable Object, writes three storage keys and arms an
+ * alarm two hours out, and the URL is public. On the free plan that is a
+ * nuisance; on Workers Paid, which is the plan rule 55 says is the durable fix
+ * for the AI players, Durable Object requests, storage and alarms are all
+ * billed. So the day JJ upgrades, this endpoint becomes a bill a stranger can
+ * run up with a for-loop, without anybody touching it. The cap goes in now,
+ * while it is cheap.
+ *
+ * The numbers live in wrangler.jsonc (`ratelimits`), not here, so changing the
+ * policy is a config edit. The client has had the 429 string since round 2 and
+ * nothing could produce it until now.
+ *
+ * Returns the 429 response when the caller is over, or null to carry on.
+ */
+async function roomCreateLimited(request: Request, env: Env): Promise<Response | null> {
+  const limiter = env.ROOM_CREATE_LIMITER;
+  if (!limiter) return null;
+  // Cloudflare sets this on every request that reaches a Worker. The fallback
+  // key only matters off-platform (a local run, a test), where one shared bucket
+  // is the safe reading rather than no limit at all.
+  const key = request.headers.get('CF-Connecting-IP') ?? 'no-connecting-ip';
+  try {
+    const { success } = await limiter.limit({ key });
+    if (success) return null;
+  } catch (err) {
+    // A limiter that is down must not take room creation down with it.
+    console.warn('rooms: rate limiter unavailable', err instanceof Error ? err.message : err);
+    return null;
+  }
+  return new Response(
+    JSON.stringify({ error: 'too many new rooms from here at once, wait a moment and try again' }),
+    {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Retry-After': '60',
+      },
+    }
+  );
+}
+
 async function handleCreateRoom(request: Request, env: Env): Promise<Response> {
+  const limited = await roomCreateLimited(request, env);
+  if (limited) return limited;
+
   const body = await readJson(request);
   if (!body) return badRequest('body must be JSON');
 

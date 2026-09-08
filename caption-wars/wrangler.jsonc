@@ -24,6 +24,19 @@
   "observability": {
     "enabled": true
   },
+  // THE ONLY UNAUTHENTICATED ENDPOINT THAT CREATES ANYTHING is POST /api/rooms
+  // (review round 8, should-fix 4). Each call makes a Durable Object, writes
+  // three storage keys and arms a 2-hour alarm. Free today; billed the day this
+  // account moves to Workers Paid, which is rule 55's own recommendation. The
+  // numbers are POLICY and live here rather than in source: raise `limit` if a
+  // classroom on one NAT hits it. `period` may only be 10 or 60.
+  "ratelimits": [
+    {
+      "name": "ROOM_CREATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
   "vars": {
     // PHOTO_TAGS IS THE CONTENT POLICY: it decides what the game PUTS ON THE
     // SCREEN, which is a different question from what the bots WRITE and the

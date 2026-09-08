@@ -527,6 +527,39 @@ export function advance(
     };
   }
 
+  // ROUND 8 (must-fix 1(ii)): the ROLLOVER is the other place a game with no AI
+  // players left has to end, and until now `noteAiOffline`'s shortcut was the
+  // only thing that stopped one. That was fragile in both directions. Round 8
+  // deliberately narrowed the shortcut so a round with captions in it finishes
+  // (must-fix 1(i)), which means a solo room now reaches this line with
+  // `aiOffline: true` and one human on the roster; and even before that change,
+  // any path that set the flag without ending the room (the lobby branch, a
+  // future caller) would have opened round after round with
+  // `roundPlayerIds: ["host"]`, which is exactly the N-void-rounds bug rule 55
+  // exists to kill.
+  //
+  // The guard is conditioned on `aiOffline`, NOT on the roster alone. A healthy
+  // solo room (`botCount: 0`, one phone on the table) is a legal, if pointless,
+  // game and must not be told the AI players are unavailable: nothing about it
+  // involves the AI. Only a room whose bots were dropped BY THE WALL ends here.
+  if (state.aiOffline === true) {
+    const rosterAfterDrop = state.players.filter((p) => !p.isBot);
+    if (rosterAfterDrop.length < 2) {
+      return {
+        state: bump(
+          state,
+          {
+            championIds: computeChampionIds(state.players),
+            endedReason: 'ai-unavailable',
+            photoRetry: undefined,
+          },
+          'done',
+          now
+        ),
+      };
+    }
+  }
+
   if (!photo) return { state, needsPhoto: true };
   return { state: openRound(state, state.round + 1, photo, now) };
 }
@@ -627,8 +660,11 @@ export function notePhotoFailure(
  *   - fails THIS round's still-open bot jobs with `failReason: 'ai-offline'`, so
  *     the round ends now rather than on the full caption timer;
  *   - and, if dropping the bots would leave fewer than two players in the next
- *     round's roster, ends the game with `endedReason: 'ai-unavailable'` instead
- *     of walking a lone human through N unplayable rounds.
+ *     round's roster AND the round in progress cannot produce a result anyway,
+ *     ends the game with `endedReason: 'ai-unavailable'` instead of walking a
+ *     lone human through N unplayable rounds. A round with 2+ captions in it is
+ *     finished first (round 8, must-fix 1; see the comment on that branch), and
+ *     the game then ends at the rollover in `advance`.
  * The drop itself happens in `openRound`, which is what makes it "from the NEXT
  * round on": the current round keeps its roster so its jobs stay accounted for.
  *
@@ -647,12 +683,44 @@ export function noteAiOffline(state: RoomState, now: number): RoomResult {
 
   // A lobby has not dealt anyone in yet and a finished game has nothing left to
   // end, so both only take the flag (and the banner that comes with it).
+  //
+  // The lobby branch is unreachable in production today (round 8, Claude nit 2):
+  // bot jobs exist only in `caption` and `vote`, and `noteAiOffline` is called
+  // only from `runDueBotJobs`. It is kept because it is the honest answer if a
+  // later round ever pings a model from a lobby, and it is no longer the branch
+  // that would resurrect the solo-void-rounds bug: the rollover guard in
+  // `advance` now stops a flagged solo room whichever way it got flagged.
   if (state.phase === 'lobby' || state.phase === 'done') {
     return { state: { ...state, aiOffline: true, botJobs, version: state.version + 1 } };
   }
 
+  // ROUND 8 (must-fix 1(i)): FINISH THE ROUND THE PLAYER ACTUALLY PLAYED.
+  //
+  // Round 7 ended a solo room from whatever phase it was in, which is right when
+  // the wall arrives BEFORE a game and wrong when it arrives DURING one, and
+  // during one is the normal way a daily allowance runs out (a round spends
+  // several model calls, so the wall lands inside a round far more often than
+  // between games). Jumping to `done` from a caption phase with two captions in
+  // it, or from a live 3-caption ballot, deleted a round the player had played:
+  // never scored, never revealed, `history: []`, `championIds: []`, and a
+  // champion screen reading "0 points over 0 rounds".
+  //
+  // So the shortcut is now taken ONLY when the round in progress cannot produce
+  // a result anyway:
+  //   - `reveal`: the round is already scored and in `history`, there is nothing
+  //     left to finish, so ending now is exactly rule 55's case;
+  //   - fewer than 2 captions: `endVotePhase` calls that void whatever anyone
+  //     does, which is the shape round 7 actually observed live and the shape
+  //     rule 55's stated reason ("a lone human should not walk through the rest
+  //     of the current round with nothing to vote on") describes.
+  // With 2+ captions we take the flag only. `botGaveUp` already counts an
+  // offline bot as having acted in EVERY phase, so `endCaptionPhase` /
+  // `endVotePhase` close the round normally the moment the human acts or the
+  // timer passes: scored, revealed, in the book. The game then ends at the
+  // rollover, in `advance`, which is where the roster guard now lives.
   const rosterAfterDrop = state.players.filter((p) => !p.isBot);
-  if (rosterAfterDrop.length < 2) {
+  const roundCannotFinish = state.phase === 'reveal' || state.captions.length < 2;
+  if (rosterAfterDrop.length < 2 && roundCannotFinish) {
     return {
       state: bump(
         { ...state, aiOffline: true, botJobs },

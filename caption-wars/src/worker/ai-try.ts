@@ -91,6 +91,15 @@ export interface AiTryResult {
     /** The ceiling those calls were reserved against. */
     model_call_cap: number;
     /**
+     * Model calls the cap REFUSED, plus whether this request stopped early
+     * because of it (round 8, Claude nit 1). `model_calls === model_call_cap` is
+     * not evidence of truncation on its own: a request whose last call lands
+     * exactly on the cap measured everything it set out to measure. `truncated`
+     * is the honest flag, and `ai:try` fails on THAT.
+     */
+    model_calls_refused: number;
+    truncated: boolean;
+    /**
      * Captions the fast-path regex passed and the caption JUDGE then rejected
      * (round 6). This is the number that says whether the judge is earning its
      * one extra text call per caption.
@@ -245,7 +254,12 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       prompt_version: CAPTION_PROMPT_VERSION,
       model: set.textModel,
       judge: verdicts,
-      summary: { model_calls: judgeBudget.used(), model_call_cap: judgeBudget.cap() },
+      summary: {
+        model_calls: judgeBudget.used(),
+        model_call_cap: judgeBudget.cap(),
+        model_calls_refused: judgeBudget.refused(),
+        truncated: judgeBudget.refused() > 0,
+      },
     });
   }
 
@@ -257,10 +271,15 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
   // than one photo batch could be exceeded by a whole batch.
   const callBudget = makeCallBudget(set.aiTryMaxModelCalls);
   const spent = (): boolean => callBudget.used() >= callBudget.cap();
+  // Set when the photo loop stops early because the cap is already reached. That
+  // is a genuine truncation (photos this request meant to sample never happened)
+  // even though no `reserve()` was refused to reach it.
+  let stoppedAtCap = false;
 
   for (let i = 0; i < photoCount; i++) {
     if (spent()) {
       photoErrors.push(`stopped at the ${set.aiTryMaxModelCalls}-model-call cap for one request`);
+      stoppedAtCap = true;
       break;
     }
     let photo;
@@ -361,6 +380,8 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       relevance,
       model_calls: callBudget.used(),
       model_call_cap: callBudget.cap(),
+      model_calls_refused: callBudget.refused(),
+      truncated: stoppedAtCap || callBudget.refused() > 0,
       judge_rejected: judgeRejected,
       judge_verdicts: judgeVerdicts,
     },

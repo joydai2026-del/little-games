@@ -163,7 +163,8 @@ export function photoFrame(
     el,
     set(view: RoomView) {
       const round = view.photo?.round ?? view.round;
-      const src = view.photo?.url ?? photoUrl(ctx.code, round);
+      // The ONLY source of a photo is our own API path (round 8, Claude nit 3).
+      const src = photoUrl(ctx.code, round);
       if (!view.photo || src === shown) return;
       shown = src;
       fallback.textContent = 'The photo is on its way.';
@@ -187,9 +188,16 @@ export function photoFrame(
  * It says what happened, in words a player can act on, and does not mention
  * neurons, a binding, an error code or a plan tier.
  */
+// ROUND 8 (Claude should-fix 5): the second sentence used to promise "after
+// midnight UTC". Nothing in this repo has ever watched the bots come back, and
+// the round-8 reviewer got `aiOffline: true` from a live room at 05:11 UTC, five
+// hours past the stated reset (innocently explainable: two tuning runs at 02:37
+// and 04:06 UTC would have spent the fresh day's allowance). A player reads this
+// one sentence on the worst night the game has, so it must not be a promise the
+// code can be caught breaking in front of a friend. It now says the true thing.
 export const AI_OFFLINE_LINE =
   'The AI players are offline today (the daily free AI allowance is used up). ' +
-  'They will be back after midnight UTC.';
+  'They will be back when the daily allowance resets.';
 
 /** The lobby / in-game player list, with a badge on the AI players. */
 export function playerList(view: RoomView, viewerId: string): HTMLElement {

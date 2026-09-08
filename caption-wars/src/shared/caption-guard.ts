@@ -466,8 +466,22 @@ const REFUSAL_OPENER_RE = new RegExp(`^${REFUSAL_VERB_CORE}`);
  * than dropping three of them: dropping `so` alone would have lost the round-6
  * incident string, which is in tests/guard-cases.json as a refusal and would
  * have gone straight back out to a player.
+ *
+ * ROUND 8 (Claude should-fix 1): the object list is `caption` / `request` /
+ * `prompt` and NOTHING ELSE. Round 7 also carried `photo`, `image`, `picture`,
+ * `joke` and `humour`, which are the five most ordinary nouns in a game whose
+ * own prompt says "photo" four times: of twelve ordinary captions in exactly the
+ * shape round 7 was buying back ("He blinked first, so I won't write home about
+ * it.") with a picture word near the verb, ELEVEN tripped. Rule 38(a) says a
+ * false positive is the expensive direction and since round 6 it costs two
+ * throws (regex, then judge). The narrowing is free: every refusal in
+ * tests/guard-cases.json that this rule catches still matches with the short
+ * list, and the accepted-false-refusal count is unchanged at 7. The reason it
+ * works is that a model explaining itself mid-answer names the TASK ("write a
+ * caption", "fulfill this request"), while a player writing a joke names the
+ * PICTURE.
  */
-const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt|photo|image|picture|joke|humou?r)';
+const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt)';
 const REFUSAL_MID_CLAUSE_RE = new RegExp(
   `[,.;:]\\s+(?:so\\s+|but\\s+|and\\s+|then\\s+)?${REFUSAL_VERB_CORE}[^.!?]{0,40}?\\b${REFUSAL_TASK_OBJECT}\\b`
 );

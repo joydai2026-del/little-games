@@ -284,7 +284,11 @@ const REFUSAL_OPENER_RE = new RegExp(`^${REFUSAL_VERB_CORE}`);
 // narrative continuations ("He blinked first, so I won't write home about it.").
 // Every real second-clause refusal names what it refuses. Twin of
 // REFUSAL_MID_CLAUSE_RE in src/shared/caption-guard.ts, where the reasoning is.
-const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt|photo|image|picture|joke|humou?r)';
+// ROUND 8 (Claude should-fix 1): the object list lost `photo`, `image`,
+// `picture`, `joke` and `humour`. They are ordinary caption vocabulary and
+// tripped 11 of 12 ordinary mid-clause captions; no refusal in
+// tests/guard-cases.json needs them.
+const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt)';
 const REFUSAL_MID_CLAUSE_RE = new RegExp(
   `[,.;:]\\s+(?:so\\s+|but\\s+|and\\s+|then\\s+)?${REFUSAL_VERB_CORE}[^.!?]{0,40}?\\b${REFUSAL_TASK_OBJECT}\\b`
 );
