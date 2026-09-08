@@ -22,11 +22,21 @@
 // Two rules the first review round added:
 //
 //   6. Photo bytes are fetched BEFORE anything is written, through one shared
-//      in-flight promise per round, and the bytes land in storage only in the
-//      same step that commits the state pointing at them. Two concurrent
-//      settles can never leave state naming photo A while storage holds B.
+//      in-flight promise per round, and the bytes land in storage immediately
+//      before the state that names them. Two concurrent settles can never leave
+//      state naming photo A while storage holds B.
 //   7. Every path out of fetch() re-arms the alarm exactly once, at the end.
 //      A plain GET can advance the room, so a GET must re-arm too.
+//
+// And three the second round added:
+//
+//   8. Every clock read AFTER an await is fresh. A slow photo download must not
+//      set a retry backoff in the past, nor open a round with a short timer.
+//   9. The reducer runs on the state as it is after the last await, never on a
+//      copy read before it: a `join` landing in that window would otherwise be
+//      erased from `players` while its secret survived in `secrets`.
+//  10. A rollover that cannot get a photo is bounded on EVERY path, the host's
+//      Next included: it backs off, and ends the game after PHOTO_MAX_ATTEMPTS.
 
 import type { BotJob, PhotoMeta, Player, RoomOptions, RoomState } from '../shared/types';
 import {
@@ -42,7 +52,6 @@ import {
   reapBotJobs,
   setJobStatus,
   roundMatches,
-  stampMatches,
   stampOf,
   submitCaption,
   submitVote,
@@ -169,29 +178,44 @@ export class RoomDO implements DurableObject {
       const stamp = stampOf(this.room);
       const nextRound = this.room.round + 1;
       const pending = await this.fetchPhotoOnce(nextRound);
-      if (!this.room || !stampMatches(this.room, stamp)) return;
+      // The clock moved while the photo downloaded. Every decision below uses
+      // the time AFTER the await, never the stale `now`: a 6-second download
+      // measured against the old clock would put the retry backoff in the past
+      // (so the alarm re-fires instantly) and would open the next round with a
+      // caption timer already 6 seconds short.
+      const settledAt = Date.now();
+      if (!this.room) return;
 
       if (!pending) {
         // Both image hosts are down. Back off, and after a few tries end the
         // game honestly instead of spinning the alarm on a dead fetch.
-        const failed = notePhotoFailure(this.room, now);
+        // Phase and round, not version: a player joining during the failed
+        // fetch must not swallow the attempt, or a dead host never runs out of
+        // tries while anyone is arriving.
+        if (!roundMatches(this.room, stamp)) return; // somebody else moved the room on
+        const failed = notePhotoFailure(this.room, settledAt);
         this.room = failed.state;
         await this.save();
         return;
       }
 
-      const adv = advance(this.room, 'timer', now, pending.meta, this.set.revealMinMs);
-      if (adv.state === this.room) return;
       // Bytes first, then the state that names them, so no client can ever ask
-      // for a photo the room has already announced. There is an await between
-      // the stamp check and the assignment, which amendment 9 normally forbids,
-      // and it is safe here for one reason only: fetchPhotoOnce guarantees a
-      // single download per round, so a concurrent settle is writing the SAME
-      // bytes and computing the SAME transition. Two of them are idempotent.
+      // for a photo the room has already announced.
+      if (!roundMatches(this.room, stamp)) return; // already past this rollover
       await this.commitPhotoBytes(nextRound, pending);
+      // Re-read AFTER that write. The room is still in the same phase and round
+      // (another settle would have moved it), but a concurrent `join` mutates
+      // `this.room` inside exactly this window, and computing the transition
+      // from the pre-await copy would erase the joiner from `players` while
+      // their secret survived: they would authenticate and then be told they
+      // are not in the room. So the reducer runs on the FRESH state, with no
+      // await between this check and the assignment (amendment 9).
+      if (!this.room || !roundMatches(this.room, stamp)) return;
+      const adv = advance(this.room, 'timer', Date.now(), pending.meta, this.set.revealMinMs);
+      if (adv.state === this.room) return;
       this.room = adv.state;
       await this.save();
-      await this.syncBotJobs(now);
+      await this.syncBotJobs(Date.now());
     }
   }
 
@@ -559,13 +583,23 @@ export class RoomDO implements DurableObject {
     const stamp = stampOf(room);
     const pending = await this.fetchPhotoOnce(1);
     if (!pending) return json({ error: 'could not load a photo, try again' }, 502);
-    if (!this.room || !stampMatches(this.room, stamp)) {
+    // Phase and round, NOT version. A friend joining during the second the photo
+    // took to download bumps the version, and telling the host "this game
+    // already started" when it has not is the one dead end a party host cannot
+    // talk their way out of. The reducer below still refuses a real double
+    // start, because a started room is no longer in `lobby`.
+    if (!this.room || !roundMatches(this.room, stamp)) {
       return json({ error: 'this game already started' }, 409);
     }
 
+    // Bytes first, then the reducer on the state as it is RIGHT NOW (the joiner
+    // included), with no await in between.
+    await this.commitPhotoBytes(1, pending);
+    if (!this.room || !roundMatches(this.room, stamp)) {
+      return json({ error: 'this game already started' }, 409);
+    }
     const result = start(this.room, playerId, pending.meta, Date.now());
     if (result.error) return json({ error: result.error }, 409);
-    await this.commitPhotoBytes(1, pending);
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());
@@ -612,10 +646,34 @@ export class RoomDO implements DurableObject {
     let pending: PendingPhoto | null = null;
     const nextRound = room.round + 1;
     if (dryRun.needsPhoto) {
+      // The host's Next button goes through the SAME photo-retry path the timer
+      // does. Without this, every frustrated tap during a dead-photo backoff
+      // fired three fresh outbound image requests, consumed no attempt, and
+      // could never reach `endedReason: 'photo-unavailable'`: one rollover path
+      // was bounded and the other was not.
+      if (photoRetryBlocked(room, Date.now())) return this.envelope(playerId);
+
       const stamp = stampOf(room);
       pending = await this.fetchPhotoOnce(nextRound);
-      if (!pending) return json({ error: 'could not load a photo, try again' }, 502);
-      if (!this.room || !stampMatches(this.room, stamp)) return this.envelope(playerId);
+      const settledAt = Date.now(); // after the download, never the pre-fetch clock
+      if (!this.room) return json({ error: ROOM_GONE }, 404);
+      if (!pending) {
+        // Phase and round, not version: see the same check in settle().
+        if (roundMatches(this.room, stamp)) {
+          const failed = notePhotoFailure(this.room, settledAt);
+          this.room = failed.state;
+          await this.save();
+          // The attempt cap ran out: the room is now `done` with a reason, and
+          // the host should see that scoreboard rather than an error.
+          if (this.room.phase === 'done') return this.envelope(playerId);
+        }
+        return json({ error: 'could not load a photo, try again' }, 502);
+      }
+      if (!roundMatches(this.room, stamp)) return this.envelope(playerId);
+      // Bytes first, then the reducer on the freshest state (a join can land in
+      // this window), with no await between the check and the assignment.
+      await this.commitPhotoBytes(nextRound, pending);
+      if (!this.room || !roundMatches(this.room, stamp)) return this.envelope(playerId);
     }
 
     const result = advance(
@@ -626,7 +684,6 @@ export class RoomDO implements DurableObject {
       this.set.revealMinMs
     );
     if (result.error) return json({ error: result.error }, 403);
-    if (pending) await this.commitPhotoBytes(nextRound, pending);
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());

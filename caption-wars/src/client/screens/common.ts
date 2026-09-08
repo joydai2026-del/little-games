@@ -7,14 +7,24 @@ import type { RoomView } from '../contract';
 import { countdownSeconds } from '../poll';
 import { h } from '../ui';
 
-/** What a phase screen can ask the room shell to do. */
+/**
+ * What a phase screen can ask the room shell to do.
+ *
+ * EVERY action resolves to a boolean, and false always means the same thing:
+ * "that did not happen, put your button back". A button that disables itself on
+ * tap and waits for a poll to re-enable it is a dead end whenever the poll
+ * answers `unchanged` (a quiet lobby, or a finished game that has stopped
+ * polling entirely), which is exactly when a first tap is most likely to fail.
+ */
 export interface RoomActions {
-  start(): void;
+  /** Resolves false when the game could not be started, so the button can come back to life. */
+  start(): Promise<boolean>;
   sendCaption(text: string): Promise<boolean>;
   sendVote(captionId: string): Promise<boolean>;
   /** Resolves false when the move-on failed, so the button can come back to life. */
   next(): Promise<boolean>;
-  playAgain(): void;
+  /** Resolves false when the new room could not be made; true means we are navigating away. */
+  playAgain(): Promise<boolean>;
 }
 
 export interface RoomCtx {

@@ -14,10 +14,21 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
     type: 'button',
     text: 'Play again',
   });
+  const paintAgainButton = (): void => {
+    againButton.disabled = false;
+    againButton.textContent = 'Play again';
+  };
+
   againButton.addEventListener('click', () => {
     againButton.disabled = true;
     againButton.textContent = 'Making a new room...';
-    ctx.actions.playAgain();
+    // The done screen has stopped polling for good (the server sends
+    // nextPollMs: 0 here), so update() can never run again and this is the only
+    // place the button can come back to life. Without it any transient failure
+    // leaves the champion screen with a dead "Making a new room..." button.
+    void ctx.actions.playAgain().then((ok) => {
+      if (!ok) paintAgainButton();
+    });
   });
 
   const el = h('div', {}, [
@@ -53,8 +64,7 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
           : '';
       }
       board.replaceChildren(scoreboard(view, ctx.playerId, 'Final scores'));
-      againButton.disabled = false;
-      againButton.textContent = 'Play again';
+      paintAgainButton();
     },
     tick() {
       // the game is over: no clock

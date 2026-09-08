@@ -51,6 +51,12 @@ secret into a URL would leave it in logs and browser history. The bytes are a pu
 so that route is open to anyone who has the 4-letter code, while the room state behind it still needs
 both headers.
 
+**Join is deliberately unauthenticated.** Anyone who knows the 4-character code can take a seat: no
+password, no invite. That is the trade a party game makes (the code goes in a group chat and everyone
+piles in), bounded by a ~1M code space, a cap of 8 humans per room, and a 2-hour room lifetime. A
+griefer who guesses a live code can fill a room; nobody can read one they have not joined, because
+every other route needs the `playerSecret` that joining handed out.
+
 **What a client sees.** During `caption` a player gets only their own caption back. During `vote`
 every caption arrives as `{ id, text, isOwn, canVote }`, with no author, in an order seeded by
 `code + round` so every screen shows the same shuffle. Authors appear only from `reveal` on.
@@ -81,6 +87,24 @@ in `src/shared/config.ts` if the var is missing.
 
 Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
 (60), `voteSeconds` 10-120 (30), `revealSeconds` 3-60 (10), `botCount` 0-4 (2).
+
+### What the AI players may joke about
+
+The photos are real pictures of real strangers. In a live game on 2026-09-07 a bot captioned a group
+photo "Black people just standing there." That is not a joke about the situation, it is a label on
+the people in the frame, so there are now two defences:
+
+1. **Every** bot caption prompt says it in as many words: joke about the situation, never about
+   anyone's race, ethnicity, skin colour, body, gender, religion, age or disability; no slurs; if
+   there are people in the photo, describe what is happening, not who they are.
+2. The bot's answer is checked (`src/shared/caption-guard.ts`, term list in
+   `src/shared/blocked-terms.json`). A caption that reads as a label on the people gets **one**
+   regeneration with a stricter instruction; if that trips too, the bot sits the round out (its job
+   is recorded `failed`, the reason is logged, and the round carries on without it).
+
+Edit `blocked-terms.json` to tune it: it is short on purpose, since a guard that fires on ordinary
+captions just makes the bots go quiet. **Humans are never filtered.** Their captions are their own,
+and the game does not moderate players.
 
 ## Deploy and smoke test
 
@@ -124,10 +148,17 @@ tests/        vitest specs (room, photo, bots, scheduler) + the bundled goat fix
 same HTTP API the browser uses (join, poll, caption, vote). Node 18+, ESM, zero npm dependencies
 (uses the built-in `fetch`).
 
+The server URL is required: pass `--url`, or export `CAPTION_WARS_URL` once. Without one the script
+exits with `Missing --url (or set CAPTION_WARS_URL)`.
+
 ```
-node agent/play.mjs --room CODE --name "Claude" --brain claude
+# either give it the URL on the command line...
 node agent/play.mjs --url https://caption-wars.example.workers.dev \
   --room CODE --name "Codex" --brain codex --style "deadpan detective"
+
+# ...or export it once and leave the flag off
+export CAPTION_WARS_URL=https://caption-wars.example.workers.dev
+node agent/play.mjs --room CODE --name "Claude" --brain claude
 ```
 
 | Flag | Meaning |
@@ -221,12 +252,16 @@ node --test tests/agent-lib.test.mjs tests/agent-flow.test.mjs
 ```
 
 `tests/agent-lib.test.mjs` unit-tests the sanitizer and vote-number parser in `agent/lib.mjs` (quote
-stripping, one-line collapse, 120-char cap, tolerant "pick a number" parsing). `tests/agent-flow.test.mjs`
-runs the real `runAgent()` main loop from `agent/play.mjs` against a fake in-process HTTP server that
-speaks the room API (join, poll, photo, caption, vote) with the `echo` brain, and asserts: the caption
-and vote land with the correct `x-player-id` / `x-player-secret` headers, the echo brain votes for the
-first votable caption, and a caption/vote phase where the agent is excluded from `roundPlayerIds` sends
-no requests at all. Both files run as part of `npm test`, after the vitest suite.
+stripping, one-line collapse, 120-char cap, tolerant "pick a number" parsing), the exact `claude` and
+`codex` argv each brain builds (the tool-surface lockdown), and the bot content guard.
+`tests/agent-flow.test.mjs` runs the real `runAgent()` main loop from `agent/play.mjs` against an
+in-memory fake `fetch` that speaks the room API (join, poll, photo, caption, vote) with the `echo`
+brain, and asserts: the caption and vote land with the correct `x-player-id` / `x-player-secret`
+headers, the echo brain votes for the first votable caption, a caption/vote phase where the agent is
+excluded from `roundPlayerIds` sends no requests at all, and a vote the server already recorded
+(`yourVote`) is never cast twice. There is **no listening socket**: `runAgent(argv, { fetchImpl })`
+takes the fake directly, so the suite needs no port and no network. Both files run as part of
+`npm test`, after the vitest suite.
 
 ### Design call: what happens after `done`
 

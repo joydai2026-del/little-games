@@ -16,10 +16,21 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
     type: 'button',
     text: 'Start the game',
   });
+  const paintStartButton = (): void => {
+    startButton.disabled = false;
+    startButton.textContent = 'Start the game';
+  };
+
   startButton.addEventListener('click', () => {
     startButton.disabled = true;
     startButton.textContent = 'Starting...';
-    ctx.actions.start();
+    // Put the button back whatever happens. A failed first tap (both photo
+    // hosts down, so the server answers 502) used to leave it disabled reading
+    // "Starting..." for ever: update() only runs when a poll carries new state,
+    // and a quiet lobby answers `unchanged`. The host could not start the game.
+    void ctx.actions.start().then((ok) => {
+      if (!ok) paintStartButton();
+    });
   });
 
   const waitLine = h('p', { class: 'wait-line', text: 'Waiting for the host to start.' });
@@ -44,10 +55,7 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
       const host = isHost(view, ctx.playerId);
       startButton.hidden = !host;
       waitLine.hidden = host;
-      if (host) {
-        startButton.disabled = false;
-        startButton.textContent = 'Start the game';
-      }
+      if (host) paintStartButton();
       const bots = view.players.filter((p) => p.isBot).length;
       const parts = [
         `${view.options.rounds} ${view.options.rounds === 1 ? 'round' : 'rounds'}`,

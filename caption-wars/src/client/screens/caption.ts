@@ -6,6 +6,7 @@
 import { CAPTION_MAX_CHARS } from '../../shared/config';
 import type { RoomView } from '../contract';
 import { h, toast } from '../ui';
+import { captionIsIn } from './lifecycle';
 import {
   countdown,
   isSpectator,
@@ -107,9 +108,11 @@ export function createCaptionScreen(ctx: RoomCtx): PhaseScreen {
       }
 
       // The server is the truth about whether my caption is in: it survives a
-      // reload, where the local `sent` flag does not.
-      const mine = view.captions.find((c) => c.playerId === ctx.playerId || c.isOwn);
-      if (mine) sent = true;
+      // reload, where the local `sent` flag does not. DERIVED, not remembered:
+      // an assignment (rather than "if mine, set true") is what stops a `true`
+      // from round 1 hiding the input box in round 2 on a phone that slept
+      // through the rollover.
+      sent = captionIsIn(view.captions, ctx.playerId);
       writeBox.hidden = sent;
       sentBox.hidden = !sent;
 

@@ -1,5 +1,9 @@
-// Small pure helpers used by agent/play.mjs. No I/O, no dependencies, so they
-// are easy to unit test in isolation (see tests/agent-lib.test.mjs).
+// Small pure helpers used by agent/play.mjs. No npm dependencies and no
+// network, so they are easy to unit test in isolation (see
+// tests/agent-lib.test.mjs). The one read from disk is the shared blocked-terms
+// list at the bottom of this file, loaded once at import time.
+
+import fs from 'node:fs';
 
 /**
  * Strips one layer of surrounding quote marks (straight or curly) a model
@@ -82,4 +86,64 @@ export function parsePickedNumber(raw, count) {
   }
 
   return null;
+}
+
+// --- bot content guard -------------------------------------------------------
+//
+// The mjs twin of src/shared/caption-guard.ts, for the terminal agent (which has
+// no build step and cannot import TypeScript). Both read the SAME
+// src/shared/blocked-terms.json, so the term list cannot drift; only the ~20
+// lines of matching below are written twice, and tests/agent-lib.test.mjs and
+// tests/caption-guard.test.ts assert the same live example against both.
+//
+// Why: a live game on 2026-09-07 produced the bot caption "Black people just
+// standing there." A caption that trips this is regenerated once with a
+// stricter instruction; if it trips again the agent skips the round.
+// HUMANS ARE NOT FILTERED: this only ever sees model output.
+
+export const BLOCKED_TERMS = JSON.parse(
+  fs.readFileSync(new URL('../src/shared/blocked-terms.json', import.meta.url), 'utf8')
+);
+
+/** How far after a descriptor a people-noun still counts ("black young men"). */
+const MAX_GAP = 2;
+
+function normalizeTerm(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** The term that made this read as a label on the people in the photo, or null. */
+export function labellingMatch(text, terms = BLOCKED_TERMS) {
+  const flat = normalizeTerm(text);
+  if (flat.length === 0) return null;
+
+  for (const phrase of terms.phrases) {
+    const needle = normalizeTerm(phrase);
+    if (needle && ` ${flat} `.includes(` ${needle} `)) return phrase;
+  }
+
+  const words = flat.split(' ');
+  const standalone = new Set(terms.standaloneLabels.map(normalizeTerm));
+  for (const word of words) {
+    if (standalone.has(word)) return word;
+  }
+
+  const descriptors = new Set(terms.descriptors.map(normalizeTerm));
+  const peopleNouns = new Set(terms.peopleNouns.map(normalizeTerm));
+  for (let i = 0; i < words.length; i++) {
+    if (!descriptors.has(words[i])) continue;
+    for (let j = i + 1; j <= i + MAX_GAP && j < words.length; j++) {
+      if (peopleNouns.has(words[j])) return `${words[i]} ${words[j]}`;
+    }
+  }
+
+  return null;
+}
+
+/** True when the caption reads as a label on the people in the photo. */
+export function looksLikeLabelling(text, terms = BLOCKED_TERMS) {
+  return labellingMatch(text, terms) !== null;
 }

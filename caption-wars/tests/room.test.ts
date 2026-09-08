@@ -557,3 +557,84 @@ describe('caption validation', () => {
     expect(submitCaption(state, 'host', 'too early', 'c1', T0).error).toBe('not in the caption phase');
   });
 });
+
+describe('dead bots do not hold up the round', () => {
+  /** Marks a bot's job for the live round+phase as `failed`, the way reapBotJobs does. */
+  function withFailedJob(state: RoomState, botId: string, phase: 'caption' | 'vote'): RoomState {
+    return {
+      ...state,
+      botJobs: [
+        ...state.botJobs,
+        {
+          jobId: `${botId}-${phase}-${state.round}`,
+          botId,
+          round: state.round,
+          phase,
+          dueAt: T0,
+          deadline: T0 + 20_000,
+          status: 'failed',
+        },
+      ],
+    };
+  }
+
+  it('ends the caption phase as soon as the humans are done, when both bots gave up', () => {
+    // The Workers AI outage case: both bot jobs end `failed` inside 20s, and JJ
+    // then used to watch "1 of 3 captions in" for the remaining 55 seconds.
+    let s = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    s = withFailedJob(s, 'b1', 'caption');
+    s = withFailedJob(s, 'b2', 'caption');
+
+    s = submitCaption(s, 'host', 'the only caption', 'c-host-1', T0 + 5_000).state;
+
+    // One caption is a void round, so it runs straight through vote to reveal
+    // rather than sitting on a ballot nobody can win.
+    expect(s.phase).toBe('reveal');
+    expect(s.history[0].winnerCaptionIds).toEqual([]);
+  });
+
+  it('still waits for a bot whose job is only pending or running', () => {
+    let s = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    s = {
+      ...s,
+      botJobs: [
+        { jobId: 'j1', botId: 'b1', round: 1, phase: 'caption', dueAt: T0, deadline: T0 + 20_000, status: 'running' },
+        { jobId: 'j2', botId: 'b2', round: 1, phase: 'caption', dueAt: T0, deadline: T0 + 20_000, status: 'pending' },
+      ],
+    };
+
+    s = submitCaption(s, 'host', 'the first caption', 'c-host-1', T0 + 5_000).state;
+
+    expect(s.phase).toBe('caption');
+  });
+
+  it('ends the vote phase when the only outstanding voter is a bot that gave up', () => {
+    let s = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    s = submitCaption(s, 'host', 'host caption', 'c-host-1', T0).state;
+    s = submitCaption(s, 'b1', 'b1 caption', 'c-b1-1', T0).state;
+    s = submitCaption(s, 'b2', 'b2 caption', 'c-b2-1', T0).state;
+    expect(s.phase).toBe('vote');
+
+    s = withFailedJob(s, 'b2', 'vote');
+    s = submitVote(s, 'host', 'c-b1-1', T0 + 1_000).state;
+    expect(s.phase).toBe('vote'); // b1 has not voted yet
+
+    s = submitVote(s, 'b1', 'c-host-1', T0 + 2_000).state;
+    expect(s.phase).toBe('reveal'); // b2 is never coming
+  });
+
+  it('a failed job in another round or phase does not count', () => {
+    let s = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    s = {
+      ...s,
+      botJobs: [
+        { jobId: 'old', botId: 'b1', round: 0, phase: 'caption', dueAt: T0, deadline: T0, status: 'failed' },
+        { jobId: 'other', botId: 'b2', round: 1, phase: 'vote', dueAt: T0, deadline: T0, status: 'failed' },
+      ],
+    };
+
+    s = submitCaption(s, 'host', 'the first caption', 'c-host-1', T0 + 5_000).state;
+
+    expect(s.phase).toBe('caption');
+  });
+});

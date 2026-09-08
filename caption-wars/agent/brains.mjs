@@ -16,15 +16,18 @@
 //     inside a trusted git checkout (this script may be invoked from
 //     anywhere), and `-m gpt-5.5` because the CLI's configured default model
 //     errors on this CLI version (fact confirmed today, not re-derived here).
-//   - grok has no image-attach flag as of `grok --help` today, so the grok
-//     brain is DEGRADED: it captions and votes without ever seeing the photo.
+//   - grok had no image-attach flag when `grok --help` was checked on
+//     2026-09-07, so the grok brain is DEGRADED: it captions and votes without
+//     ever seeing the photo. That is a dated observation about a third-party
+//     CLI, not an invariant: re-check it before relying on it.
 //
 // SECURITY: the vote prompt is built out of other players' caption text, which
 // is untrusted input typed by strangers. So every brain runs with the smallest
 // tool surface that still does its job (verified against the installed CLIs on
 // 2026-09-07):
 //   - vote  : NO tools at all. `claude --tools ""` empties the built-in set;
-//             codex keeps `--sandbox read-only`; grok has no tools by nature.
+//             codex keeps `--sandbox read-only`; grok offered no flag to
+//             restrict its tools when its help was read on 2026-09-07.
 //   - caption: file reading only, confined to the one temp directory holding
 //             this round's photo (`--add-dir <dir> --tools "Read"`).
 // `--restricted` also drops the command-running tools and WebFetch and makes
@@ -114,6 +117,51 @@ function lastNonEmptyParagraph(text) {
   return lines.length ? lines[lines.length - 1] : '';
 }
 
+/**
+ * The exact `claude -p` argv for one brain call. Exported so the shape is
+ * asserted in tests/agent-lib.test.mjs rather than only verified by hand: these
+ * flags are the tool-surface lockdown, and a silent reorder or a dropped
+ * `--tools` would hand a game full of stranger-typed captions a CLI with tools.
+ *
+ * Caption (an imagePath is given): file reading only, scoped to the one temp
+ * folder holding this round's photo. Vote (no imagePath): no tools at all.
+ */
+export function claudeArgs({ prompt, imagePath }) {
+  // The prompt goes FIRST, before any variadic flag: --tools and --add-dir
+  // both swallow following arguments, so a trailing prompt would be read as
+  // another tool name (the same trap codex's -i has).
+  const fullPrompt = imagePath
+    ? `Look at the image file at ${imagePath} using your file-reading tool. ${prompt}`
+    : prompt;
+  const args = ['-p', fullPrompt, '--restricted', '--strict-mcp-config'];
+  if (imagePath) args.push('--add-dir', path.dirname(imagePath), '--tools', 'Read');
+  else args.push('--tools', '');
+  return args;
+}
+
+/** The exact `codex exec` argv. The positional prompt MUST precede `-i`. */
+export function codexArgs({ prompt, imagePath }) {
+  const args = [
+    'exec',
+    '-m',
+    codexModel(),
+    '-c',
+    'mcp_servers={}',
+    '-c',
+    'memories.use_memories=false',
+    '-c',
+    'memories.generate_memories=false',
+    '-c',
+    'suppress_unstable_features_warning=true',
+    '--sandbox',
+    'read-only',
+    '--skip-git-repo-check',
+    prompt, // must come before -i, see file header
+  ];
+  if (imagePath) args.push('-i', imagePath);
+  return args;
+}
+
 export const brains = {
   echo: {
     degraded: false,
@@ -130,21 +178,7 @@ export const brains = {
       'claude -p --restricted: sees the photo through a Read-only tool scoped to the photo folder; votes with every tool switched off',
     async run({ prompt, imagePath }) {
       const bin = resolveBinary('claude', 'CLAUDE_BIN', [`${os.homedir()}/.local/bin/claude`]);
-      // The prompt goes FIRST, before any variadic flag: --tools and --add-dir
-      // both swallow following arguments, so a trailing prompt would be read as
-      // another tool name (the same trap codex's -i has).
-      const fullPrompt = imagePath
-        ? `Look at the image file at ${imagePath} using your file-reading tool. ${prompt}`
-        : prompt;
-      const args = ['-p', fullPrompt, '--restricted', '--strict-mcp-config'];
-      if (imagePath) {
-        // Caption: read the photo, nothing else, and only inside its own folder.
-        args.push('--add-dir', path.dirname(imagePath), '--tools', 'Read');
-      } else {
-        // Vote: the prompt is built from other players' text. No tools at all.
-        args.push('--tools', '');
-      }
-      const r = runBrainCommand(bin, args);
+      const r = runBrainCommand(bin, claudeArgs({ prompt, imagePath }));
       if (!r.ok) return r;
       const text = lastNonEmptyParagraph(r.text) || r.text.trim();
       return { ok: true, text, error: null };
@@ -159,25 +193,7 @@ export const brains = {
       const codexBin = resolveBinary('codex', 'CODEX_BIN', [
         `${os.homedir()}/.npm-global/bin/codex`,
       ]);
-      const args = [
-        'exec',
-        '-m',
-        codexModel(),
-        '-c',
-        'mcp_servers={}',
-        '-c',
-        'memories.use_memories=false',
-        '-c',
-        'memories.generate_memories=false',
-        '-c',
-        'suppress_unstable_features_warning=true',
-        '--sandbox',
-        'read-only',
-        '--skip-git-repo-check',
-        prompt, // must come before -i, see file header
-      ];
-      if (imagePath) args.push('-i', imagePath);
-      const r = runBrainCommand(codexBin, args);
+      const r = runBrainCommand(codexBin, codexArgs({ prompt, imagePath }));
       if (!r.ok) return r;
       const text = lastNonEmptyParagraph(r.text) || r.text.trim();
       return { ok: true, text, error: null };
@@ -187,7 +203,7 @@ export const brains = {
   grok: {
     degraded: true,
     describe: () =>
-      'grok -p: DEGRADED, no image-attach flag on this CLI (checked `grok --help` 2026-09-07), captions and votes BLIND (text only, never sees the photo). No tool surface to restrict.',
+      'grok -p: DEGRADED, no image-attach flag and no tool-restriction flags found when `grok --help` was checked on 2026-09-07, so it captions and votes BLIND (text only, never sees the photo) with whatever tool surface the CLI ships.',
     async run({ prompt }) {
       const bin = resolveBinary('grok', 'GROK_BIN', [`${os.homedir()}/.grok/bin/grok`]);
       const r = runBrainCommand(bin, ['-p', prompt]);

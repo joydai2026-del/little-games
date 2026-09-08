@@ -19,6 +19,7 @@ import {
 import { h, notice, page, toast } from '../ui';
 import { createCaptionScreen } from './caption';
 import type { PhaseScreen, RoomCtx } from './common';
+import { shouldRebuildScreen } from './lifecycle';
 import { createDoneScreen } from './done';
 import { createLobbyScreen } from './lobby';
 import { createRevealScreen } from './reveal';
@@ -51,7 +52,9 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   let identity: Identity | null = readIdentity(code);
   let view: RoomView | null = null;
   let screen: PhaseScreen | null = null;
-  let shownPhase: Phase | null = null;
+  // What is on stage: phase AND round. Round matters, because caption(round 1)
+  // and caption(round 2) are the same phase and a different screen.
+  let shown: { phase: Phase; round: number } | null = null;
   let stopPoll: (() => void) | null = null;
   let ticker = 0;
   let ownCaptionId: string | null = null;
@@ -79,7 +82,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   const paintNameGate = (message?: string): void => {
     stopEverything();
     screen = null;
-    shownPhase = null;
+    shown = null;
 
     const nameInput = h('input', {
       type: 'text',
@@ -157,12 +160,14 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
       window.clearInterval(ticker);
       ticker = 0;
     }
-    if (shownPhase !== view.phase || !screen) {
+    if (shouldRebuildScreen(shown, view, screen !== null)) {
       screen?.destroy();
-      screen = build(view.phase, ctx);
-      shownPhase = view.phase;
-      stage.replaceChildren(screen.el);
+      const fresh = build(view.phase, ctx);
+      screen = fresh;
+      shown = { phase: view.phase, round: view.round };
+      stage.replaceChildren(fresh.el);
     }
+    if (!screen) return;
     screen.update(view);
     screen.tick(msLeft());
   };
@@ -204,8 +209,16 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
     ownCaptionId: () => ownCaptionId,
     actions: {
       start() {
-        if (!identity) return;
-        void startRoom(code, identity).then(absorb).catch(handleActionError);
+        if (!identity) return Promise.resolve(false);
+        return startRoom(code, identity)
+          .then((envelope) => {
+            absorb(envelope);
+            return true;
+          })
+          .catch((error: unknown) => {
+            handleActionError(error);
+            return false;
+          });
       },
       sendCaption(text: string) {
         if (!identity) return Promise.resolve(false);
@@ -251,7 +264,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         const name =
           view?.players.find((p) => p.id === ctx.playerId)?.name || savedName() || 'Player';
         const options = view?.options;
-        void createRoom({
+        return createRoom({
           name,
           options: options
             ? {
@@ -271,8 +284,15 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
             leaving = true;
             stopEverything();
             navigate(`#/room/${reply.code}`);
+            return true;
           })
-          .catch(handleActionError);
+          .catch((error: unknown) => {
+            // At `done` the server sends nextPollMs: 0, so polling has stopped
+            // for good and update() will never run again. If this button does
+            // not put itself back here, nothing else ever will.
+            handleActionError(error);
+            return false;
+          });
       },
     },
   };

@@ -364,3 +364,59 @@ describe('buildBotJobs', () => {
     expect(jobs.map((j) => j.botId)).toEqual(['b1']);
   });
 });
+
+describe('the bot content guard', () => {
+  // The live failure this exists for: on 2026-09-07 a bot looked at a photo of
+  // a group of people and captioned it "Black people just standing there."
+  const LIVE_BAD_CAPTION = 'Black people just standing there.';
+
+  it('tells the model, on every call, what the joke may not be about', async () => {
+    const prompts: string[] = [];
+    const ai: AiLike = {
+      async run(_model, input) {
+        prompts.push((input as { prompt: string }).prompt);
+        return { response: 'A goat with opinions.' };
+      },
+    };
+
+    expect(await runBotJob(job(), models(ai), fakeHost(captionRoom()).host)).toBe('done');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toMatch(/never about anyone in it/i);
+    expect(prompts[0]).toMatch(/race, ethnicity, skin colour/i);
+  });
+
+  it('regenerates ONCE with a stricter instruction, and submits the clean retry', async () => {
+    const prompts: string[] = [];
+    const answers = [LIVE_BAD_CAPTION, 'Everyone waiting for a bus that is never coming.'];
+    const ai: AiLike = {
+      async run(_model, input) {
+        prompts.push((input as { prompt: string }).prompt);
+        return { response: answers[prompts.length - 1] };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('done');
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toMatch(/Your last answer described the PEOPLE/);
+    expect(prompts[1]).toMatch(/Your last answer described the PEOPLE/);
+    expect(applied).toEqual([
+      { kind: 'caption', botId: 'b1', value: 'Everyone waiting for a bus that is never coming.' },
+    ]);
+  });
+
+  it('skips the round when the retry trips it too, and writes nothing', async () => {
+    let calls = 0;
+    const ai: AiLike = {
+      async run() {
+        calls += 1;
+        return { response: LIVE_BAD_CAPTION };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('failed');
+    expect(calls).toBe(2); // one attempt, one stricter retry, then it sits the round out
+    expect(applied).toEqual([]);
+  });
+});

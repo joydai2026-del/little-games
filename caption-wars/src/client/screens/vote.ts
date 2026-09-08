@@ -7,6 +7,7 @@
 
 import type { CaptionView, RoomView } from '../contract';
 import { h } from '../ui';
+import { voteChoice } from './lifecycle';
 import {
   countdown,
   isSpectator,
@@ -114,8 +115,9 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
       // A vote the server already recorded (e.g. after a reload) wins over the
       // local flag. It arrives as `yourVote`, not in `votes`: the live ballot is
       // secret during this phase, so `votes` is empty until the reveal.
-      const recorded = view.yourVote;
-      if (typeof recorded === 'string' && recorded) chosenId = recorded;
+      // DERIVED, not remembered: a null `yourVote` CLEARS the choice, so last
+      // round's pick can never leave every card in this round disabled.
+      if (!sending) chosenId = voteChoice(view.yourVote);
       paintStates(captions);
 
       if (captions.length === 0) {

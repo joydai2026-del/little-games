@@ -27,7 +27,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { brains, BRAIN_NAMES } from './brains.mjs';
-import { sanitizeCaption, parsePickedNumber } from './lib.mjs';
+import { sanitizeCaption, parsePickedNumber, labellingMatch } from './lib.mjs';
 
 /**
  * Read from src/shared/limits.json, the same file src/shared/config.ts imports,
@@ -143,7 +143,7 @@ function authHeaders(ctx) {
 
 async function joinRoom(ctx) {
   log(`Joining room ${ctx.room} at ${ctx.baseUrl} as "${ctx.name}"...`);
-  const res = await fetch(new URL(`/api/rooms/${ctx.room}/join`, ctx.baseUrl), {
+  const res = await ctx.fetch(new URL(`/api/rooms/${ctx.room}/join`, ctx.baseUrl), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: ctx.name }),
@@ -162,7 +162,7 @@ async function joinRoom(ctx) {
 async function pollRoom(ctx, version) {
   const url = new URL(`/api/rooms/${ctx.room}`, ctx.baseUrl);
   url.searchParams.set('v', String(version));
-  const res = await fetch(url, { headers: authHeaders(ctx) });
+  const res = await ctx.fetch(url, { headers: authHeaders(ctx) });
   const body = await safeJson(res);
   if (!res.ok || !body) {
     throw new RoomHttpError(
@@ -174,7 +174,7 @@ async function pollRoom(ctx, version) {
 }
 
 async function downloadPhoto(ctx, round) {
-  const res = await fetch(new URL(`/api/rooms/${ctx.room}/photo/${round}`, ctx.baseUrl), {
+  const res = await ctx.fetch(new URL(`/api/rooms/${ctx.room}/photo/${round}`, ctx.baseUrl), {
     headers: authHeaders(ctx),
   });
   if (!res.ok) throw new Error(`Photo download failed (${res.status})`);
@@ -196,7 +196,7 @@ function cleanupTempFile(file) {
 }
 
 async function submitCaption(ctx, text) {
-  const res = await fetch(new URL(`/api/rooms/${ctx.room}/caption`, ctx.baseUrl), {
+  const res = await ctx.fetch(new URL(`/api/rooms/${ctx.room}/caption`, ctx.baseUrl), {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders(ctx) },
     body: JSON.stringify({ playerId: ctx.playerId, text }),
@@ -207,7 +207,7 @@ async function submitCaption(ctx, text) {
 }
 
 async function submitVote(ctx, captionId) {
-  const res = await fetch(new URL(`/api/rooms/${ctx.room}/vote`, ctx.baseUrl), {
+  const res = await ctx.fetch(new URL(`/api/rooms/${ctx.room}/vote`, ctx.baseUrl), {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders(ctx) },
     body: JSON.stringify({ playerId: ctx.playerId, captionId }),
@@ -217,21 +217,44 @@ async function submitVote(ctx, captionId) {
   return body;
 }
 
-function buildCaptionPrompt(style) {
+/**
+ * The one content rule every caption prompt carries.
+ *
+ * A live game on 2026-09-07 produced the bot caption "Black people just
+ * standing there." The photos are real pictures of real strangers, so the model
+ * has to be told, every single time, that the joke is about the SITUATION and
+ * never about who the people are. Output is checked as well (labellingMatch),
+ * because a prompt is a request, not a guarantee.
+ */
+const CONTENT_RULE =
+  'Joke about the situation in the photo, never about anyone in it. ' +
+  "Never mention or joke about a person's race, ethnicity, skin colour, body, " +
+  'gender, religion, age or disability, and never use a slur. If there are ' +
+  'people in the photo, describe what is HAPPENING, not who they are.';
+
+/** The retry prompt, used once when a first answer tripped the content guard. */
+const STRICTER_RULE =
+  'Your last answer described the PEOPLE in the photo instead of what is going ' +
+  'on. Try again: write about the action, the objects, or the situation only. ' +
+  'Do not name or describe any person or group.';
+
+function buildCaptionPrompt(style, stricter = false) {
   const persona = style ? ` Write in this voice or persona: ${style}.` : '';
   return (
     'You are playing a party game called Caption Wars. You are shown a real photo. ' +
     'Write ONE short, funny caption for it: plain text, no quotes, no hashtags, one line only, ' +
-    `under ${CAPTION_MAX_CHARS} characters.${persona} Reply with ONLY the caption text, nothing else.`
+    `under ${CAPTION_MAX_CHARS} characters.${persona} ${CONTENT_RULE}` +
+    `${stricter ? ` ${STRICTER_RULE}` : ''} Reply with ONLY the caption text, nothing else.`
   );
 }
 
-function buildBlindCaptionPrompt(style) {
+function buildBlindCaptionPrompt(style, stricter = false) {
   const persona = style ? ` Write in this voice or persona: ${style}.` : '';
   return (
     'You are playing a party game called Caption Wars, but you cannot see this round\'s photo. ' +
     'Write ONE short, funny, generic one-line caption that could plausibly fit an awkward or funny ' +
-    `photo: plain text, no quotes, under ${CAPTION_MAX_CHARS} characters.${persona} Reply with ONLY the caption text.`
+    `photo: plain text, no quotes, under ${CAPTION_MAX_CHARS} characters.${persona} ${CONTENT_RULE}` +
+    `${stricter ? ` ${STRICTER_RULE}` : ''} Reply with ONLY the caption text.`
   );
 }
 
@@ -290,15 +313,40 @@ async function actOnCaptionPhase(ctx, state, memory) {
   try {
     imagePath = await downloadPhoto(ctx, state.round);
     log(`Round ${state.round}: photo saved to ${imagePath}. Asking brain "${ctx.brainName}"...`);
-    const prompt = brain.degraded ? buildBlindCaptionPrompt(ctx.style) : buildCaptionPrompt(ctx.style);
-    const result = await brain.run({ kind: 'caption', prompt, imagePath, round: state.round });
-    if (!result.ok) {
-      log(`Round ${state.round}: brain failed to produce a caption (${result.error}). Skipping this round.`);
-      return;
+
+    // Two attempts at most: one normal, and one stricter retry if the first
+    // answer read as a label on the people in the photo rather than a joke
+    // about the situation. Two strikes and this bot sits the round out, which
+    // the room already handles (the round ends on its timer, or when the humans
+    // are done). See the content-guard note in agent/lib.mjs.
+    let caption = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const stricter = attempt > 0;
+      const prompt = brain.degraded
+        ? buildBlindCaptionPrompt(ctx.style, stricter)
+        : buildCaptionPrompt(ctx.style, stricter);
+      const result = await brain.run({ kind: 'caption', prompt, imagePath, round: state.round });
+      if (!result.ok) {
+        log(`Round ${state.round}: brain failed to produce a caption (${result.error}). Skipping this round.`);
+        return;
+      }
+      const candidate = sanitizeCaption(result.text, CAPTION_MAX_CHARS);
+      if (!candidate) {
+        log(`Round ${state.round}: brain answer sanitized to empty text. Skipping this round.`);
+        return;
+      }
+      const flagged = labellingMatch(candidate);
+      if (!flagged) {
+        caption = candidate;
+        break;
+      }
+      log(
+        `Round ${state.round}: caption tripped the content guard on "${flagged}" ` +
+          `(attempt ${attempt + 1} of 2).`
+      );
     }
-    const caption = sanitizeCaption(result.text, CAPTION_MAX_CHARS);
     if (!caption) {
-      log(`Round ${state.round}: brain answer sanitized to empty text. Skipping this round.`);
+      log(`Round ${state.round}: content guard tripped twice. Sitting this round out.`);
       return;
     }
     await submitCaption(ctx, caption);
@@ -313,6 +361,14 @@ async function actOnCaptionPhase(ctx, state, memory) {
 
 async function actOnVotePhase(ctx, state, memory) {
   if (memory.voted.has(state.round)) return;
+  // The server already has a vote from us this round. That happens when a vote
+  // request succeeded but its reply was lost: without this the agent would try
+  // to vote again on every poll until the reveal, and collect a 409 each time.
+  if (typeof state.yourVote === 'string' && state.yourVote.length > 0) {
+    memory.voted.add(state.round);
+    log(`Round ${state.round}: the server already has our vote, nothing to do.`);
+    return;
+  }
   if (!Array.isArray(state.roundPlayerIds) || !state.roundPlayerIds.includes(ctx.playerId)) {
     if (!memory.announcedSkipVote.has(state.round)) {
       log(`Round ${state.round}: not in this round's roster, sending no vote.`);
@@ -413,6 +469,10 @@ async function handlePhase(ctx, state, memory) {
  * Runs one full agent session: join a room, poll it, act on each phase,
  * exit at `done`. Exported so tests can drive it against a fake server.
  *
+ * `options.fetchImpl` replaces `globalThis.fetch` for every request this run
+ * makes. That is the whole seam the flow test uses: no socket, no port, no
+ * network.
+ *
  * Design call on the plan's "wait for a new room if not --once" question:
  * a `done` room has no successor the API exposes ("Play again" makes a
  * brand-new room code the plan does not hand back to a joiner), so there is
@@ -424,7 +484,7 @@ async function handlePhase(ctx, state, memory) {
  * gone or this player is not in it, and MAX_POLL_FAILURES consecutive failures
  * of any other kind end the run with a non-zero exit.
  */
-export async function runAgent(argv) {
+export async function runAgent(argv, options = {}) {
   const args = parseArgs(argv);
   if (args.help) {
     console.log(usage());
@@ -433,6 +493,10 @@ export async function runAgent(argv) {
   validateArgs(args);
 
   const ctx = {
+    // Injected so tests can drive the whole loop against an in-memory fake with
+    // no listening socket (a sandbox that refuses `listen` used to fail the
+    // suite for reasons that had nothing to do with the agent).
+    fetch: options.fetchImpl ?? globalThis.fetch,
     baseUrl: args.url,
     room: args.room.toUpperCase(),
     name: args.name,

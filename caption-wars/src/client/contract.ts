@@ -1,13 +1,12 @@
 // The shapes the CLIENT codes against.
 //
-// `src/shared/types.ts` is the authoritative contract, but it is being
-// updated in parallel with the amended API (see the "Contract changes" block
-// at the bottom of docs/plans/2026-09-07-mvp-plan.md). Everything the client
-// reads is declared here so this module typechecks on its own; the fields are
-// deliberately permissive (optional where the server may or may not send them
-// yet) so a partially-migrated server never crashes a screen.
-//
-// Reconcile with src/shared/types.ts once the worker lands.
+// `src/shared/types.ts` is the authoritative contract (the worker has landed
+// and implements it). Everything the client reads is re-declared here so this
+// module typechecks on its own and so the screens depend on a narrow read-only
+// shape rather than on the server's internal state type. The fields are
+// deliberately permissive (optional where an older deployment may not send them
+// yet) so a client running against a not-quite-current worker degrades instead
+// of crashing a screen.
 
 import type { Phase, RoomOptions } from '../shared/types';
 

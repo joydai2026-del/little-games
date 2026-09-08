@@ -17,6 +17,8 @@ export const HIDDEN_POLL_MS = 10000;
 export const MIN_POLL_MS = 250;
 /** Cadence after a failed request. */
 export const ERROR_POLL_MS = 3000;
+/** Consecutive failures after which the retry cadence drops to the hidden-tab one. */
+export const ERROR_BACKOFF_AFTER = 5;
 /** Fallback when the server sends no cadence at all. */
 export const DEFAULT_POLL_MS = 2000;
 
@@ -66,6 +68,24 @@ export function countdownSeconds(msLeft: number): number {
   return Math.max(0, Math.ceil(msLeft / 1000));
 }
 
+/**
+ * How long to wait after a failed request.
+ *
+ * Two things the plain 3s retry got wrong: it ignored the hidden tab (a phone in
+ * a pocket kept knocking every 3 seconds while every other path had backed off
+ * to 10), and it never gave up ground, so a room that is genuinely unreachable
+ * was hit 1,200 times an hour. After ERROR_BACKOFF_AFTER consecutive failures
+ * the cadence drops to the hidden-tab one. `failures` is 1 on the first failure.
+ */
+export function errorPollDelay(
+  failures: number,
+  hidden: boolean,
+  rand: () => number = Math.random
+): number {
+  const base = failures >= ERROR_BACKOFF_AFTER ? HIDDEN_POLL_MS : ERROR_POLL_MS;
+  return pollDelay(base, hidden, rand);
+}
+
 export interface PollOptions {
   /** The version we already hold, so the server can answer `unchanged`. */
   getVersion: () => number | undefined;
@@ -80,6 +100,7 @@ export function startPolling(options: PollOptions): () => void {
   const hidden = options.isHidden ?? (() => document.hidden);
   let stopped = false;
   let timer = 0;
+  let failures = 0;
 
   const schedule = (ms: number): void => {
     if (stopped || ms <= 0) return;
@@ -91,6 +112,7 @@ export function startPolling(options: PollOptions): () => void {
     try {
       const envelope = await options.fetchOnce(options.getVersion());
       if (stopped) return;
+      failures = 0;
       options.onEnvelope(envelope);
       const delay = pollDelay(envelope.nextPollMs ?? envelope.state?.nextPollMs, hidden());
       if (delay === 0) {
@@ -100,8 +122,9 @@ export function startPolling(options: PollOptions): () => void {
       schedule(delay);
     } catch (error) {
       if (stopped) return;
+      failures += 1;
       options.onError(error instanceof Error ? error : new Error('The room stopped answering.'));
-      schedule(ERROR_POLL_MS);
+      schedule(errorPollDelay(failures, hidden()));
     }
   }
 

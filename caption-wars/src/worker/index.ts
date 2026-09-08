@@ -28,7 +28,12 @@ export type { Env } from './env';
 /** How many room codes to try before giving up (plan: up to 5). */
 const CODE_ATTEMPTS = 5;
 
-const ROOM_CODE_RE = /^[A-Z0-9]{4}$/;
+/**
+ * The real room alphabet from src/shared/ids.ts: letters minus I and O, digits
+ * 2 to 9 (no 0/1, which are the glyphs people mistype). Accepting `[A-Z0-9]`
+ * meant the route accepted codes the system can never produce.
+ */
+const ROOM_CODE_RE = /^[A-HJ-NP-Z2-9]{4}$/;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

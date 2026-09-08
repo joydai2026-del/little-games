@@ -6,11 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_POLL_MS,
+  ERROR_BACKOFF_AFTER,
+  ERROR_POLL_MS,
   HIDDEN_POLL_MS,
   JITTER_RATIO,
   MIN_POLL_MS,
   countdownMs,
   countdownSeconds,
+  errorPollDelay,
   jitter,
   pollDelay,
 } from '../src/client/poll';
@@ -116,8 +119,26 @@ describe('countdownSeconds', () => {
   });
 });
 
+describe('errorPollDelay', () => {
+  const noJitter = () => 0.5;
+
+  it('retries at the error cadence for the first few failures', () => {
+    expect(errorPollDelay(1, false, noJitter)).toBe(ERROR_POLL_MS);
+    expect(errorPollDelay(ERROR_BACKOFF_AFTER - 1, false, noJitter)).toBe(ERROR_POLL_MS);
+  });
+
+  it('falls back to the hidden-tab cadence once failures pile up', () => {
+    expect(errorPollDelay(ERROR_BACKOFF_AFTER, false, noJitter)).toBe(HIDDEN_POLL_MS);
+    expect(errorPollDelay(ERROR_BACKOFF_AFTER + 20, false, noJitter)).toBe(HIDDEN_POLL_MS);
+  });
+
+  it('never retries a hidden tab at the fast cadence', () => {
+    expect(errorPollDelay(1, true, noJitter)).toBe(HIDDEN_POLL_MS);
+  });
+});
+
 describe('room code', () => {
-  it('forces four upper-case letters', () => {
+  it('forces four upper-case characters from the room alphabet (letters and digits 2-9)', () => {
     expect(normalizeCode('abcd')).toBe('ABCD');
     expect(normalizeCode(' a b c d ')).toBe('ABCD');
     expect(normalizeCode('ab3cd9')).toBe('AB3C');

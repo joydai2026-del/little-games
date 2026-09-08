@@ -21,6 +21,7 @@ import type { BotJob, RoomState } from '../shared/types';
 import type { Persona } from '../shared/personas';
 import type { StateStamp } from '../shared/room';
 import { cleanModelCaption } from '../shared/text';
+import { labellingMatch } from '../shared/caption-guard';
 import { CAPTION_MAX_CHARS } from '../shared/config';
 
 /** The slice of the Workers AI binding this module uses. */
@@ -102,13 +103,38 @@ export function textFromModel(result: unknown): string | null {
   return null;
 }
 
-function captionPrompt(persona: Persona): string {
+/**
+ * The content rule every bot caption prompt carries.
+ *
+ * A live game on 2026-09-07 produced the caption "Black people just standing
+ * there." from a photo of a group of strangers. The photos are real pictures of
+ * real people, so the model is told, every call, that the joke is about the
+ * SITUATION. Output is checked as well (see the guard in runBotJob): a prompt
+ * is a request, not a guarantee.
+ */
+const CONTENT_RULE =
+  'Joke about the situation in the photo, never about anyone in it. ' +
+  "Never mention or joke about a person's race, ethnicity, skin colour, body, " +
+  'gender, religion, age or disability, and never use a slur. If there are ' +
+  'people in the photo, describe what is HAPPENING, not who they are.';
+
+/** Added to the ONE retry a bot gets after its first answer tripped the guard. */
+const STRICTER_RULE =
+  'Your last answer described the PEOPLE in the photo instead of what is going on. ' +
+  'Write about the action, the objects or the situation only. Do not name or ' +
+  'describe any person or group.';
+
+export function captionPrompt(persona: Persona, stricter = false): string {
   return [
     'You are playing a party game. Look at this photo and write ONE funny caption for it.',
     persona.style,
+    CONTENT_RULE,
+    stricter ? STRICTER_RULE : '',
     `Rules: one line, at most ${CAPTION_MAX_CHARS} characters, no quotation marks,`,
     'no preamble, no explanation. Reply with the caption text and nothing else.',
-  ].join(' ');
+  ]
+    .filter((part) => part.length > 0)
+    .join(' ');
 }
 
 /**
@@ -126,11 +152,12 @@ function captionPrompt(persona: Persona): string {
 export async function generateBotCaption(
   models: BotModels,
   persona: Persona,
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  stricter = false
 ): Promise<string | null> {
   const image = Array.from(bytes);
   const input = {
-    prompt: captionPrompt(persona),
+    prompt: captionPrompt(persona, stricter),
     image,
     max_tokens: 96,
     temperature: 0.9,
@@ -250,11 +277,33 @@ export async function runBotJob(
         return 'failed';
       }
 
-      const raw = await generateBotCaption(models, persona, bytes);
-      if (raw === null) return 'failed';
+      // Two attempts at most: one normal, then one stricter retry if the first
+      // answer read as a label on the people in the photo instead of a joke
+      // about what is happening. Two strikes and the bot sits the round out,
+      // which is already a first-class outcome everywhere else (the round ends
+      // on its timer, or as soon as the humans are done).
+      let text = '';
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const raw = await generateBotCaption(models, persona, bytes, attempt > 0);
+        if (raw === null) return 'failed';
 
-      const text = cleanModelCaption(raw);
-      if (text.length === 0) return 'failed';
+        const candidate = cleanModelCaption(raw);
+        if (candidate.length === 0) return 'failed';
+
+        const flagged = labellingMatch(candidate);
+        if (!flagged) {
+          text = candidate;
+          break;
+        }
+        console.warn(
+          `bots: caption tripped the content guard on "${flagged}" ` +
+            `(attempt ${attempt + 1} of 2, round ${job.round})`
+        );
+      }
+      if (text.length === 0) {
+        console.warn(`bots: content guard tripped twice in round ${job.round}; bot skips the round`);
+        return 'failed';
+      }
 
       const after = host.stamp();
       if (!sameRound(before, after)) return 'failed';

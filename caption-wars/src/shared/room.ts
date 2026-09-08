@@ -117,14 +117,39 @@ function hasVotableCaption(state: RoomState, playerId: string): boolean {
   return state.captions.some((c) => c.playerId !== playerId);
 }
 
+/**
+ * True when this id is a BOT whose job for the current round and phase has
+ * already ended in `failed`: the model was down, timed out, answered nothing
+ * usable, or was reaped past its deadline. That bot is never going to act, so
+ * counting it as "still to come" makes the humans watch the full timer run down
+ * on a round nobody is playing (up to 55 seconds of dead air with 2 dead bots).
+ * A failed job is terminal: buildBotJobs makes exactly one job per bot per
+ * phase, so there is no second attempt waiting behind it.
+ */
+function botGaveUp(state: RoomState, playerId: string, phase: 'caption' | 'vote'): boolean {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || !player.isBot) return false;
+  return state.botJobs.some(
+    (j) =>
+      j.botId === playerId &&
+      j.round === state.round &&
+      j.phase === phase &&
+      j.status === 'failed'
+  );
+}
+
 export function allEligibleCaptioned(state: RoomState): boolean {
   if (state.roundPlayerIds.length === 0) return false;
-  return state.roundPlayerIds.every((id) => state.captions.some((c) => c.playerId === id));
+  return state.roundPlayerIds.every(
+    (id) => state.captions.some((c) => c.playerId === id) || botGaveUp(state, id, 'caption')
+  );
 }
 
 export function allEligibleVoted(state: RoomState): boolean {
   if (state.roundPlayerIds.length === 0) return false;
-  return state.roundPlayerIds.every((id) => id in state.votes || !hasVotableCaption(state, id));
+  return state.roundPlayerIds.every(
+    (id) => id in state.votes || !hasVotableCaption(state, id) || botGaveUp(state, id, 'vote')
+  );
 }
 
 // --- lifecycle ---------------------------------------------------------------

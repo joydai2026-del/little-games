@@ -9,7 +9,41 @@
 // It typechecks under tsconfig.worker.json (not the client one) because RoomDO
 // refers to Cloudflare's ambient types.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * The ONE piece of I/O in RoomDO, replaced for the whole file so nothing here
+ * can reach the network. `photoControl` decides whether the fetch succeeds and
+ * lets a test run something (a concurrent join) while the DO is awaiting it,
+ * which is the only way to reproduce the two await-window races below.
+ */
+const photoControl = vi.hoisted(() => ({
+  fail: false,
+  calls: 0,
+  delayMs: 0,
+  during: null as null | (() => Promise<unknown>),
+}));
+
+vi.mock('../src/worker/photo', () => ({
+  fetchPhoto: async (_settings: unknown, _code: string, round: number) => {
+    photoControl.calls += 1;
+    if (photoControl.during) {
+      const run = photoControl.during;
+      photoControl.during = null;
+      await run();
+    }
+    if (photoControl.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, photoControl.delayMs));
+    }
+    if (photoControl.fail) throw new Error('both photo hosts are down');
+    return {
+      meta: { round, source: 'picsum', sha256: 'e'.repeat(64), bytes: 4 },
+      bytes: new Uint8Array([1, 2, 3, 4]),
+      contentType: 'image/jpeg',
+    };
+  },
+}));
+
 import { RoomDO } from '../src/worker/room-do';
 import { createRoom, start, submitCaption } from '../src/shared/room';
 import { normalizeOptions } from '../src/shared/config';
@@ -386,5 +420,194 @@ describe('RoomDO captions', () => {
     expect(state.captionCount).toBe(2);
     expect(state.captions).toHaveLength(1);
     expect(state.captions[0].text).toBe('mine');
+  });
+});
+
+// --- the photo path around a round rollover ---------------------------------
+//
+// Everything below drives the mocked `fetchPhoto` above: no network, but the
+// real await windows, which is where all four of these bugs lived.
+
+/** A room sitting in `reveal` at the end of round 1 of 2, past the reveal floor. */
+function revealingRoom(over: Partial<RoomState> = {}): RoomState {
+  const now = Date.now();
+  return seededRoom({
+    phase: 'reveal',
+    round: 1,
+    phaseStartedAt: now - 30_000, // well past REVEAL_MIN_MS, so the host may skip
+    phaseEndsAt: now + 60_000, // not yet due, so only the host's tap moves it
+    ...over,
+  });
+}
+
+function hostPost(path: string, body: unknown = {}): Request {
+  return new Request(`https://room/${path}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-player-id': 'host',
+      'x-player-secret': SECRET,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function resetPhotoControl(over: Partial<typeof photoControl> = {}): void {
+  photoControl.fail = false;
+  photoControl.calls = 0;
+  photoControl.delayMs = 0;
+  photoControl.during = null;
+  Object.assign(photoControl, over);
+}
+
+describe('RoomDO photo retries on the host Next path', () => {
+  it('does not fetch at all while a failed fetch is still backing off', async () => {
+    resetPhotoControl();
+    const { room } = await build(
+      revealingRoom({ photoRetry: { attempts: 1, nextAttemptAt: Date.now() + 30_000 } })
+    );
+
+    const res = await room.fetch(hostPost('next'));
+
+    // The host gets the room as it stands, and the dead host is left alone.
+    // Ten frustrated taps used to be thirty outbound image requests.
+    expect(res.status).toBe(200);
+    expect(photoControl.calls).toBe(0);
+    const body = (await res.json()) as { state: { phase: string } };
+    expect(body.state.phase).toBe('reveal');
+  });
+
+  it('records the failure, so the host path consumes attempts like the timer does', async () => {
+    resetPhotoControl({ fail: true });
+    const { room, storage } = await build(revealingRoom());
+
+    const res = await room.fetch(hostPost('next'));
+
+    expect(res.status).toBe(502);
+    const after = storage.map.get('state') as RoomState;
+    expect(after.photoRetry?.attempts).toBe(1);
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThan(Date.now());
+  });
+
+  it('ends the game with a reason once the attempts run out', async () => {
+    resetPhotoControl({ fail: true });
+    const { room } = await build(
+      revealingRoom({ photoRetry: { attempts: 2, nextAttemptAt: Date.now() - 1 } })
+    );
+
+    const res = await room.fetch(hostPost('next'));
+
+    // Third failure: the room stops honestly rather than letting the host tap
+    // for ever, and the host sees the scoreboard everyone earned.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      state: { phase: string; endedReason?: string; championIds?: string[] };
+    };
+    expect(body.state.phase).toBe('done');
+    expect(body.state.endedReason).toBe('photo-unavailable');
+    expect(Array.isArray(body.state.championIds)).toBe(true);
+  });
+
+  it('measures the retry backoff from AFTER the download, not before it', async () => {
+    // A failing fetch that takes longer than the first 5s backoff used to set
+    // nextAttemptAt in the past, so the alarm re-fired instantly: a hot loop on
+    // a dead host. The clock has to be read after the await.
+    resetPhotoControl({ fail: true, delayMs: 80 });
+    const { room, storage } = await build(revealingRoom());
+    const before = Date.now();
+
+    await room.fetch(hostPost('next'));
+
+    const after = storage.map.get('state') as RoomState;
+    // 5s is the first backoff step. The clock is real, so allow a little slack
+    // on the sleep itself; the point is that it is measured from after it.
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60 + 5_000);
+  });
+});
+
+describe('RoomDO round rollover under concurrency', () => {
+  it('does not lose a player who joins while the photo is downloading (Next)', async () => {
+    const { room } = await build(revealingRoom());
+    resetPhotoControl({
+      during: () =>
+        room.fetch(
+          new Request('https://room/join', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Late' }),
+          })
+        ),
+    });
+
+    const res = await room.fetch(hostPost('next'));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      state: { phase: string; round: number; players: Array<{ name: string }> };
+    };
+    // Computing the transition from the pre-await copy would have erased Late
+    // from `players` while their secret survived in `secrets`: they would
+    // authenticate fine and then be told they are not in the room.
+    expect(body.state.players.map((p) => p.name)).toContain('Late');
+    expect(body.state.round).toBe(2);
+    expect(body.state.phase).toBe('caption');
+  });
+
+  it('opens the new round on the clock AFTER the download, so the timer is full length', async () => {
+    resetPhotoControl({ delayMs: 80 });
+    const seeded = revealingRoom({ phaseEndsAt: Date.now() - 1 });
+    const { room, storage } = await build(seeded);
+    const before = Date.now();
+
+    await room.alarm();
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.phase).toBe('caption');
+    // Using the pre-fetch clock handed players a caption timer already short by
+    // however long the photo took.
+    expect(after.phaseStartedAt).toBeGreaterThanOrEqual(before + 80);
+    expect(after.phaseEndsAt).toBe(after.phaseStartedAt + after.options.captionSeconds * 1000);
+  });
+});
+
+describe('RoomDO start under concurrency', () => {
+  it('still starts when a friend joins during the photo fetch', async () => {
+    const lobby = createRoom(
+      'ABCD',
+      { id: 'host', name: 'JJ' },
+      normalizeOptions({ rounds: 2, botCount: 0 }),
+      [],
+      Date.now()
+    );
+    const { room } = await build(lobby);
+    resetPhotoControl({
+      during: () =>
+        room.fetch(
+          new Request('https://room/join', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Late' }),
+          })
+        ),
+    });
+
+    const res = await room.fetch(hostPost('start'));
+
+    // The old version-exact check turned "a friend joined" into "this game
+    // already started", on the host's very first tap, with no way out.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      state: { phase: string; players: Array<{ name: string }>; roundPlayerIds: string[] };
+    };
+    expect(body.state.phase).toBe('caption');
+    expect(body.state.players.map((p) => p.name)).toContain('Late');
+    expect(body.state.roundPlayerIds).toHaveLength(2);
+  });
+
+  it('still refuses a second start', async () => {
+    resetPhotoControl();
+    const { room } = await build(seededRoom()); // already in `caption`
+    const res = await room.fetch(hostPost('start'));
+    expect(res.status).toBe(409);
   });
 });
