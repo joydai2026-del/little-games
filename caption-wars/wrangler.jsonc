@@ -1,0 +1,83 @@
+{
+  // Note: .gitignore ignores "wrangler.toml" but NOT this file (wrangler.jsonc) on purpose.
+  // This project uses the JSONC config format, so it stays tracked in git.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "caption-wars",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-07",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "RoomDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomDO"] }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  // THE ONLY UNAUTHENTICATED ENDPOINT THAT CREATES ANYTHING is POST /api/rooms
+  // (review round 8, should-fix 4). Each call makes a Durable Object, writes
+  // three storage keys and arms a 2-hour alarm. Free today; billed the day this
+  // account moves to Workers Paid, which is rule 55's own recommendation. The
+  // numbers are POLICY and live here rather than in source: raise `limit` if a
+  // classroom on one NAT hits it. `period` may only be 10 or 60.
+  "ratelimits": [
+    {
+      "name": "ROOM_CREATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
+  "vars": {
+    // PHOTO_TAGS IS THE CONTENT POLICY: it decides what the game PUTS ON THE
+    // SCREEN, which is a different question from what the bots WRITE and the
+    // one five review rounds never asked. Review round 6 pulled 17 real photos
+    // and 3 of the 7 from `party` and `costume` were sexualised close-ups of a
+    // woman, one of them served by a live game, so both tags are gone. Every
+    // candidate that replaced them was AUDITED live before it shipped: 3 real
+    // photos per tag through the worker's own fetch path, each described by the
+    // vision model, keep only tags that are about the tag at least 2 of 3 times
+    // with no people-focused content. `tractor`, `llama` and `penguin` were
+    // audited and REJECTED (llama returned three photos of people and no llama).
+    // Re-run the audit before adding one:
+    //   npm run ai:try -- --audit-tags <tag>,<tag> --per-tag 3
+    // ANYTHING WITH PEOPLE IN IT IS JJ'S CALL, not an agent's.
+    //
+    // ROUND 7 dropped `statue` as the SAFE DEFAULT, not as a verdict. Round 6's
+    // 3-photo audit passed it (carved face, marble torso, golden eagle); round
+    // 7 drew four more and the seventh was a museum bronze of a nude male
+    // figure, full frontal, in a gallery. That is a statue in the Louvre and it
+    // is also a phone being passed around a table, and rule 51 says which of
+    // those two readings an agent is allowed to pick: neither. So the tag is out
+    // until JJ looks at the picture and says. SHE MAY PUT IT BACK: add `statue`
+    // here and to DEFAULT_TAGS in src/worker/env.ts, nothing else changes.
+    "PHOTO_TAGS": "dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake",
+    "PHOTO_WIDTH": "800",
+    "PHOTO_HEIGHT": "600",
+    "PHOTO_MAX_BYTES": "2000000",
+    "PHOTO_TIMEOUT_MS": "8000",
+    "VISION_MAX_BYTES": "1000000",
+    "VISION_MODEL": "@cf/meta/llama-3.2-11b-vision-instruct",
+    "VISION_MODEL_FALLBACK": "@cf/llava-hf/llava-1.5-7b-hf",
+    "TEXT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "BOT_TIMEOUT_MS": "20000",
+    // One caption-judge call (rule 50), clamped again by what is left of the
+    // bot job's deadline. 6000 measured too tight under a four-persona burst.
+    "CAPTION_JUDGE_TIMEOUT_MS": "10000",
+    "REVEAL_MIN_MS": "3000",
+    // The cost ceiling on one POST /api/ai-try request (the prompt tuning rig).
+    // Samples = photos x personas; the model-call cap counts every caption
+    // attempt, every photo description and every relevance judge.
+    "AI_TRY_MAX_SAMPLES": "24",
+    "AI_TRY_MAX_MODEL_CALLS": "160"
+  }
+}

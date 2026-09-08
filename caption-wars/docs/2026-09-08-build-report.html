@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Caption Wars build report, 2026-09-08</title>
+<style>
+:root{--bg:#0f1216;--fg:#e8ecf1;--line:#2a313b;--head:#161b22;--muted:#9aa4b2;--ok:#2ea043;--part:#d29922;--no:#f85149;--nobg:#3d1b1b;--partbg:#3a2e12}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,"PingFang SC","Noto Sans CJK SC",Helvetica,Arial,sans-serif}
+main{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+h1{font-size:28px;margin:0 0 6px}h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.tldr{background:var(--head);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:18px 0}
+.tldr p{margin:6px 0}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:15px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:var(--head)}
+td.req{width:32%}
+.g{background:rgba(46,160,67,.18)}.y{background:var(--partbg)}.r{background:var(--nobg)}.w{}
+.muted{color:var(--muted)}code{background:#1c2129;padding:1px 5px;border-radius:5px;font-size:14px}
+a{color:#79b8ff}ul{padding-left:20px}li{margin:4px 0}
+.ask{border:1px solid var(--part);border-radius:10px;padding:12px 16px;margin:12px 0;background:var(--partbg)}
+</style></head><body><main>
+<h1>Caption Wars is live</h1>
+<p class="muted">Build report for JJ, 2026-09-08. Repo <a href="https://github.com/joydai2026-del/little-games">joydai2026-del/little-games</a> (private), PR #1. Play: <a href="https://caption-wars.joyd-ai-2026.workers.dev">caption-wars.joyd-ai-2026.workers.dev</a></p>
+
+<div class="tldr">
+<p><strong>What you asked for</strong>: one photo drops, everyone captions, vote the winner. Web page, phone-first, public link, humans and AI players mixed, random internet photo.</p>
+<p><strong>What you have</strong>: exactly that, deployed, reviewed nine times by two different models, played live many times over the API, in a phone-sized browser on two tabs, and by Claude from the terminal.</p>
+<p><strong>The one catch today</strong>: the free Cloudflare AI allowance (10,000 "neurons" a day) was spent by the prompt-tuning runs, so until it resets the AI players sit out and the game says so plainly. Humans can play without them. Three decisions below are yours.</p>
+</div>
+
+<h2>How to play</h2>
+<ul>
+<li>Open the link on your phone, type a name, tap <strong>Create a room</strong>. Share the 4-character code or the link.</li>
+<li>Friends open the same link and join with the code. You pick rounds, timers and how many AI players (0 to 4).</li>
+<li>Each round: photo, write a caption, vote for someone else's, see who wrote what and who won. Champion at the end.</li>
+<li>Let Claude play from your Mac: <code>source ~/.config/little-games/env.sh &amp;&amp; node caption-wars/agent/play.mjs --url $CAPTION_WARS_URL --room CODE --name Claude --brain claude</code> (also <code>--brain codex</code>; <code>grok</code> plays without seeing the photo).</li>
+</ul>
+
+<h2>Done tests from the plan</h2>
+<div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Evidence</th></tr></thead><tbody>
+<tr class="g"><td class="req">1. Phone creates a room, second device joins by code, both see the same photo</td><td>Done</td><td>Two-tab phone-viewport browser games on four builds, last one on the final build (room D7U4)</td></tr>
+<tr class="g"><td class="req">2. 1 human + 2 bots play a full game; bot captions are about the photo</td><td>Done (on the round-6 build)</td><td>Live games with bots on every build up to round 6; tuning rig measured 87 to 92% of bot captions on-photo over 24 real photos; sample: "His beard is so long, it's now a second goat."</td></tr>
+<tr class="g"><td class="req">3. Bots never block: with AI failing the round still ends</td><td>Done</td><td>Verified live today with the AI allowance spent: rounds end, the game says the AI players are offline, humans play on</td></tr>
+<tr class="g"><td class="req">4. Terminal agent joins a live room and plays</td><td>Done</td><td>Claude brain won several live games (captions like "Landing gear down, dinner in hand, and absolutely nobody at the nest is impressed.")</td></tr>
+<tr class="g"><td class="req">5. Public URL, tests and typecheck green on the deployed commit</td><td>Done</td><td>320 unit tests + 37 agent tests, typecheck, build, XSS grep, deploy dry-run, all green on commit 2409ebf, which is what is deployed</td></tr>
+</tbody></table></div>
+
+<h2>Three decisions for you</h2>
+<div class="ask"><strong>1. Pay Cloudflare $5 a month for Workers Paid?</strong><br>Free tier: 10,000 neurons a day. A 5-round game with 2 AI players costs roughly 300, so about 30 games a day for free. Tuning the bot prompt (<code>npm run ai:try</code>) costs several games per run and is what spent today's allowance. Paid: the same 10,000 included, then about $0.011 per 1,000 more. Default I set: stay free, never tune on a game day.</div>
+<div class="ask"><strong>2. Which photo tags?</strong><br>Reviewers pulled real photos from the tags and found <code>party</code> and <code>costume</code> return sexualised close-ups (3 of 7), and <code>statue</code> returned a full-frontal museum nude (1 of 7). I removed those three. Current list: dog, cat, funny, awkward, baby, goat, fail, duck, pigeon, squirrel, cake. Anything with people in it is your call; adding a tag back is one line in <code>wrangler.jsonc</code>.</div>
+<div class="ask"><strong>3. Are the AI player names and voices right?</strong><br>Daisy Deadpan, Chaos Chip, Sunny Wholesome, Dramatic Rex, each with a one-line joke style. Rename or rewrite in <code>src/shared/personas.ts</code>.</div>
+
+<h2>What protects your friends</h2>
+<ul>
+<li><strong>Bot captions are checked twice</strong>: a word-list guard for labelling people by race, ethnicity, religion or disability (principle written into the code so it stops being re-argued), then a second model judges "is this a caption or the AI talking about itself". A bad answer is regenerated once, then a fallback model is tried, then the bot sits the round out.</li>
+<li><strong>Human captions are never filtered</strong>; they are shown as plain text (no HTML), so a pasted script is just text.</li>
+<li><strong>Nobody can vote twice, vote for themselves, see authors before the reveal, or act as another player</strong> (per-player secret on every request).</li>
+<li><strong>A phone that sleeps through a round</strong> comes back on the right screen. A stalled photo host or model has a timeout everywhere.</li>
+</ul>
+
+<h2>Where the time went</h2>
+<div class="scroll"><table><thead><tr><th>Step</th><th>Who</th><th>Outcome</th></tr></thead><tbody>
+<tr class="w"><td class="req">Plan + Codex plan review</td><td>Fable, Codex</td><td>12 must-fixes adopted before any code (single DO alarm, durable bot jobs, proxied photo bytes, player secrets)</td></tr>
+<tr class="w"><td class="req">Scaffold, client, worker, terminal agent</td><td>Sonnet, Opus, Opus, Sonnet in parallel</td><td>First live game 2 hours after the plan</td></tr>
+<tr class="w"><td class="req">9 review rounds, each Codex + a fresh Claude reviewer, fixes on Opus</td><td>Codex, Opus</td><td>About 40 must-fixes found and closed; the last two rounds: Codex SHIP, Claude one small item each</td></tr>
+<tr class="w"><td class="req">Live tests after every deploy</td><td>Fable</td><td>API games with bots and Claude agent, phone-viewport two-tab games, worker log tailing</td></tr>
+</tbody></table></div>
+
+<h2>Not verified yet (honest list)</h2>
+<ul>
+<li>The three builds since round 6 have not had a bot write a caption in front of a reviewer, because the AI allowance was spent. First thing after the reset: play one game with bots and read every caption.</li>
+<li>The "AI ran out mid-round" path is proven in unit tests and by reading the deployed code, not observed live (it needs the allowance to run out mid-game).</li>
+<li>No real phone yet, only a phone-sized browser. Keyboard-over-Send on iOS and the clipboard fallback are unproven.</li>
+<li>The room-create rate limit does not stop a concurrent burst. Harmless on the free plan; must be fixed before a paid plan (written in the plan as rule 69).</li>
+</ul>
+
+<h2>Files</h2>
+<ul>
+<li>Plan with every decision and amendment: <code>caption-wars/docs/plans/2026-09-07-mvp-plan.md</code></li>
+<li>Agent rules for the repo: <code>CLAUDE.md</code> (also <code>AGENTS.md</code>)</li>
+<li>Secrets and URL: <code>~/.config/little-games/env.sh</code> (Worker secret <code>SMOKE_TOKEN</code> for the two operator endpoints)</li>
+</ul>
+</main></body></html>
+<!--
+Report review layer (reusable). Usage: paste everything in this file from <style> onward
+directly after the closing </div> of any self-contained HTML report. Zero dependencies;
+it only uses the report's own CSS variables.
+
+What it does: a toolbar appears bottom-right. Turn on "Review mode", then click any table
+row, TL;DR item, list item, or figure. A comment box opens in place. Pick tags
+(Cut / Rewrite / Too harsh / Too soft / Too long / Verify this / Add detail / Reword)
+and optionally type a note. Feedback lives in browser localStorage. "Export feedback"
+copies to the clipboard and downloads a markdown file where every entry carries an anchor
+ID, its section, the matching requirement, and an excerpt of the original text, so each
+note can be applied precisely instead of re-guessed.
+
+Prerequisites: the report must use the CSS variables --bg / --fg / --line / --head / --no /
+--ok / --part / --muted / --nobg / --partbg. Tables must be structured as
+.scroll > table > tbody > tr with the requirement column as td.req. The summary block is .tldr.
+
+First shipped 2026-07-29 (GETTR three-week delivery audit).
+Translated to English 2026-08-06 per JJ's standing rule: English by default everywhere unless
+she explicitly asks for Chinese. Chinese original kept at report-review-layer.html.zh-bak-2026-08-06.
+-->
+
+<style>
+  #rvBar{position:fixed; right:16px; bottom:16px; z-index:9999; display:flex; gap:8px; align-items:center;
+    background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:9px 12px;
+    box-shadow:0 4px 18px rgba(0,0,0,.16); font-size:13px;}
+  #rvBar button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--head);
+    color:var(--fg); border-radius:8px; padding:5px 11px;}
+  #rvBar button.on{background:var(--no); color:#fff; border-color:var(--no);}
+  #rvBar .cnt{color:var(--muted);}
+  body.rv [data-rv]{cursor:pointer;position:relative;}
+  body.rv [data-rv]::before{content:attr(data-rv);position:absolute;z-index:5;
+    top:0;left:0;transform:translate(-4px,-10px);
+    background:var(--part);color:#fff;font:600 11px/1.5 ui-monospace,Menlo,monospace;
+    padding:1px 6px;border-radius:99px;letter-spacing:.02em;pointer-events:none;opacity:.92;}
+  body.rv tr[data-rv]::before{transform:translate(2px,2px);}
+  body.rv figure[data-rv]{outline:1px dashed var(--line);outline-offset:6px;}
+  body.rv [data-rv]:hover{outline:2px solid var(--part); outline-offset:-2px;}
+  [data-rv].has-c{background:var(--partbg) !important;}
+  .rv-box{border:1px solid var(--part); border-radius:9px; padding:11px; margin:8px 0;
+    background:var(--partbg); font-size:13.5px;}
+  .rv-box .tags{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;}
+  .rv-box .tags button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--bg);
+    color:var(--fg); border-radius:12px; padding:3px 10px; font-size:12.5px;}
+  .rv-box .tags button.sel{background:var(--no); color:#fff; border-color:var(--no);}
+  .rv-box textarea{width:100%; box-sizing:border-box; min-height:62px; font:inherit;
+    border:1px solid var(--line); border-radius:7px; padding:7px; background:var(--bg); color:var(--fg);}
+  .rv-box .act{margin-top:7px; display:flex; gap:7px;}
+  .rv-box .act button{font:inherit; cursor:pointer; border:1px solid var(--line); border-radius:7px;
+    padding:5px 12px; background:var(--head); color:var(--fg);}
+  .rv-box .act button.primary{background:var(--ok); color:#fff; border-color:var(--ok);}
+  .rv-note{font-size:12.5px; color:var(--muted); margin-top:6px;}
+  .rv-saved{border-left:3px solid var(--no); padding:7px 10px; margin:7px 0; font-size:13px;
+    background:var(--nobg); border-radius:0 7px 7px 0;}
+  .rv-saved b{color:var(--no);}
+  @media print{#rvBar,.rv-box{display:none !important;}}
+</style>
+
+<script>
+(function(){
+  var VER=(document.querySelector('meta[name="rv-version"]')||{}).content||"v1";
+  var BASE="rv:"+location.pathname.split("/").pop();
+  var KEY=BASE+":"+VER;
+  var OLD=[];
+  try{ for(var n=0;n<localStorage.length;n++){ var k=localStorage.key(n);
+    if(k&&k.indexOf(BASE+":")===0&&k!==KEY){ var c=0;
+      try{ c=Object.keys(JSON.parse(localStorage.getItem(k)||"{}")).length }catch(e){}
+      if(c) OLD.push({key:k,ver:k.slice((BASE+":").length),n:c}); } } }catch(e){}
+  var TAGS=["Cut","Rewrite","Too harsh","Too soft","Too long","Verify this","Add detail","Reword"];
+  var store={};
+  try{ store=JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ store={}; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(store)); }catch(e){} paint(); }
+
+  function sectionOf(el){
+    var n=el; while(n && n!==document.body){
+      var p=n.previousElementSibling;
+      while(p){ if(/^H2$/.test(p.tagName)) return p.textContent.trim(); p=p.previousElementSibling; }
+      n=n.parentElement;
+    }
+    return "(intro)";
+  }
+  function reqOf(tr){
+    var own=tr.querySelector("td.req"); if(own) return own.textContent.trim();
+    var p=tr.previousElementSibling;
+    while(p){ var r=p.querySelector("td.req"); if(r) return r.textContent.trim(); p=p.previousElementSibling; }
+    return "";
+  }
+
+  // Assign a stable anchor to every commentable element.
+  var items=[];
+  document.querySelectorAll(".tldr li").forEach(function(li,i){
+    li.dataset.rv="TLDR-"+(i+1); items.push(li);
+  });
+  document.querySelectorAll("table").forEach(function(tb,ti){
+    var body=tb.tBodies[0]; if(!body) return;
+    [].forEach.call(body.rows,function(tr,ri){
+      tr.dataset.rv="T"+(ti+1)+"-R"+String(ri+1).padStart(2,"0"); items.push(tr);
+    });
+  });
+  document.querySelectorAll(".wrap > ul > li").forEach(function(li,i){
+    li.dataset.rv="L-"+(i+1); items.push(li);
+  });
+  // Figures (added 2026-08-03: JJ needs to comment on each image individually, not just the prose).
+  document.querySelectorAll("figure").forEach(function(fg,i){
+    fg.dataset.rv="IMG-"+String(i+1).padStart(2,"0"); items.push(fg);
+  });
+
+  function excerpt(el){
+    var t;
+    if(el.tagName==="TR"){
+      var tds=el.querySelectorAll("td");
+      t=(tds[tds.length-3]||tds[0]||el).textContent;
+    } else if(el.tagName==="FIGURE"){
+      var cap=el.querySelector("figcaption");
+      t=cap?cap.textContent:(el.querySelector("img")||{}).alt||"";
+    } else { t=el.textContent; }
+    t=t.replace(/\s+/g," ").trim();
+    return t.length>70 ? t.slice(0,70)+"…" : t;
+  }
+
+  function paint(){
+    items.forEach(function(el){
+      var id=el.dataset.rv;
+      el.classList.toggle("has-c", !!store[id]);
+      var old=el.nextElementSibling;
+      if(old && old.classList && (old.classList.contains("rv-saved")||old.classList.contains("rv-saved-row"))) old.remove();
+      if(store[id]){
+        var d=document.createElement(el.tagName==="TR"?"tr":"div");
+        if(el.tagName==="TR"){
+          var td=document.createElement("td");
+          td.colSpan=8; td.style.padding="0";
+          var inner=document.createElement("div");
+          inner.className="rv-saved";
+          inner.innerHTML="<b>Note</b>&nbsp;&nbsp;"+(store[id].tags.length?"["+store[id].tags.join(" / ")+"] ":"")+escapeHtml(store[id].text||"");
+          td.appendChild(inner); d.appendChild(td); d.className="rv-saved-row";
+        } else {
+          d.className="rv-saved";
+          d.innerHTML="<b>Note</b>&nbsp;&nbsp;"+(store[id].tags.length?"["+store[id].tags.join(" / ")+"] ":"")+escapeHtml(store[id].text||"");
+        }
+        el.parentNode.insertBefore(d, el.nextSibling);
+      }
+    });
+    var n=Object.keys(store).length;
+    document.getElementById("rvCnt").textContent = n? (n+(n===1?" note":" notes")) : "No feedback yet";
+  }
+  function escapeHtml(s){ return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+
+  function openBox(el){
+    document.querySelectorAll(".rv-box").forEach(function(b){
+      var host=b.closest("tr")||b; if(host.parentNode) (b.closest("tr.rv-box-row")||b).remove();
+    });
+    var id=el.dataset.rv, cur=store[id]||{tags:[],text:""};
+    var box=document.createElement("div");
+    box.className="rv-box";
+    box.innerHTML='<div class="tags"></div><textarea placeholder="Write your note. Tags on their own are enough, text is optional."></textarea>'+
+      '<div class="act"><button class="primary">Save</button><button class="del">Delete</button><button class="cancel">Cancel</button></div>'+
+      '<div class="rv-note">Anchor '+id+'&nbsp;&nbsp;·&nbsp;&nbsp;'+escapeHtml(excerpt(el))+'</div>';
+    var tagWrap=box.querySelector(".tags"), picked=cur.tags.slice();
+    TAGS.forEach(function(t){
+      var b=document.createElement("button"); b.textContent=t;
+      if(picked.indexOf(t)>=0) b.classList.add("sel");
+      b.onclick=function(){ var i=picked.indexOf(t); if(i>=0){picked.splice(i,1);b.classList.remove("sel");} else {picked.push(t);b.classList.add("sel");} };
+      tagWrap.appendChild(b);
+    });
+    var ta=box.querySelector("textarea"); ta.value=cur.text||"";
+    box.querySelector(".primary").onclick=function(){
+      if(!picked.length && !ta.value.trim()){ remove(); return; }
+      store[id]={tags:picked, text:ta.value.trim(), sec:sectionOf(el), req:reqOf(el.tagName==="TR"?el:el), ex:excerpt(el)};
+      remove(); save();
+    };
+    box.querySelector(".del").onclick=function(){ delete store[id]; remove(); save(); };
+    box.querySelector(".cancel").onclick=remove;
+    function remove(){ var h=box.closest("tr.rv-box-row"); if(h) h.remove(); else box.remove(); }
+
+    if(el.tagName==="TR"){
+      var tr=document.createElement("tr"); tr.className="rv-box-row";
+      var td=document.createElement("td"); td.colSpan=8; td.style.padding="0";
+      td.appendChild(box); tr.appendChild(td);
+      el.parentNode.insertBefore(tr, el.nextSibling);
+    } else {
+      el.parentNode.insertBefore(box, el.nextSibling);
+    }
+    ta.focus();
+  }
+
+  function build(){
+    var rows=Object.keys(store).map(function(id){
+      var c=store[id];
+      return "- **"+id+"**  "+(c.sec||"")+(c.req?" | Row: "+c.req.slice(0,30):"")+"\n"+
+             "  - Original: “"+(c.ex||"")+"”\n"+
+             "  - Note: "+(c.tags.length?"["+c.tags.join(" / ")+"] ":"")+(c.text||"(see tags)");
+    });
+    return "# Report feedback  "+document.title+" (version "+VER+")\n\n"+rows.length+
+           (rows.length===1?" note":" notes")+". Apply each one, then delete or rewrite the content it points at.\n\n"+
+           rows.join("\n\n")+"\n";
+  }
+
+  var bar=document.createElement("div");
+  bar.id="rvBar";
+  var oldN=OLD.reduce(function(a,b){return a+b.n},0);
+  bar.innerHTML='<button id="rvTog">Review mode</button><span class="cnt" id="rvCnt">No feedback yet</span>'+
+    '<button id="rvExp">Export feedback</button><button id="rvClr">Clear</button>'+
+    (oldN? '<span class="cnt" title="Feedback on the previous version is archived and is not carried into this one">| '+oldN+' archived from previous version</span>'+
+           '<button id="rvOldExp">Export previous</button>' : '');
+  document.body.appendChild(bar);
+
+  document.getElementById("rvTog").onclick=function(){
+    document.body.classList.toggle("rv");
+    this.classList.toggle("on", document.body.classList.contains("rv"));
+  };
+  document.getElementById("rvExp").onclick=function(){
+    if(!Object.keys(store).length){ alert("No feedback yet. Turn on Review mode, then click the row you want changed."); return; }
+    var md=build();
+    try{ navigator.clipboard.writeText(md); }catch(e){}
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([md],{type:"text/markdown;charset=utf-8"}));
+    a.download="report-feedback-"+document.title.replace(/\s+/g,"-")+".md";
+    a.click();
+    alert("Copied to the clipboard and downloaded as markdown. Send me the file path or paste the contents and I'll apply each note.");
+  };
+  if(document.getElementById("rvOldExp")) document.getElementById("rvOldExp").onclick=function(){
+    var out=[];
+    OLD.forEach(function(o){ var s={}; try{s=JSON.parse(localStorage.getItem(o.key)||"{}")}catch(e){}
+      out.push("## Version "+o.ver+" ("+o.n+(o.n===1?" note":" notes")+")");
+      Object.keys(s).forEach(function(id){ var c=s[id];
+        out.push("- **"+id+"**  "+(c.sec||"")+"\n  - Original: “"+(c.ex||"")+"”\n  - Note: "+
+          (c.tags&&c.tags.length?"["+c.tags.join(" / ")+"] ":"")+(c.text||"(see tags)")); }); });
+    var md="# Archived feedback from earlier versions  "+document.title+"\n\n"+out.join("\n\n")+"\n";
+    try{ navigator.clipboard.writeText(md) }catch(e){}
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([md],{type:"text/markdown;charset=utf-8"}));
+    a.download="archived-feedback-"+document.title.replace(/\s+/g,"-")+".md"; a.click();
+    alert("Previous version's feedback copied and downloaded. The comment boxes on this version always start empty.");
+  };
+  document.getElementById("rvClr").onclick=function(){
+    if(confirm("Clear all feedback on this report?")){ store={}; save(); }
+  };
+
+  document.addEventListener("click",function(e){
+    if(!document.body.classList.contains("rv")) return;
+    if(e.target.closest("#rvBar")||e.target.closest(".rv-box")) return;
+    var el=e.target.closest("[data-rv]");
+    if(el) { e.preventDefault(); openBox(el); }
+  });
+  window.addEventListener("beforeunload",function(e){
+    if(Object.keys(store).length && !sessionStorage.getItem("rvExported")){ }
+  });
+
+  paint();
+})();
+</script>

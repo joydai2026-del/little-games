@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"],
+  // These two drive worker modules that name Cloudflare's ambient binding types
+  // (Env, DurableObjectNamespace, Ai), so they are typechecked by
+  // tsconfig.worker.json instead, which loads @cloudflare/workers-types.
+  "exclude": ["tests/room-do.test.ts", "tests/ai-try.test.ts", "tests/worker-index.test.ts"]
+}

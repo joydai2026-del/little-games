@@ -1,0 +1,631 @@
+/* Caption Wars. Phone first: one column, big type, thumb-sized targets, dark
+   ground so a bright photo is the thing you look at. No web fonts, no CDN,
+   nothing loaded from anywhere but this worker. On a laptop the same column
+   just sits in the middle. */
+
+:root {
+  --bg: #0f1216;
+  --panel: #19202a;
+  --panel-soft: #212a36;
+  --fg: #f3f6f9;
+  --muted: #a9b6c4;
+  --line: #2e3a48;
+  --brand: #4da3ff;
+  --brand-ink: #04121f;
+  --gold: #f6c445;
+  --gold-ink: #241a00;
+  --warn: #ffcf7a;
+  --bad: #ff8b8b;
+  --ok: #6ee7a8;
+  --radius: 16px;
+  --tap: 56px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+#app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px 96px;
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 0 0 4px;
+}
+
+h2 {
+  font-size: 22px;
+  margin: 0 0 12px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+a {
+  color: var(--brand);
+}
+
+.page-head {
+  margin-bottom: 16px;
+}
+
+.back {
+  display: inline-block;
+  min-height: 48px;
+  padding: 12px 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 17px;
+  margin: 4px 0 0;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 0 0 16px;
+}
+
+.panel-code {
+  text-align: center;
+}
+
+.panel-champion {
+  border-color: var(--gold);
+}
+
+.code-label {
+  color: var(--muted);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0 0 4px;
+}
+
+.code-big {
+  font-size: 64px;
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  margin: 0 0 8px;
+  /* the letter-spacing pushes the block right; pull it back to centre */
+  text-indent: 0.16em;
+}
+
+/* ---------- fields and buttons ---------- */
+
+.field {
+  margin: 0 0 16px;
+}
+
+label {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 20px;
+  color: var(--fg);
+  background: var(--panel-soft);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+}
+
+.input:focus,
+.select:focus,
+.btn:focus-visible,
+.vote-card:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.input-code {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.input-caption {
+  font-size: 20px;
+}
+
+.counter {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 14px 18px;
+  margin: 0 0 12px;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.btn:last-child {
+  margin-bottom: 0;
+}
+
+.btn-big {
+  font-size: 22px;
+  min-height: 60px;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.btn-secondary {
+  background: var(--panel-soft);
+  color: var(--fg);
+  border-color: var(--brand);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--line);
+  font-size: 18px;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.copied {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.copy-failed {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.settings {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.settings summary {
+  min-height: 48px;
+  padding: 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- notices and toasts ---------- */
+
+.notice {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 17px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.notice-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.notice-error {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.toast-host {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.toast {
+  max-width: 616px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 18px;
+  background: var(--panel-soft);
+  border: 2px solid var(--bad);
+  color: var(--fg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.toast-info {
+  border-color: var(--brand);
+}
+
+/* ---------- game furniture ---------- */
+
+.round-line {
+  color: var(--muted);
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+
+.countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.countdown-value {
+  font-size: 44px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.countdown-unit {
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.countdown-urgent .countdown-value {
+  color: var(--warn);
+}
+
+.photo {
+  margin: 0 0 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.photo-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 52vh;
+  object-fit: contain;
+}
+
+.photo-small .photo-img {
+  max-height: 26vh;
+}
+
+.photo-fallback {
+  position: absolute;
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 16px;
+  text-align: center;
+}
+
+.photo-broken .photo-img {
+  display: none;
+}
+
+.photo-broken .photo-fallback {
+  position: static;
+  color: var(--warn);
+}
+
+.sent-line {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.wait-line {
+  color: var(--muted);
+  font-size: 18px;
+  margin: 0;
+}
+
+/* ---------- people ---------- */
+
+.players,
+.scores {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.player,
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 19px;
+}
+
+.player:last-child,
+.score-row:last-child {
+  border-bottom: none;
+}
+
+.player-name,
+.score-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.score-points {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.score-you .score-name {
+  color: var(--brand);
+}
+
+.badge {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge-ai {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.badge-you,
+.badge-host {
+  color: var(--fg);
+}
+
+/* The AI players when the daily allowance is spent (round 7). Deliberately the
+   quietest badge on the row: they are still on the scoreboard, they are just not
+   playing any more. */
+.badge-offline {
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.badge-win {
+  color: var(--gold-ink);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+/* ---------- voting ---------- */
+
+.vote-prompt {
+  margin-bottom: 12px;
+}
+
+.vote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vote-card {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 16px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--fg);
+  background: var(--panel-soft);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.vote-text {
+  display: block;
+  font-size: 21px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.vote-tag {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vote-tag:empty {
+  display: none;
+}
+
+.vote-own {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.vote-chosen {
+  border-color: var(--brand);
+  background: #12283d;
+  opacity: 1;
+}
+
+.vote-chosen .vote-tag {
+  color: var(--brand);
+}
+
+/* ---------- reveal ---------- */
+
+.banner {
+  font-size: 24px;
+  line-height: 1.2;
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.banner-champion {
+  font-size: 28px;
+  color: var(--gold);
+}
+
+.reveal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reveal-card {
+  padding: 14px;
+  background: var(--panel-soft);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+}
+
+.reveal-text {
+  font-size: 21px;
+  line-height: 1.35;
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.reveal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.reveal-author {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.reveal-votes {
+  font-variant-numeric: tabular-nums;
+}
+
+.reveal-winner {
+  border-color: var(--gold);
+  animation: winner-pulse 1.8s ease-in-out 3;
+}
+
+@keyframes winner-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(246, 196, 69, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(246, 196, 69, 0.22);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-winner {
+    animation: none;
+  }
+}
+
+/* ---------- spectator ---------- */
+
+.spectator {
+  border-color: var(--brand);
+}
+
+.spectator-line {
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+/* ---------- roomier on a laptop ---------- */
+
+@media (min-width: 700px) {
+  body {
+    font-size: 19px;
+  }
+  #app {
+    padding-top: 32px;
+  }
+  .code-big {
+    font-size: 76px;
+  }
+}
