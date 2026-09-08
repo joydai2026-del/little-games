@@ -368,6 +368,47 @@ describe('the done screen says what actually happened', () => {
     }
   });
 
+  it('names the champion AND the AI reason when a round was actually played', async () => {
+    // ROUND 9 (Claude should-fix 4). Rule 62 means a game can now end
+    // `ai-unavailable` AFTER a round was scored, so `championIds` is real. The
+    // reason branch used to sit above the champion branch and swallow the
+    // winner entirely: someone who won their one round was never told.
+    const view = {
+      ...baseView,
+      options: { ...baseView.options, rounds: 1 },
+      players: [{ id: 'p1', name: 'JJ', isBot: false, score: 1 }, ...baseView.players.slice(1)],
+      championIds: ['p1'],
+      endedReason: 'ai-unavailable',
+      aiOffline: true,
+    } as unknown as RoomView;
+    const { text, restore } = await render(view);
+    try {
+      expect(text).toContain('Champion: JJ');
+      expect(text).toContain('1 point over 1 round.');
+      // and the reason, in the same sentence the in-game banner uses
+      expect(text).toContain('The AI players are offline today');
+      expect(text).toContain('Add a friend to play.');
+      expect(text).not.toContain('midnight');
+    } finally {
+      restore();
+    }
+  });
+
+  it('still says only "Game over" when the AI wall left nobody with a point', async () => {
+    const view = {
+      ...baseView,
+      championIds: [],
+      endedReason: 'ai-unavailable',
+    } as unknown as RoomView;
+    const { text, restore } = await render(view);
+    try {
+      expect(text).toContain('Game over');
+      expect(text).not.toContain('Champion');
+    } finally {
+      restore();
+    }
+  });
+
   it('marks the AI players offline on the final scoreboard instead of hiding them', async () => {
     const view = { ...baseView, aiOffline: true, championIds: [] } as unknown as RoomView;
     const { text, restore } = await render(view);

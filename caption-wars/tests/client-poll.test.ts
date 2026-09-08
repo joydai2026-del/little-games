@@ -18,9 +18,12 @@ import {
   pollDelay,
 } from '../src/client/poll';
 import {
+  aiOfflineCarryKey,
   identityKey,
+  markAiOfflineCarry,
   normalizeCode,
   readIdentity,
+  takeAiOfflineCarry,
   writeIdentity,
   forgetIdentity,
   type StorageLike,
@@ -189,6 +192,50 @@ describe('identity in sessionStorage', () => {
   it('survives storage being switched off entirely', () => {
     expect(readIdentity('ABCD', null)).toBeNull();
     expect(() => writeIdentity('ABCD', { playerId: 'p', playerSecret: 's' }, null)).not.toThrow();
+  });
+});
+
+describe('the carried "the AI was offline" hint (round 9, Claude should-fix 3)', () => {
+  // `aiOffline` is per-ROOM server state, so Play again out of a game the wall
+  // ended handed the player a brand new lobby with two AI players in it, no
+  // warning, and the same two-second game waiting behind Start. This one bit
+  // travels client-side so the new lobby can say it immediately.
+
+  it('files one entry per room code, upper case, apart from the identity key', () => {
+    expect(aiOfflineCarryKey('abcd')).toBe('cw.aioffline.ABCD');
+    expect(aiOfflineCarryKey('ABCD')).toBe('cw.aioffline.ABCD');
+    expect(aiOfflineCarryKey('ABCD')).not.toBe(identityKey('ABCD'));
+  });
+
+  it('is false for a room nobody marked', () => {
+    expect(takeAiOfflineCarry('ABCD', fakeStorage())).toBe(false);
+  });
+
+  it('marks the NEW room and reads back true there', () => {
+    const storage = fakeStorage();
+    markAiOfflineCarry('wxyz', storage);
+    expect([...storage.map.keys()]).toEqual(['cw.aioffline.WXYZ']);
+    expect(takeAiOfflineCarry('WXYZ', storage)).toBe(true);
+  });
+
+  it('is ONE-SHOT: a reload must not resurrect the warning', () => {
+    const storage = fakeStorage();
+    markAiOfflineCarry('ABCD', storage);
+    expect(takeAiOfflineCarry('ABCD', storage)).toBe(true);
+    expect(takeAiOfflineCarry('ABCD', storage)).toBe(false);
+    expect(storage.map.size).toBe(0);
+  });
+
+  it('does not leak into a different room', () => {
+    const storage = fakeStorage();
+    markAiOfflineCarry('ABCD', storage);
+    expect(takeAiOfflineCarry('WXYZ', storage)).toBe(false);
+    expect(takeAiOfflineCarry('ABCD', storage)).toBe(true);
+  });
+
+  it('survives storage being switched off entirely', () => {
+    expect(() => markAiOfflineCarry('ABCD', null)).not.toThrow();
+    expect(takeAiOfflineCarry('ABCD', null)).toBe(false);
   });
 });
 

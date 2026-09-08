@@ -503,7 +503,9 @@ export async function judgeIsCaption(
  * `verdict` field first (JSON mode usually holds), then falls back to scanning
  * the text, refusal before description before caption: the fallback only fires
  * on a malformed answer, and on a malformed answer the SAFE reading is the one
- * that costs a regeneration rather than the one that ships a refusal.
+ * that costs a regeneration rather than the one that ships a refusal. Round 9
+ * makes ONE exception to that word order, and only when the answer itself rules
+ * the description out; see the comment on `deniesDescription`.
  */
 export function parseJudgeVerdict(result: unknown): CaptionJudgeVerdict {
   const known: CaptionJudgeVerdict[] = ['refusal', 'description', 'caption'];
@@ -553,10 +555,25 @@ export function parseJudgeVerdict(result: unknown): CaptionJudgeVerdict {
   const deniesCaption =
     /\bnon[\s-]?caption\b/.test(flat) ||
     /\bnot[\s-]+(?:[\w-]+[\s-]+){0,3}(?:an?[\s-]+)?caption\b/.test(flat);
-  for (const verdict of known) {
-    if (verdict === 'caption' && deniesCaption) return 'unknown';
-    if (flat.includes(verdict)) return verdict;
-  }
+  // ROUND 9 (Claude nit 2): the same denial window, pointed at `description`.
+  // The old scan walked `known` in order, so `description` was tested before
+  // `caption` and "definitely a caption, not a description" came back
+  // `description` -- an ACCEPTANCE reported as a rejection, costing a pointless
+  // regeneration. (It also made round 8's own written example, "this is not a
+  // description, it is a caption", read `description`.) The plain word order is
+  // kept everywhere else, so the safe readings are all unchanged:
+  //   "a description, not a caption"        -> description (denial is on caption)
+  //   "a description of the caption"        -> description (nothing is denied)
+  //   "not a caption" / "non-caption"       -> unknown (judge fails open)
+  // Only an answer that explicitly rules the DESCRIPTION out lets `caption` jump
+  // the queue.
+  const deniesDescription =
+    /\bnon[\s-]?description\b/.test(flat) ||
+    /\bnot[\s-]+(?:[\w-]+[\s-]+){0,3}(?:an?[\s-]+)?description\b/.test(flat);
+  if (flat.includes('refusal')) return 'refusal';
+  if (flat.includes('caption') && !deniesCaption && deniesDescription) return 'caption';
+  if (flat.includes('description') && !deniesDescription) return 'description';
+  if (flat.includes('caption')) return deniesCaption ? 'unknown' : 'caption';
   return 'unknown';
 }
 

@@ -19,6 +19,7 @@ export interface StorageLike {
 
 const IDENTITY_PREFIX = 'cw.player.';
 const NAME_KEY = 'cw.name.v1';
+const AI_OFFLINE_CARRY_PREFIX = 'cw.aioffline.';
 
 /** sessionStorage key for one room's identity. Code is always upper case. */
 export function identityKey(code: string): string {
@@ -35,6 +36,52 @@ export function normalizeCode(raw: string): string {
   // answer is "check the code". Now the character simply never appears in the
   // box and the join button explains what a code is made of.
   return raw.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, '').slice(0, 4);
+}
+
+/**
+ * "The AI was offline in the room I just came from."
+ *
+ * ROUND 9 (Claude should-fix 3). `aiOffline` is per-room SERVER state, so a
+ * brand new room always comes back `aiOffline: undefined`. Play again from a
+ * game the wall ended therefore handed the player a lobby that looked perfectly
+ * healthy, with two AI players in the list and no warning, and died two seconds
+ * after Start with the same sentence. They were surprised twice by the same
+ * thing.
+ *
+ * This is a CLIENT-SIDE hint, not a claim about the new room: it is written
+ * against the new room's code when Play again leaves a flagged game, read ONCE
+ * when that room's screen opens, and it only paints the lobby. The moment the
+ * game starts, the server's own `aiOffline` is the only thing that speaks, so a
+ * stale hint can never outlive the warning it is standing in for.
+ */
+export function aiOfflineCarryKey(code: string): string {
+  return AI_OFFLINE_CARRY_PREFIX + normalizeCode(code);
+}
+
+/** Leaves the hint for `code`, the room we are about to walk into. */
+export function markAiOfflineCarry(code: string, storage: StorageLike | null = sessionStore()): void {
+  if (!storage) return;
+  try {
+    storage.setItem(aiOfflineCarryKey(code), '1');
+  } catch {
+    // no storage: the player simply does not get the early warning
+  }
+}
+
+/** Reads the hint and clears it. One-shot: a reload must not resurrect it. */
+export function takeAiOfflineCarry(
+  code: string,
+  storage: StorageLike | null = sessionStore()
+): boolean {
+  if (!storage) return false;
+  const key = aiOfflineCarryKey(code);
+  try {
+    const raw = storage.getItem(key);
+    storage.removeItem(key);
+    return raw === '1';
+  } catch {
+    return false;
+  }
 }
 
 function sessionStore(): StorageLike | null {

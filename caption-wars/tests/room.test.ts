@@ -970,6 +970,101 @@ describe('noteAiOffline', () => {
     expect(done.round).toBe(1);
   });
 
+  // -------------------------------------------------------------------------
+  // ROUND 9, must-fix 1: THE SHORTCUT ASKS WHAT THE ROUND CAN STILL REACH.
+  //
+  // Round 8 narrowed the shortcut to `reveal` or "fewer than 2 captions". The
+  // `< 2` half is unreachable in the vote phase, so the only place it fired was
+  // the CAPTION phase, where "fewer than 2 captions, which endVotePhase voids
+  // whatever anyone does" is simply not true: more captions can still arrive.
+  // One bot caption in, wall on the second bot, human still typing.
+  // -------------------------------------------------------------------------
+
+  it('one bot caption in and the human still typing: the caption phase survives', () => {
+    let state = startedWithJobs();
+    state = submitCaption(state, 'b1', 'i regret the hat', 'c-b1', T0 + 2_000).state;
+    expect(state.phase).toBe('caption');
+    expect(state.captions).toHaveLength(1);
+
+    const after = noteAiOffline(state, T0 + 3_000).state;
+
+    // The flag only. The screen is NOT yanked away mid-sentence.
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('caption');
+    expect(after.endedReason).toBeUndefined();
+    expect(after.captions).toHaveLength(1);
+    expect(after.botJobs.map((j) => j.status)).toEqual(['failed', 'failed']);
+
+    // And Send still works, which is the whole point: round 8 answered this
+    // with "not in the caption phase".
+    const sent = submitCaption(after, 'host', 'the goat won again', 'c-h1', T0 + 4_000);
+    expect(sent.error).toBeUndefined();
+    expect(sent.state.captions).toHaveLength(2);
+  });
+
+  it('...and if the human never sends, the round voids HONESTLY and the game ends once', () => {
+    let state = startedWithJobs();
+    state = submitCaption(state, 'b1', 'i regret the hat', 'c-b1', T0 + 2_000).state;
+    const after = noteAiOffline(state, T0 + 3_000).state;
+    expect(after.phase).toBe('caption');
+
+    // The human sits out the REST of the caption timer they were already in
+    // (nothing cuts it short, because a caption can still legitimately arrive),
+    // and then the round settles on its own.
+    expect(advanceIfDue(after, T0 + 3_100).state.phase).toBe('caption');
+    const settled = advanceIfDue(after, T0 + 61_000).state;
+    expect(settled.phase).toBe('reveal');
+    expect(settled.history).toHaveLength(1);
+    // The human wrote nothing, so the honest reason is theirs, not the bots'.
+    expect(settled.history[0].voidReason).toBe('no-captions');
+    expect(settled.players.every((p) => p.score === 0)).toBe(true);
+
+    // Then the rollover guard ends it, once, with the honest reason.
+    const done = advance(settled, 'timer', T0 + 120_000, PHOTO_2).state;
+    expect(done.phase).toBe('done');
+    expect(done.endedReason).toBe('ai-unavailable');
+    expect(done.championIds).toEqual([]);
+    // Ending twice is the bug this replaced; a second advance changes nothing.
+    expect(advance(done, 'timer', T0 + 180_000).state.phase).toBe('done');
+  });
+
+  it('zero captions and nobody left to write one: today’s shortcut is kept exactly', () => {
+    // The shape a spent allowance actually produces: the FIRST bot job fails, so
+    // no caption exists and the lone human has not typed. Nothing can reach two
+    // captions, so ending now is right and round 8’s behaviour stands.
+    const state = startedWithJobs();
+    expect(state.captions).toHaveLength(0);
+    const after = noteAiOffline(state, T0 + 5_000).state;
+    expect(after.phase).toBe('done');
+    expect(after.endedReason).toBe('ai-unavailable');
+  });
+
+  it('the lone human’s own caption with no bot answers still ends the round', () => {
+    // 1 caption, but it is the only human’s, so `humansYetToCaption` is 0 and
+    // the round can never reach two. This is the live `RNSK` shape.
+    let state = startedWithJobs();
+    state = submitCaption(state, 'host', 'alone with a goat', 'c-h1', T0 + 1_000).state;
+    expect(state.phase).toBe('caption');
+    const after = noteAiOffline(state, T0 + 2_000).state;
+    expect(after.phase).toBe('done');
+    expect(after.endedReason).toBe('ai-unavailable');
+  });
+
+  it('two humans, one bot caption, neither human typed: unchanged, the room plays on', () => {
+    let state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    state = submitCaption(state, 'b1', 'one', 'c-b1', T0 + 1_000).state;
+    const after = noteAiOffline(state, T0 + 2_000).state;
+    expect(after.phase).toBe('caption');
+    expect(after.endedReason).toBeUndefined();
+  });
+
+  it('two humans, zero captions: unchanged, the room plays on', () => {
+    const state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    const after = noteAiOffline(state, T0 + 2_000).state;
+    expect(after.phase).toBe('caption');
+    expect(after.endedReason).toBeUndefined();
+  });
+
   it('the rollover guard does NOT fire on a healthy one-phone room', () => {
     // A solo room with botCount 0 is a legal (if pointless) game and has nothing
     // to do with the AI. It must not be told the AI players are unavailable.

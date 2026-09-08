@@ -709,17 +709,45 @@ export function noteAiOffline(state: RoomState, now: number): RoomResult {
   // a result anyway:
   //   - `reveal`: the round is already scored and in `history`, there is nothing
   //     left to finish, so ending now is exactly rule 55's case;
-  //   - fewer than 2 captions: `endVotePhase` calls that void whatever anyone
-  //     does, which is the shape round 7 actually observed live and the shape
-  //     rule 55's stated reason ("a lone human should not walk through the rest
-  //     of the current round with nothing to vote on") describes.
+  //   - the round can no longer REACH 2 captions (round 9 refines this from a
+  //     raw count; see below), so `endVotePhase` voids it whatever anyone does,
+  //     which is the shape round 7 actually observed live and the shape rule
+  //     55's stated reason ("a lone human should not walk through the rest of
+  //     the current round with nothing to vote on") describes.
   // With 2+ captions we take the flag only. `botGaveUp` already counts an
   // offline bot as having acted in EVERY phase, so `endCaptionPhase` /
   // `endVotePhase` close the round normally the moment the human acts or the
   // timer passes: scored, revealed, in the book. The game then ends at the
   // rollover, in `advance`, which is where the roster guard now lives.
+  //
+  // ROUND 9 (must-fix 1): the caption count is asked as a QUESTION ABOUT THE
+  // FUTURE, not a snapshot. `state.captions.length < 2` is unreachable in the
+  // vote phase (`endCaptionPhase` calls `endVotePhase` the instant it opens the
+  // ballot, and `endVotePhase` voids on fewer than 2 captions and moves to
+  // `reveal`), so the only phase it ever fired in was `caption` -- the one phase
+  // where "fewer than 2 captions, which `endVotePhase` voids whatever anyone
+  // does" is NOT true, because more captions can still arrive. One bot caption
+  // in, wall on the second bot's call, human still typing: round 8 yanked the
+  // caption screen away mid-sentence, refused their Send with "not in the
+  // caption phase", threw the bot's caption away and printed the very
+  // "nothing happened" champion screen rule 62 exists to kill.
+  //
+  // So the shortcut now counts the captions this round can still GET: the ones
+  // already in plus every non-bot player in `roundPlayerIds` who has not
+  // captioned yet. With 0 captions and nobody left to write one, the round is
+  // genuinely dead and today's behaviour is kept exactly. With 1 caption and a
+  // human still typing, we take the flag only: they finish the round they were
+  // already sitting in; if the second caption never comes the round voids with
+  // an honest `voidReason` and lands in the book, and the game ends at the
+  // rollover instead of pretending the round never happened.
   const rosterAfterDrop = state.players.filter((p) => !p.isBot);
-  const roundCannotFinish = state.phase === 'reveal' || state.captions.length < 2;
+  const humansYetToCaption = state.roundPlayerIds.filter(
+    (id) =>
+      !state.players.find((p) => p.id === id)?.isBot &&
+      !state.captions.some((c) => c.playerId === id)
+  ).length;
+  const roundCannotFinish =
+    state.phase === 'reveal' || state.captions.length + humansYetToCaption < 2;
   if (rosterAfterDrop.length < 2 && roundCannotFinish) {
     return {
       state: bump(

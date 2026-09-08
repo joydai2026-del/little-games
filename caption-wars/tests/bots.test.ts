@@ -1018,15 +1018,40 @@ describe('parseJudgeVerdict on a malformed answer', () => {
     expect(parseJudgeVerdict('not necessarily a caption')).toBe('unknown');
   });
 
+  it('reads "definitely a caption, not a description" as caption (round 9, nit 2)', () => {
+    // The scan walked refusal, description, caption in that order, so an answer
+    // that ACCEPTS the caption and rules the description out came back
+    // `description`: a pass reported as a rejection, costing a regeneration
+    // nobody needed. Only an explicit denial of the DESCRIPTION lets `caption`
+    // jump the queue.
+    expect(parseJudgeVerdict('This is definitely a caption, not a description.')).toBe('caption');
+    expect(parseJudgeVerdict('a caption, not-a-description')).toBe('caption');
+    expect(parseJudgeVerdict({ response: 'this is not a description, it is a caption' })).toBe(
+      'caption'
+    );
+  });
+
+  it('keeps every safe reading it already had', () => {
+    // The denial is on the CAPTION here, so the description reading stands.
+    expect(parseJudgeVerdict('a description, not a caption')).toBe('description');
+    // Nothing is denied, so the plain word order is untouched.
+    expect(parseJudgeVerdict('a description of the caption')).toBe('description');
+    expect(parseJudgeVerdict('description')).toBe('description');
+    // A denial with nothing else to fall back on is still the judge failing open.
+    expect(parseJudgeVerdict('not a description and not a caption')).toBe('unknown');
+    // Refusal still wins outright.
+    expect(parseJudgeVerdict('a refusal, not a description')).toBe('refusal');
+  });
+
   it('still reads a plain verdict word, and prefers refusal over the others', () => {
     expect(parseJudgeVerdict('caption')).toBe('caption');
     expect(parseJudgeVerdict('I would call this a refusal, not a caption')).toBe('refusal');
     expect(parseJudgeVerdict({ verdict: 'caption' })).toBe('caption');
     // The denial window cannot cross a comma or a full stop, so an answer that
     // says what it is NOT and then what it IS is still read as an acceptance.
-    // (The scan order is refusal, description, caption, so an answer containing
-    // either of the other two words reads as that one, which is unchanged and is
-    // the safe direction: it costs a regeneration.)
+    // (The scan order is refusal, then description, then caption, so an answer
+    // containing either of the other two words reads as that one, which is the
+    // safe direction: it costs a regeneration.)
     expect(parseJudgeVerdict('this is not an insult, it is a caption')).toBe('caption');
     // And the structured field always wins over any of this.
     expect(parseJudgeVerdict({ verdict: 'caption', note: 'not a caption-like refusal' })).toBe(

@@ -11,9 +11,11 @@ import { navigate } from '../router';
 import {
   clockOffsetMs,
   forgetIdentity,
+  markAiOfflineCarry,
   readIdentity,
   saveName,
   savedName,
+  takeAiOfflineCarry,
   writeIdentity,
 } from '../state';
 import { h, notice, page, toast } from '../ui';
@@ -58,6 +60,10 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
 
   let identity: Identity | null = readIdentity(code);
   let view: RoomView | null = null;
+  // ROUND 9 (Claude should-fix 3): did Play again bring us here out of a game
+  // the AI wall ended? Read once, cleared on read, and it only speaks in the
+  // lobby (see paintAiBanner).
+  const carriedAiOffline = takeAiOfflineCarry(code);
   let screen: PhaseScreen | null = null;
   // What is on stage: phase AND round. Round matters, because caption(round 1)
   // and caption(round 2) are the same phase and a different screen.
@@ -161,7 +167,12 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   // ---------- state in, screen out ----------
 
   const paintAiBanner = (): void => {
-    const offline = view?.aiOffline === true;
+    // The server's own flag always wins. The carried hint (should-fix 3) only
+    // covers the gap the server cannot: a brand new room's lobby, before a
+    // single model call has been made in it. Once the game starts, only
+    // `view.aiOffline` speaks, so the hint cannot outlive its usefulness or
+    // shout "offline" over a room whose bots came back.
+    const offline = view?.aiOffline === true || (carriedAiOffline && view?.phase === 'lobby');
     if (!offline) {
       if (aiBanner.firstChild) aiBanner.replaceChildren();
       return;
@@ -302,6 +313,10 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
               playerId: reply.playerId,
               playerSecret: reply.playerSecret,
             });
+            // Round 9, should-fix 3: carry the warning into the new lobby. The
+            // bot count comes across too, so without this the player gets the
+            // same two-second game with no hint it is coming.
+            if (view?.aiOffline === true) markAiOfflineCarry(reply.code);
             leaving = true;
             stopEverything();
             navigate(`#/room/${reply.code}`);

@@ -63,6 +63,18 @@ function parseArgs(argv) {
         die(`unknown argument ${argv[i]}`);
     }
   }
+  // ROUND 9 (Claude nit 1): `--samples 0` and `--samples abc` (which is NaN)
+  // never entered the sampling loop, so `all` was empty, no rate could fail,
+  // and the script printed "ai:try OK - within the acceptance bar in the plan"
+  // and exited 0 on ZERO DATA. Rule 58 makes this the deploy gate for the
+  // prompt; a gate that passes on no measurement is the one failure mode it
+  // cannot have.
+  if (!Number.isInteger(args.samples) || args.samples < 1) {
+    die(`--samples must be a whole number of at least 1 (got ${args.samples})`);
+  }
+  if (!Number.isInteger(args.photosPerCall) || args.photosPerCall < 1) {
+    die('--photos-per-call must be a whole number of at least 1');
+  }
   return args;
 }
 
