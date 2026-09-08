@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { brains, BRAIN_NAMES } from './brains.mjs';
 import { sanitizeCaption, parsePickedNumber } from './lib.mjs';
 
@@ -436,7 +437,9 @@ export async function runAgent(argv) {
 function isMainModule() {
   if (!process.argv[1]) return false;
   try {
-    return import.meta.url === `file://${path.resolve(process.argv[1])}`;
+    // pathToFileURL percent-encodes spaces the same way import.meta.url does
+    // (this repo lives under a folder with a space in its name).
+    return import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
   } catch {
     return false;
   }
