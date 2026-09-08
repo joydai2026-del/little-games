@@ -26,6 +26,7 @@ import type { StateStamp } from '../shared/room';
 import { cleanModelCaption } from '../shared/text';
 import { labellingMatch, refusalMatch, stripCaptionPrefix } from '../shared/caption-guard';
 import { CAPTION_JUDGE_TIMEOUT_MS, CAPTION_MAX_CHARS } from '../shared/config';
+import { ModelProviderError } from './openai';
 
 /** The slice of the Workers AI binding this module uses. */
 export interface AiLike {
@@ -132,8 +133,26 @@ export interface BotModels {
  * sit every bot out of a game that was about to be fine. A wall misread as a
  * hiccup costs one voided round; a hiccup misread as a wall costs the rest of
  * the game, so the asymmetry points at being strict here.
+ *
+ * TWO CLASSIFIERS, never one (review round 1 on the OpenAI branch, Codex 3).
+ * The OpenAI provider throws a `ModelProviderError` carrying the parsed
+ * `error.code`, so it is classified on that CODE and its TEXT is never read:
+ * `insufficient_quota` (the wallet is empty) and `invalid_api_key` (the key is
+ * dead) are walls, everything else is a hiccup. Not `rate_limit_exceeded` and
+ * not the 429 status, which it shares with the quota code. Reading the text
+ * instead is what let `openai 502: upstream unavailable, request id 4006` take
+ * every bot in the room offline.
+ *
+ * Workers AI throws a plain Error or a string, so it keeps the marker list, with
+ * the numeric one anchored to a CODE POSITION: the live wall announces itself as
+ * `4006: ...`, on its own or behind the binding's class-name prefix
+ * (`InferenceUpstreamError: 4006: ...`), while a `4006` sitting mid-sentence
+ * with no colon after it is somebody else's request id.
  */
 export function isAiOfflineError(err: unknown): boolean {
+  if (err instanceof ModelProviderError) {
+    return err.code === 'insufficient_quota' || err.code === 'invalid_api_key';
+  }
   const raw =
     err instanceof Error
       ? err.message
@@ -143,14 +162,22 @@ export function isAiOfflineError(err: unknown): boolean {
           ? (err as { message: string }).message
           : String(err ?? '');
   const flat = raw.toLowerCase();
-  return flat.includes('4006') || flat.includes('daily free allocation');
+  // The code is matched with its COLON, at the start of the message or after a
+  // non-word character (review round 3, must-fix 2). A start-only anchor missed
+  // `InferenceUpstreamError: 4006: ...`, and the binding really does prefix some
+  // codes with a class name: this suite's own hiccup list carries
+  // `InferenceUpstreamError: 3040`. The colon is what keeps it narrow, because
+  // `... request id 4006` (somebody else's id) has no colon after the number.
+  return /(^|\W)4006:/.test(flat) || flat.includes('daily free allocation');
 }
 
 /** One place that classifies, logs and reports an account-level error. */
 function noteIfAiOffline(models: BotModels, err: unknown): void {
   if (!isAiOfflineError(err)) return;
   const message = err instanceof Error ? err.message : String(err ?? '');
-  console.warn('bots: Workers AI is out of its daily free allocation; AI players go offline');
+  // Provider-neutral wording: the same account-level wall now arrives either as
+  // Workers AI's 4006 or as an OpenAI quota / key error.
+  console.warn(`bots: the model account is out (${message}); AI players go offline`);
   models.onAiOffline?.(message);
 }
 
@@ -243,7 +270,7 @@ const CONTENT_RULE = 'Joke about the situation, not about who the people are.';
  * it when the wording changes, and re-run `npm run ai:try` against the numbers
  * in the plan's acceptance bar before shipping the change.
  */
-export const CAPTION_PROMPT_VERSION = 'p10';
+export const CAPTION_PROMPT_VERSION = 'p12';
 
 /**
  * The word budget in the prompt, and the token budget on the call.
@@ -349,7 +376,11 @@ export function captionPrompt(
     // out loud what disqualifies an answer.
     'First find the single funniest thing you can SEE in this photo: what someone or something',
     'is doing, an expression, an object that should not be there. Write the caption about THAT,',
-    'and NAME it, so anyone reading the caption can tell which photo it belongs to.',
+    // p12: p8 said "NAME it" and gpt-4.1-mini (the first OpenAI run, 2026-09-08)
+    // read that as "give it a heading": 10 of 16 rig captions arrived as
+    // "Cat Burrito: <joke>" or "<joke> - Grillmaster". So the naming happens
+    // inside the sentence, and the format line rules the heading out by name.
+    'and say it inside the caption itself, so anyone reading it can tell which photo it belongs to.',
     'A joke that would fit any other photo does not count.',
     // The examples below are about OTHER photos, and p9 measured four bots
     // handing one of them back verbatim when the photo happened to match its
@@ -361,6 +392,7 @@ export function captionPrompt(
       : '',
     `Reply with the caption only: one line, at most ${CAPTION_MAX_WORDS} words and`,
     `under ${CAPTION_MAX_CHARS} characters, no quotes, no explanation. Short beats clever.`,
+    'No title, no heading, no label before or after it: the line starts with the joke itself.',
   ]
     .filter((part) => part.length > 0)
     .join(' ');
@@ -652,6 +684,10 @@ export async function generateBotCaption(
 ): Promise<string | null> {
   const image = Array.from(bytes);
   const prompt = captionPrompt(persona, mode);
+  // No `!==` dedupe on purpose (Claude review 6, answered): when the two ids
+  // match this is one plain retry of the same model after a failure, which is
+  // exactly what composeBotCaption's last rung now does. The smoke JSON names
+  // the provider that answered, so nothing here is misreported.
   for (const model of [models.visionModel, models.visionModelFallback]) {
     if (!model) continue;
     const text = await runVisionOnce(models, model, prompt, image);
@@ -661,13 +697,25 @@ export async function generateBotCaption(
 }
 
 /**
+ * The ceiling on vision-model calls when the provider has ONE vision model
+ * (OpenAI: `visionModelFallback` IS `visionModel`). Two, whatever the verdicts,
+ * because every call past the second is paid and is the same model being asked
+ * about the same photo for the third time.
+ */
+const SAME_ID_MAX_CALLS = 2;
+
+/**
  * The real caption pipeline: up to three attempts, and every one of them is
  * recorded so POST /api/ai-try can show what the models actually said.
  *
  *   1. the primary vision model, normal prompt
  *   2. the primary vision model again, with a LIGHTER prompt after a refusal or
  *      a calm correction after a guard trip (this is the "one regeneration")
- *   3. one attempt on VISION_MODEL_FALLBACK
+ *   3. one attempt on VISION_MODEL_FALLBACK, or, when that id IS the primary
+ *      (OpenAI has one vision model), one plain retry of the primary, taken only
+ *      when the ladder has been told nothing at all so far AND only while it is
+ *      still under SAME_ID_MAX_CALLS: on that provider the ladder makes at most
+ *      TWO model calls in total, whatever the verdicts
  *   then the bot sits the round out.
  *
  * A model that errors or says nothing (`raw === null`) skips step 2, because
@@ -704,6 +752,16 @@ export async function composeBotCaption(
   const attempts: CaptionAttempt[] = [];
   const now = opts.now ?? Date.now;
   const useJudge = opts.judge !== false;
+  /**
+   * Vision-model calls this ladder has actually dispatched. It is the HARD stop
+   * on a single-vision-model provider (Codex review round 2, must-fix 3): the
+   * old guard read `last.verdict === 'empty'`, which describes the LAST rung and
+   * says nothing about how many rungs ran, so refusal then error then retry made
+   * three paid calls on a ladder documented as two. A count cannot be talked
+   * round by a verdict. Rungs that never reach the model (the deadline is spent)
+   * do not increment it, because they cost nothing.
+   */
+  let calls = 0;
 
   /** What this rung is allowed to take, or null when the budget is already spent. */
   const budgetFor = (): number | null => {
@@ -736,6 +794,15 @@ export async function composeBotCaption(
       attempts.push(attempt);
       return attempt;
     }
+    // COUNTED AFTER THE FACT, NOT BEFORE (review round 3, should-fix 4). The
+    // comment on `calls` says a rung that never reaches the model does not
+    // increment it. That was true of the deadline path (it returns above) and
+    // false of the call-budget path: `runVisionOnce` refuses INSIDE
+    // `budget.reserve()`, which used to happen after the counter had already
+    // gone up, so a refused rung ate one of the two same-id calls it never made.
+    // A refusal is the one thing `reserve()` records, so comparing the refusal
+    // count across the call says whether this rung reached the model.
+    const refusedBefore = opts.callBudget?.refused() ?? 0;
     const raw = await runVisionOnce(
       models,
       model,
@@ -744,6 +811,7 @@ export async function composeBotCaption(
       budget,
       opts.callBudget
     );
+    if ((opts.callBudget?.refused() ?? 0) === refusedBefore) calls += 1;
     let judged = judgeCaption(raw);
 
     // THE JUDGE (round 6). It only ever runs on an answer the fast-path regex
@@ -803,7 +871,25 @@ export async function composeBotCaption(
     if (last.verdict === 'ok') return { attempts, final: last.text };
   }
 
-  if (models.visionModelFallback && models.visionModelFallback !== models.visionModel) {
+  // A PROVIDER WITH ONE VISION MODEL STILL GETS A SECOND CHANCE (Claude review
+  // 1). On OpenAI `visionModelFallback` IS `visionModel` (env.ts modelProvider),
+  // and an errored rung reports verdict `empty`, so the ladder took both exits
+  // at once and collapsed to a single call: one transient 429 benched the bot
+  // for the round, silently, because a rate limit is deliberately not a wall.
+  // The retry is deliberately narrow: only when nothing came back at all, with
+  // the plain prompt (a refusal or a labelling trip is a CONTENT verdict the
+  // same model would reach again), and only while this ladder is still under
+  // SAME_ID_MAX_CALLS. The call count is what makes "two rungs" true rather than
+  // merely intended: see `calls` above for the three-call sequence it closes.
+  if (
+    models.visionModelFallback &&
+    models.visionModelFallback === models.visionModel &&
+    last.verdict === 'empty' &&
+    calls < SAME_ID_MAX_CALLS
+  ) {
+    const retry = await tryOnce(models.visionModel, 'first', null);
+    if (retry.verdict === 'ok') return { attempts, final: retry.text };
+  } else if (models.visionModelFallback && models.visionModelFallback !== models.visionModel) {
     const mode: CaptionPromptMode = last.verdict === 'labelling' ? 'after-labelling' : 'lighter';
     const third = await tryOnce(models.visionModelFallback, mode, last.reason);
     if (third.verdict === 'ok') return { attempts, final: third.text };

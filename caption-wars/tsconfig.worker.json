@@ -18,6 +18,7 @@
     "src/shared/**/*.ts",
     "tests/room-do.test.ts",
     "tests/ai-try.test.ts",
-    "tests/worker-index.test.ts"
+    "tests/worker-index.test.ts",
+    "tests/openai.test.ts"
   ]
 }

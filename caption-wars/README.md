@@ -76,7 +76,7 @@ in `src/shared/config.ts` if the var is missing.
 
 | Var | Default | What it does |
 |---|---|---|
-| `PHOTO_TAGS` | `dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake` | the tag pool loremflickr draws from. **This is the game's content policy** (see below) |
+| `PHOTO_TAGS` | `dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,derp,messy,raccoon,hamster,frog,monkey,sloth,otter,cow,sheep,lego,donut` | the tag pool loremflickr draws from. **This is the game's content policy** (see below) |
 | `PHOTO_WIDTH` / `PHOTO_HEIGHT` | `800` / `600` | requested photo size |
 | `PHOTO_MAX_BYTES` | `2000000` | hard byte cap, enforced while the image streams in |
 | `PHOTO_TIMEOUT_MS` | `8000` | deadline on one outbound photo request. The download happens inside the request every player polls, so a stalled image host without this parks the whole room |
@@ -88,11 +88,53 @@ in `src/shared/config.ts` if the var is missing.
 | `CAPTION_JUDGE_TIMEOUT_MS` | `10000` | budget for ONE caption-judge call, clamped again by what is left of the job deadline. 6000 measured too tight |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
 | `AI_TRY_MAX_SAMPLES` | `24` | cost ceiling on one `POST /api/ai-try` call: photos x personas |
-| `AI_TRY_MAX_MODEL_CALLS` | `160` | HARD ceiling on model calls in one `ai-try` request (captions, caption judges, photo descriptions, relevance judges). Reserved before every call, so a cap below one photo batch really does stop the batch |
+| `AI_TRY_MAX_MODEL_CALLS` | `40` | HARD ceiling on model calls in one `ai-try` request (captions, caption judges, photo descriptions, relevance judges). Reserved before every call, so a cap below one photo batch really does stop the batch |
+| `AI_PROVIDER` | `openai` | which provider runs the AI players: `workers-ai` (the zero-config default binding) or `openai`. See below |
+| `OPENAI_BASE_URL` | *(empty)* | empty means `https://api.openai.com/v1`. Set it only for a proxy |
+| `OPENAI_VISION_MODEL` | `gpt-4.1-mini` | writes bot captions when the provider is `openai`. Never called on this account yet |
+| `OPENAI_TEXT_MODEL` | `gpt-4.1-mini` | casts bot votes and runs the caption judge when the provider is `openai` |
+| `OPENAI_REASONING_EFFORT` | *(empty)* | opt-in. Empty sends nothing, which is what the default `gpt-4.1-mini` wants. Set it to match your model: `gpt-5-mini` takes `minimal`, `gpt-5.1` takes `none` or `low` (it rejects `minimal`), the o-series takes `low` / `medium` / `high`. `gpt-4.1*` / `gpt-4o*` / `gpt-5-chat*` never get it whatever this says |
+| `OPENAI_API_KEY` | *(secret, unset)* | `npx wrangler secret put OPENAI_API_KEY`. Without it, `AI_PROVIDER=openai` warns once and falls back to Workers AI |
 | `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke` and `POST /api/ai-try`. Unset means both are off. |
 
 Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
 (60), `voteSeconds` 10-120 (30), `revealSeconds` 3-60 (10), `botCount` 0-4 (2).
+
+### Which models answer, and why that is a switch
+
+The Cloudflare account is on the FREE plan and stays there, so the Workers AI allowance is 10,000
+neurons a day. Once it is spent, every call comes back `4006: you have used up your daily free
+allocation` and the AI players are offline until the rollover. So the provider is config:
+
+```
+npx wrangler secret put OPENAI_API_KEY     # paste the key, it is never a var
+# AI_PROVIDER is already "openai" in wrangler.jsonc
+npm run deploy
+CAPTION_WARS_URL=<the worker url> SMOKE_TOKEN=<the secret> npm run ai:smoke
+```
+
+`ai:smoke` now reports `provider` in its JSON, so the deploy gate says which one actually answered.
+`workers-ai` needs nothing set up and is what you get back by setting `AI_PROVIDER` to `workers-ai`,
+or by removing the key. One function decides it (`modelProvider` in `src/worker/env.ts`) and all three
+places that build a `BotModels` go through it: the game, the smoke test, and the tuning rig.
+
+Three things behave differently on OpenAI. There is no second vision model, so `visionModelFallback`
+is the same id as `visionModel`; the caption ladder keeps three rungs anyway, and the last one becomes
+one plain retry of the same model, taken only when the earlier rungs came back with nothing (an error
+or an empty answer). A refusal does not earn a retry, because the same model would refuse again.
+
+The account-level wall arrives as `insufficient_quota` or `invalid_api_key` instead of `4006`. Those
+two are read from the parsed `error.code` and nowhere else, so a proxy that happens to print `4006` or
+the word "quota" in a 502 cannot take the bots offline. A `rate_limit_exceeded` is left as an ordinary
+hiccup for the retry ladder.
+
+And the per-model request differs by family: `gpt-4.1*` / `gpt-4o*` / `gpt-5-chat*` take `temperature`
+as sent and never `reasoning_effort`, while the reasoning `gpt-5*` models and the o-series (`o1`, `o3`,
+`o4-mini`) take no temperature at all. `reasoning_effort` is opt-in and goes out only when
+`OPENAI_REASONING_EFFORT` is non-empty, because the legal values differ per model id (`gpt-5-mini`
+takes `minimal`, `gpt-5.1` rejects it, the o-series takes only `low` / `medium` / `high`) and a guessed
+value is a 400 on every vote and every judge call. Set the var when you point the model vars at a
+reasoning model; leave it empty otherwise. This is published behaviour, not measured on this account.
 
 ### What the AI players may joke about
 

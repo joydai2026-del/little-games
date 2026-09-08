@@ -22,6 +22,7 @@ import {
   type BotHost,
   type BotModels,
 } from '../src/worker/bots';
+import { ModelProviderError } from '../src/worker/openai';
 import { refusalMatch } from '../src/shared/caption-guard';
 import { sha256Hex } from '../src/worker/photo';
 import { fixturePhoto, FIXTURE_PHOTO_SHA256 } from '../src/shared/fixture-photo';
@@ -903,9 +904,29 @@ describe('isAiOfflineError', () => {
         )
       )
     ).toBe(true);
-    expect(isAiOfflineError(new Error('Error 4006'))).toBe(true);
+    expect(isAiOfflineError(new Error('4006: quota'))).toBe(true);
     expect(isAiOfflineError('daily free allocation exhausted')).toBe(true);
     expect(isAiOfflineError({ message: 'DAILY FREE ALLOCATION' })).toBe(true);
+    // Review round 3, must-fix 2: the binding prefixes some codes with a class
+    // name (this file's own hiccup list carries `InferenceUpstreamError: 3040`),
+    // and a start-only anchor read a prefixed 4006 as an ordinary hiccup, so the
+    // bots retried the wall every round and the room never said it was offline.
+    expect(isAiOfflineError(new Error('InferenceUpstreamError: 4006: account quota reached'))).toBe(
+      true
+    );
+  });
+
+  it('wants 4006 in a CODE position, not anywhere in the message', () => {
+    // The COLON is what stops somebody else's id from reading as the wall: a
+    // request id is quoted mid-sentence with nothing after the number.
+    // Codex review 3's exact input, which used to come back true:
+    expect(
+      isAiOfflineError(new ModelProviderError(502, null, 'upstream unavailable, request id 4006'))
+    ).toBe(false);
+    expect(isAiOfflineError(new Error('openai 502: upstream unavailable, request id 4006'))).toBe(
+      false
+    );
+    expect(isAiOfflineError(new Error('Error 4006'))).toBe(false);
   });
 
   it('leaves every ordinary failure alone: a hiccup is not a wall', () => {
@@ -926,6 +947,208 @@ describe('isAiOfflineError', () => {
     }
     expect(isAiOfflineError(null)).toBe(false);
     expect(isAiOfflineError(undefined)).toBe(false);
+  });
+
+  // The OpenAI provider throws a ModelProviderError carrying the parsed
+  // `error.code`, and the CODE is the only thing that is read.
+  it('recognises the two OpenAI ACCOUNT-level codes, from the code and not the text', () => {
+    expect(isAiOfflineError(new ModelProviderError(429, 'insufficient_quota', 'insufficient_quota')))
+      .toBe(true);
+    expect(isAiOfflineError(new ModelProviderError(401, 'invalid_api_key', 'invalid_api_key'))).toBe(
+      true
+    );
+    // Same words, no structure: a plain Error is a Workers AI error, and these
+    // are not its markers.
+    expect(isAiOfflineError(new Error('openai 429: insufficient_quota'))).toBe(false);
+  });
+
+  it('leaves an OpenAI rate limit alone: a 429 is a hiccup unless it says quota', () => {
+    // The pair that decides the whole asymmetry. `rate_limit_exceeded` clears on
+    // the next call; `insufficient_quota` never does, and they share a status.
+    expect(isAiOfflineError(new ModelProviderError(429, 'rate_limit_exceeded', 'rate limit'))).toBe(
+      false
+    );
+    expect(isAiOfflineError(new ModelProviderError(500, 'server_error', 'server_error'))).toBe(
+      false
+    );
+    expect(
+      isAiOfflineError(new ModelProviderError(400, 'context_length_exceeded', 'too long'))
+    ).toBe(false);
+    // A body with no code at all is a hiccup, never a wall.
+    expect(isAiOfflineError(new ModelProviderError(503, null, '<html>maintenance</html>'))).toBe(
+      false
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE LADDER WHEN THE PROVIDER HAS ONE VISION MODEL (Claude review 1, this
+// branch). On OpenAI `visionModelFallback` IS `visionModel`, and an errored rung
+// reports verdict `empty`, so the old ladder skipped rung 2 (nothing to reword)
+// AND rung 3 (ids match) and collapsed to a single call. One transient 429 then
+// benched the bot for the whole round, silently, because a rate limit is
+// deliberately not an offline wall.
+// ---------------------------------------------------------------------------
+
+describe('the caption ladder on a single-vision-model provider', () => {
+  const sameId = (ai: AiLike) =>
+    models(ai, { visionModel: 'gpt-4.1-mini', visionModelFallback: 'gpt-4.1-mini' });
+
+  it('retries the same model once when the first call ERRORS, and ships the answer', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        if (seen.length === 1) throw new Error('openai 429: rate_limit_exceeded');
+        return { response: 'The goat has seen things.' };
+      },
+    };
+
+    const { final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+    });
+
+    expect(final).toBe('The goat has seen things.');
+    // Exactly two: the failed one and the retry. Not three, and not one.
+    expect(seen).toEqual(['gpt-4.1-mini', 'gpt-4.1-mini']);
+  });
+
+  it('does NOT spend the retry on a content verdict the same model would repeat', async () => {
+    // A refusal already gets its own rung (the lighter prompt). Asking the same
+    // model the same thing a third time buys nothing and costs a paid call.
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        return { response: 'I cannot write a caption for this photo.' };
+      },
+    };
+
+    const { final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+    });
+
+    expect(final).toBeNull();
+    expect(seen).toHaveLength(2);
+  });
+
+  // TWO CALLS, WHATEVER THE VERDICTS (Codex review round 2, must-fix 3). The
+  // guard used to read `last.verdict === 'empty'`, which describes the last rung
+  // and counts nothing, so a refusal followed by a transient error unlocked a
+  // third paid call on a ladder documented as two.
+  it('stops at two calls when a refusal is followed by an ERROR', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        if (seen.length === 1) return { response: 'I cannot write a caption for this photo.' };
+        throw new Error('openai 429: rate_limit_exceeded');
+      },
+    };
+
+    const { final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+    });
+
+    expect(final).toBeNull();
+    // The second rung ERRORED, so `last.verdict` is `empty` and the old guard
+    // opened rung 3. The call count is what closes it.
+    expect(seen).toHaveLength(2);
+  });
+
+  it('still spends its second call when the FIRST one errors, and ships the answer', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        if (seen.length === 1) throw new Error('openai 500: server_error');
+        return { response: 'The goat has seen things.' };
+      },
+    };
+
+    const { final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+    });
+
+    // The cap is a ceiling, not a shorter ladder: the retry that earns a caption
+    // still happens.
+    expect(final).toBe('The goat has seen things.');
+    expect(seen).toHaveLength(2);
+  });
+
+  it('leaves a provider with two real model ids exactly as it was', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        if (seen.length === 1) throw new Error('openai 429: rate_limit_exceeded');
+        return { response: 'Employee of the month, again.' };
+      },
+    };
+
+    const { final } = await composeBotCaption(models(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+    });
+
+    expect(final).toBe('Employee of the month, again.');
+    // An empty first rung still skips the reword and goes straight to the OTHER
+    // model, which is the behaviour that was already there.
+    expect(seen).toEqual([
+      '@cf/meta/llama-3.2-11b-vision-instruct',
+      '@cf/llava-hf/llava-1.5-7b-hf',
+    ]);
+  });
+
+  // THE COUNTER COUNTS MODEL CALLS, NOT RUNGS (review round 3, should-fix 4).
+  // `calls` used to go up before `runVisionOnce`, which refuses inside
+  // `budget.reserve()`, so a rung the per-request cap turned away ate one of the
+  // two same-id calls it never actually made.
+  it('a rung the CALL BUDGET refused costs one attempt and no model call', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        throw new Error('openai 500: server_error');
+      },
+    };
+    const budget = makeCallBudget(1);
+
+    const { attempts, final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+      callBudget: budget,
+    });
+
+    expect(final).toBeNull();
+    // Rung 1 reached the model and errored; rung 2 (the same-id retry) was
+    // refused by the budget. There is no rung 3.
+    expect(seen).toHaveLength(1);
+    expect(attempts).toHaveLength(2);
+    expect(budget.refused()).toBe(1);
+  });
+
+  it('does not let a refused rung use up a same-id call that never happened', async () => {
+    // The distinguishing case: rung 1 is a real call with a CONTENT verdict, so
+    // rung 2 (the lighter prompt) runs and the spent budget refuses it. With the
+    // old counter that read as two calls and closed the same-id retry, on a
+    // ladder that had dispatched exactly one.
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        return { response: 'I cannot write a caption for this photo.' };
+      },
+    };
+    const budget = makeCallBudget(1);
+
+    const { attempts, final } = await composeBotCaption(sameId(ai), PERSONAS[0], fixturePhoto(), {
+      judge: false,
+      callBudget: budget,
+    });
+
+    expect(final).toBeNull();
+    expect(seen).toHaveLength(1);
+    expect(attempts).toHaveLength(3);
+    expect(budget.refused()).toBe(2);
   });
 });
 

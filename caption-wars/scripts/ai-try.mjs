@@ -5,11 +5,18 @@
 //
 //   CAPTION_WARS_URL=https://caption-wars.<subdomain>.workers.dev \
 //   SMOKE_TOKEN=<the wrangler secret> \
-//   npm run ai:try -- --samples 24 --photos-per-call 3
+//   npm run ai:try -- --samples 24 --photos-per-call 2
 //
 // Why per-call batching: every sample is a real vision-model call and a Worker
 // has a subrequest budget, so the target sample count is reached over several
 // small requests rather than one big one.
+//
+// ON THE CLOUDFLARE FREE PLAN USE `--photos-per-call 2`. Free allows 50 external
+// subrequests per Worker invocation, and on the OpenAI provider every model call
+// is one, as is every photo fetch. Three photos x four personas does not fit;
+// two does, with room for the photo fetches. If a run comes back with
+// `limitErrors` or `summary.truncated`, that is the ceiling and not the models,
+// so the rates in that answer do not count.
 //
 // No dependencies: plain Node fetch.
 
@@ -27,7 +34,8 @@ if (!token) die('set SMOKE_TOKEN to the value you gave `npx wrangler secret put 
 function parseArgs(argv) {
   const args = {
     samples: 20,
-    photosPerCall: 3,
+    // 2, the number this file's own header tells you to use on the free plan.
+    photosPerCall: 2,
     personas: null,
     json: false,
     // THE TAG AUDIT (review round 6). PHOTO_TAGS is the game's content policy:

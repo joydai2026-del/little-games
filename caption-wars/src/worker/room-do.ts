@@ -66,7 +66,7 @@ import {
 import { normalizeOptions } from '../shared/config';
 import { newCaptionId, newPlayerId } from '../shared/ids';
 import { pickPersonas, PERSONAS, type Persona } from '../shared/personas';
-import { settings, type Env, type Settings } from './env';
+import { modelProvider, settings, type Env, type Settings } from './env';
 import { fetchPhoto } from './photo';
 import { buildBotJobs, runBotJob, type BotHost, type BotModels } from './bots';
 import { nextAlarmAt } from './schedule';
@@ -346,12 +346,15 @@ export class RoomDO implements DurableObject {
   }
 
   private botModels(onAiOffline?: (message: string) => void): BotModels {
+    // WHICH provider answers is decided in exactly one place (modelProvider),
+    // here and at the other two BotModels sites (smoke.ts, ai-try.ts).
+    const chosen = modelProvider(this.env);
     return {
-      ai: this.env.AI as unknown as BotModels['ai'],
+      ai: chosen.ai,
       ...(onAiOffline ? { onAiOffline } : {}),
-      visionModel: this.set.visionModel,
-      visionModelFallback: this.set.visionModelFallback,
-      textModel: this.set.textModel,
+      visionModel: chosen.visionModel,
+      visionModelFallback: chosen.visionModelFallback,
+      textModel: chosen.textModel,
       timeoutMs: this.set.botTimeoutMs,
       judgeTimeoutMs: this.set.captionJudgeTimeoutMs,
       visionMaxBytes: this.set.visionMaxBytes,

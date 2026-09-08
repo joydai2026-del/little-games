@@ -124,6 +124,86 @@ describe('POST /api/ai-try: the model-call cap', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// THE SUBREQUEST CEILING, THROUGH BOTH DOORS (review round 3, must-fix on both
+// reviewers' lists). Cloudflare's free plan allows 50 external subrequests per
+// invocation and BOTH model calls and photo fetches come out of that one pool.
+// The watcher only wrapped model calls, so a run whose PHOTO fetch was the one
+// that died came back `truncated: false` with the ceiling buried in photoErrors:
+// infrastructure exhaustion reported as a valid measurement.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/ai-try: the subrequest ceiling', () => {
+  function ceilingEnv(over: Record<string, string> = {}) {
+    const { env, calls } = countingEnv({ AI_TRY_MAX_MODEL_CALLS: '40', ...over });
+    return { env, calls };
+  }
+
+  it('a MODEL call that hits the ceiling is recorded and truncates the run', async () => {
+    const env = {
+      SMOKE_TOKEN: TOKEN,
+      AI: {
+        async run() {
+          throw new Error('Too many subrequests.');
+        },
+      },
+      AI_TRY_MAX_SAMPLES: '24',
+      AI_TRY_MAX_MODEL_CALLS: '40',
+    } as never;
+
+    const res = await handleAiTry(request({ photos: 1, personas: ['daisy-deadpan'] }), env);
+    const body = (await res.json()) as {
+      summary: { truncated: boolean; model_calls_refused: number };
+      limitErrors: string[];
+    };
+
+    expect(body.limitErrors).toHaveLength(1);
+    expect(body.limitErrors[0]).toMatch(/subrequest/i);
+    expect(body.summary.truncated).toBe(true);
+    // Not the cap: nothing was refused, the platform simply stopped answering.
+    expect(body.summary.model_calls_refused).toBe(0);
+  });
+
+  it('a PHOTO fetch that hits the ceiling truncates the run too', async () => {
+    const { env } = ceilingEnv();
+    vi.mocked(fetchPhoto).mockRejectedValueOnce(new Error('Too many subrequests.'));
+
+    // Photo 2 succeeds, so without the fix this comes back 200 with a sample
+    // table and `truncated: false`: a complete-looking run that is not one.
+    const res = await handleAiTry(request({ photos: 2, personas: ['daisy-deadpan'] }), env);
+    const body = (await res.json()) as {
+      summary: { samples: number; truncated: boolean };
+      photoErrors: string[];
+      limitErrors: string[];
+    };
+
+    expect(res.status).toBe(200);
+    expect(body.summary.samples).toBe(1);
+    expect(body.limitErrors).toHaveLength(1);
+    expect(body.limitErrors[0]).toMatch(/subrequest/i);
+    expect(body.summary.truncated).toBe(true);
+  });
+
+  it('an ordinary photo failure is a photoError and NOT the ceiling', async () => {
+    const { env } = ceilingEnv();
+    vi.mocked(fetchPhoto).mockRejectedValueOnce(new Error('loremflickr 404: no photo for that tag'));
+
+    const res = await handleAiTry(request({ photos: 2, personas: ['daisy-deadpan'] }), env);
+    const body = (await res.json()) as {
+      summary: { truncated: boolean };
+      photoErrors: string[];
+      limitErrors: string[];
+    };
+
+    expect(body.photoErrors).toHaveLength(1);
+    expect(body.photoErrors[0]).toMatch(/404/);
+    expect(body.limitErrors).toHaveLength(0);
+    // One photo out of two failed for an ordinary reason. The run measured what
+    // it measured, and saying `truncated` here would cry wolf.
+    expect(body.summary.truncated).toBe(false);
+  });
+});
+
 describe('POST /api/ai-try: the tag audit (round 6, M4)', () => {
   it('describeOnly asks the photo host for the named tag and only describes it', async () => {
     const { env, calls } = countingEnv();

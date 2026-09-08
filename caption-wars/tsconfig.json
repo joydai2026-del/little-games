@@ -13,8 +13,13 @@
     "resolveJsonModule": true
   },
   "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"],
-  // These two drive worker modules that name Cloudflare's ambient binding types
+  // These drive worker modules that name Cloudflare's ambient binding types
   // (Env, DurableObjectNamespace, Ai), so they are typechecked by
   // tsconfig.worker.json instead, which loads @cloudflare/workers-types.
-  "exclude": ["tests/room-do.test.ts", "tests/ai-try.test.ts", "tests/worker-index.test.ts"]
+  "exclude": [
+    "tests/room-do.test.ts",
+    "tests/ai-try.test.ts",
+    "tests/worker-index.test.ts",
+    "tests/openai.test.ts"
+  ]
 }

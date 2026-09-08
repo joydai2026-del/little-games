@@ -16,10 +16,12 @@
 import { PERSONAS } from '../shared/personas';
 import { fixturePhoto, FIXTURE_PHOTO_SHA256 } from '../shared/fixture-photo';
 import { generateBotCaption, generateBotVote, type BotModels } from './bots';
-import { settings, type Env } from './env';
+import { modelProvider, settings, type Env } from './env';
 import { secretsMatch } from './token';
 
 export interface SmokeResult {
+  /** Which provider actually answered: `workers-ai` or `openai`. */
+  provider: string;
   vision: { model: string; fallback: string; ok: boolean; sample: string | null };
   text: { model: string; ok: boolean; picked: string | null };
   fixture: { sha256: string; bytes: number };
@@ -57,17 +59,24 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
   }
 
   const set = settings(env);
+  // One place decides the provider; this is the second of the three BotModels
+  // sites (room-do.ts botModels, here, ai-try.ts).
+  const chosen = modelProvider(env);
   const models: BotModels = {
-    ai: env.AI as unknown as BotModels['ai'],
-    visionModel: set.visionModel,
-    visionModelFallback: set.visionModelFallback,
-    textModel: set.textModel,
+    ai: chosen.ai,
+    visionModel: chosen.visionModel,
+    visionModelFallback: chosen.visionModelFallback,
+    textModel: chosen.textModel,
     timeoutMs: set.botTimeoutMs,
     judgeTimeoutMs: set.captionJudgeTimeoutMs,
     visionMaxBytes: set.visionMaxBytes,
   };
 
-  await acceptMetaLicence(models.ai, models.visionModel);
+  // The licence handshake is a Workers AI thing (Meta's models on Cloudflare).
+  // On OpenAI it would be one paid call that asks nothing.
+  if (chosen.provider === 'workers-ai') {
+    await acceptMetaLicence(models.ai, models.visionModel);
+  }
 
   const bytes = fixturePhoto();
   const caption = await generateBotCaption(models, PERSONAS[0], bytes);
@@ -79,6 +88,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
   const picked = await generateBotVote(models, PERSONAS[1] ?? PERSONAS[0], ballot);
 
   const result: SmokeResult = {
+    provider: chosen.provider,
     vision: {
       model: models.visionModel,
       fallback: models.visionModelFallback,
