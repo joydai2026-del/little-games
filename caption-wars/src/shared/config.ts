@@ -18,17 +18,38 @@ export const DEFAULT_ROOM_OPTIONS: RoomOptions = {
 export const MAX_HUMAN_PLAYERS = 8;
 export const MAX_BOTS = 4;
 export const CAPTION_MAX_CHARS = 120;
+export const NAME_MAX_CHARS = 20;
 export const ROOM_TTL_HOURS = 2;
+export const ROOM_TTL_MS = ROOM_TTL_HOURS * 60 * 60 * 1000;
 
-/** Polling cadence the server tells clients to use, per phase. 0 = stop polling. */
+/**
+ * How long `reveal` must be on screen before the host's "Next" button is
+ * allowed to skip it (plan amendment: reveal floor). Stops a fast host from
+ * yanking the scoreboard away before anyone has read it. Overridable per
+ * deployment through the wrangler var REVEAL_MIN_MS.
+ */
+export const REVEAL_MIN_MS = 3000;
+
+/** Hard stop on one bot's model call, overridable through the wrangler var BOT_TIMEOUT_MS. */
+export const BOT_TIMEOUT_MS = 20000;
+
+/** Byte cap on a fetched photo, overridable through the wrangler var PHOTO_MAX_BYTES. */
+export const PHOTO_MAX_BYTES = 2_000_000;
+
+/**
+ * Polling cadence the server tells clients to use, per phase. 0 = stop polling.
+ * Values per plan amendment 11 (polling budget); the client adds jitter and
+ * backs off further when the tab is hidden.
+ */
 export function nextPollMsFor(phase: Phase): number {
   switch (phase) {
     case 'lobby':
-      return 2000;
+      return 3000;
     case 'caption':
     case 'vote':
+      return 2000;
     case 'reveal':
-      return 1500;
+      return 2500;
     case 'done':
       return 0;
   }

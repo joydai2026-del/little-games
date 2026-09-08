@@ -1,25 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import {
+  advance,
+  advanceIfDue,
   createRoom,
+  endCaptionPhase,
+  endVotePhase,
   join,
+  publicView,
   start,
   submitCaption,
   submitVote,
-  endCaptionPhase,
-  endVotePhase,
-  advance,
-  publicView,
   tally,
+  touch,
 } from '../src/shared/room';
-import { normalizeOptions } from '../src/shared/config';
-import type { Photo, Player, RoomState } from '../src/shared/types';
+import { normalizeOptions, REVEAL_MIN_MS } from '../src/shared/config';
+import { sanitizeCaption, sanitizeName, cleanModelCaption } from '../src/shared/text';
+import type { PhotoMeta, Player, RoomState } from '../src/shared/types';
 
-const PHOTO: Photo = { url: 'https://loremflickr.com/800/600/dog', source: 'loremflickr' };
-const PHOTO_2: Photo = { url: 'https://loremflickr.com/800/600/cat', source: 'loremflickr' };
+const PHOTO: PhotoMeta = { round: 1, source: 'loremflickr', credit: 'loremflickr.com', sha256: 'a'.repeat(64), bytes: 1234 };
+const PHOTO_2: PhotoMeta = { ...PHOTO, round: 2, sha256: 'b'.repeat(64) };
 const T0 = 1_700_000_000_000;
 
 function bot(id: string, name: string): Player {
-  return { id, name, isBot: true, score: 0, connected: true };
+  return { id, name, isBot: true, score: 0, lastSeenAt: T0 };
 }
 
 function twoRoundRoom(): RoomState {
@@ -27,345 +30,464 @@ function twoRoundRoom(): RoomState {
   return createRoom('ABCD', { id: 'host', name: 'JJ' }, options, [bot('b1', 'Daisy'), bot('b2', 'Chip')], T0);
 }
 
+/** Everyone captions, everyone votes for the host, so the host wins the round. */
+function playRoundHostWins(state: RoomState, at: number): RoomState {
+  let s = state;
+  s = submitCaption(s, 'host', 'host caption', `c-host-${s.round}`, at).state;
+  s = submitCaption(s, 'b1', 'b1 caption', `c-b1-${s.round}`, at).state;
+  s = submitCaption(s, 'b2', 'b2 caption', `c-b2-${s.round}`, at).state;
+  // last caption auto-ends the phase
+  s = submitVote(s, 'b1', `c-host-${s.round}`, at).state;
+  s = submitVote(s, 'b2', `c-host-${s.round}`, at).state;
+  s = submitVote(s, 'host', `c-b1-${s.round}`, at).state;
+  return s;
+}
+
 describe('createRoom', () => {
-  it('starts in lobby with the host as first player', () => {
+  it('starts in lobby with the host first and an empty round roster', () => {
     const state = twoRoundRoom();
     expect(state.phase).toBe('lobby');
     expect(state.hostId).toBe('host');
     expect(state.players.map((p) => p.id)).toEqual(['host', 'b1', 'b2']);
+    expect(state.roundPlayerIds).toEqual([]);
+    expect(state.botJobs).toEqual([]);
     expect(state.version).toBe(1);
+    expect(state.createdAt).toBe(T0);
+    expect(state.expiresAt).toBe(T0 + 2 * 60 * 60 * 1000);
+    expect(state.phaseStartedAt).toBe(T0);
   });
 });
 
 describe('full happy path: 1 human + 2 bots over 2 rounds', () => {
-  it('plays start to finish and computes a champion', () => {
-    let state = twoRoundRoom();
-
-    // Round 1: start
-    let res = start(state, 'host', PHOTO, T0);
-    expect(res.error).toBeUndefined();
-    state = res.state;
+  it('plays start to finish and names a champion', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
     expect(state.phase).toBe('caption');
     expect(state.round).toBe(1);
-    expect(state.photo).toEqual(PHOTO);
+    expect(state.roundPlayerIds).toEqual(['host', 'b1', 'b2']);
 
-    // All three caption; last one auto-ends the phase
-    res = submitCaption(state, 'host', 'A very good dog', 'c-host-1', T0 + 1000);
-    state = res.state;
-    expect(state.phase).toBe('caption');
-
-    res = submitCaption(state, 'b1', 'Deadpan dog fact', 'c-b1-1', T0 + 2000);
-    state = res.state;
-    expect(state.phase).toBe('caption');
-
-    res = submitCaption(state, 'b2', 'CHAOS DOG', 'c-b2-1', T0 + 3000);
-    state = res.state;
-    expect(state.phase).toBe('vote');
-    expect(state.captions.length).toBe(3);
-
-    // Vote: everyone votes for someone else's caption
-    const hostCaption = state.captions.find((c) => c.playerId === 'host')!;
-    const b1Caption = state.captions.find((c) => c.playerId === 'b1')!;
-    const b2Caption = state.captions.find((c) => c.playerId === 'b2')!;
-
-    res = submitVote(state, 'host', b1Caption.id, T0 + 4000);
-    state = res.state;
-    res = submitVote(state, 'b1', b2Caption.id, T0 + 5000);
-    state = res.state;
-    res = submitVote(state, 'b2', b1Caption.id, T0 + 6000);
-    state = res.state;
+    state = playRoundHostWins(state, T0 + 1000);
     expect(state.phase).toBe('reveal');
-    expect(state.history.length).toBe(1);
-    expect(state.history[0].winnerCaptionIds).toEqual([b1Caption.id]);
-    // b1 got 2 votes -> +2 score
-    expect(state.players.find((p) => p.id === 'b1')!.score).toBe(2);
+    expect(state.history).toHaveLength(1);
+    expect(state.history[0].winnerCaptionIds).toEqual(['c-host-1']);
+    expect(state.players.find((p) => p.id === 'host')?.score).toBe(2);
 
-    // Advance to round 2, needs a photo first
-    const needs = advance(state, 'host', T0 + 20_000);
-    expect(needs.needsPhoto).toBe(true);
-    expect(needs.state).toEqual(state);
-
-    res = advance(state, 'host', T0 + 20_000, PHOTO_2);
-    state = res.state;
+    // Round 2
+    const afterFloor = T0 + 1000 + REVEAL_MIN_MS;
+    state = advance(state, 'host', afterFloor, PHOTO_2).state;
     expect(state.phase).toBe('caption');
     expect(state.round).toBe(2);
     expect(state.photo).toEqual(PHOTO_2);
-    expect(state.captions).toEqual([]);
 
-    // Round 2: everyone votes for host this time
-    res = submitCaption(state, 'host', 'Second round dog', 'c-host-2', T0 + 21_000);
-    state = res.state;
-    res = submitCaption(state, 'b1', 'Second round bot', 'c-b1-2', T0 + 22_000);
-    state = res.state;
-    res = submitCaption(state, 'b2', 'Second round chaos', 'c-b2-2', T0 + 23_000);
-    state = res.state;
-    expect(state.phase).toBe('vote');
-
-    const host2 = state.captions.find((c) => c.playerId === 'host')!;
-    res = submitVote(state, 'host', state.captions.find((c) => c.playerId === 'b1')!.id, T0 + 24_000);
-    state = res.state;
-    res = submitVote(state, 'b1', host2.id, T0 + 25_000);
-    state = res.state;
-    res = submitVote(state, 'b2', host2.id, T0 + 26_000);
-    state = res.state;
+    state = playRoundHostWins(state, afterFloor + 1000);
     expect(state.phase).toBe('reveal');
-    // host now has 2 (round 2) -> total 2; final round was the last (rounds=2)
 
-    res = advance(state, 'host', T0 + 40_000);
-    state = res.state;
+    state = advance(state, 'host', afterFloor + 1000 + REVEAL_MIN_MS).state;
     expect(state.phase).toBe('done');
-    expect(state.championIds).toBeDefined();
-    expect(state.championIds!.length).toBeGreaterThan(0);
+    expect(state.championIds).toEqual(['host']);
+    expect(state.nextPollMs).toBe(0);
   });
 });
 
-describe('tie handling', () => {
-  it('every tied top caption wins and every winning author scores', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'one', 'c1', T0).state;
-    state = submitCaption(state, 'b1', 'two', 'c2', T0).state;
-    state = submitCaption(state, 'b2', 'three', 'c3', T0).state;
+describe('frozen round roster', () => {
+  it('locks the roster when the round opens', () => {
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    expect(state.roundPlayerIds).toEqual(['host', 'b1', 'b2']);
+  });
 
-    const cHost = state.captions.find((c) => c.playerId === 'host')!.id;
-    const cB1 = state.captions.find((c) => c.playerId === 'b1')!.id;
-    const cB2 = state.captions.find((c) => c.playerId === 'b2')!.id;
+  it('makes a mid-round joiner a spectator: cannot caption, does not block the phase', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = join(state, { id: 'late', name: 'Latecomer' }, T0 + 500).state;
 
-    // A three-way rock-paper-scissors of votes: every caption gets exactly 1 vote.
-    state = submitVote(state, 'host', cB1, T0).state;
-    state = submitVote(state, 'b1', cB2, T0).state;
-    const res = submitVote(state, 'b2', cHost, T0);
-    state = res.state;
+    expect(state.players.map((p) => p.id)).toContain('late');
+    expect(state.roundPlayerIds).not.toContain('late');
 
+    const rejected = submitCaption(state, 'late', 'let me in', 'c-late', T0 + 600);
+    expect(rejected.error).toBe('you are in from the next round');
+    expect(rejected.state).toBe(state);
+
+    // The three roster members finishing still ends the phase, despite `late` not having captioned.
+    state = submitCaption(state, 'host', 'a', 'c-host-1', T0 + 700).state;
+    state = submitCaption(state, 'b1', 'b', 'c-b1-1', T0 + 800).state;
+    state = submitCaption(state, 'b2', 'c', 'c-b2-1', T0 + 900).state;
+    expect(state.phase).toBe('vote');
+
+    const noVote = submitVote(state, 'late', 'c-host-1', T0 + 950);
+    expect(noVote.error).toBe('you are in from the next round');
+  });
+
+  it('adds the spectator to the roster when the next round opens', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = join(state, { id: 'late', name: 'Latecomer' }, T0 + 500).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    state = advance(state, 'host', T0 + 1000 + REVEAL_MIN_MS, PHOTO_2).state;
+
+    expect(state.round).toBe(2);
+    expect(state.roundPlayerIds).toEqual(['host', 'b1', 'b2', 'late']);
+    expect(submitCaption(state, 'late', 'finally', 'c-late-2', T0 + 9000).error).toBeUndefined();
+  });
+});
+
+describe('reveal floor', () => {
+  function revealState(): RoomState {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
     expect(state.phase).toBe('reveal');
-    const result = state.history[0];
-    expect(result.winnerCaptionIds.sort()).toEqual([cB1, cB2, cHost].sort());
-    expect(state.players.find((p) => p.id === 'host')!.score).toBe(1);
-    expect(state.players.find((p) => p.id === 'b1')!.score).toBe(1);
-    expect(state.players.find((p) => p.id === 'b2')!.score).toBe(1);
+    return state;
+  }
+
+  it('refuses the host skipping reveal before REVEAL_MIN_MS', () => {
+    const state = revealState();
+    const early = advance(state, 'host', state.phaseStartedAt + REVEAL_MIN_MS - 1, PHOTO_2);
+    expect(early.error).toBe('give everyone a second to see the scores');
+    expect(early.state).toBe(state);
   });
 
-  it('tally returns every caption tied at the max vote count', () => {
-    const captions = [
-      { id: 'a', playerId: 'p1', text: 'x' },
-      { id: 'b', playerId: 'p2', text: 'y' },
-      { id: 'c', playerId: 'p3', text: 'z' },
-    ];
-    const votes = { v1: 'a', v2: 'b' };
-    const result = tally(captions, votes);
-    expect(result.winnerCaptionIds.sort()).toEqual(['a', 'b']);
+  it('lets the host skip reveal once the floor has passed', () => {
+    const state = revealState();
+    const ok = advance(state, 'host', state.phaseStartedAt + REVEAL_MIN_MS, PHOTO_2);
+    expect(ok.error).toBeUndefined();
+    expect(ok.state.round).toBe(2);
   });
 
-  it('tally with zero votes cast has no winner', () => {
-    const captions = [
-      { id: 'a', playerId: 'p1', text: 'x' },
-      { id: 'b', playerId: 'p2', text: 'y' },
-    ];
-    const result = tally(captions, {});
-    expect(result.winnerCaptionIds).toEqual([]);
+  it('honours a custom floor', () => {
+    const state = revealState();
+    expect(advance(state, 'host', state.phaseStartedAt + 500, PHOTO_2, 5000).error).toBeDefined();
+    expect(advance(state, 'host', state.phaseStartedAt + 5000, PHOTO_2, 5000).error).toBeUndefined();
+  });
+
+  it('does not apply the floor to the timer, but the timer waits for phaseEndsAt', () => {
+    const state = revealState();
+    // revealSeconds is 10, so the timer must not fire at +4s even though the floor passed.
+    expect(advance(state, 'timer', state.phaseStartedAt + 4000, PHOTO_2).state).toBe(state);
+    const late = advance(state, 'timer', state.phaseEndsAt!, PHOTO_2);
+    expect(late.state.round).toBe(2);
+  });
+
+  it('asks the caller for a photo when the next round needs one', () => {
+    const state = revealState();
+    const res = advance(state, 'timer', state.phaseEndsAt!);
+    expect(res.needsPhoto).toBe(true);
+    expect(res.state).toBe(state);
+  });
+});
+
+describe('seeded vote order', () => {
+  function voteState(code = 'ABCD'): RoomState {
+    const options = normalizeOptions({ rounds: 2, botCount: 2 });
+    let state = createRoom(code, { id: 'host', name: 'JJ' }, options, [bot('b1', 'Daisy'), bot('b2', 'Chip')], T0);
+    state = start(state, 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'alpha', 'c1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'bravo', 'c2', T0 + 2).state;
+    state = submitCaption(state, 'b2', 'charlie', 'c3', T0 + 3).state;
+    expect(state.phase).toBe('vote');
+    return state;
+  }
+
+  it('shows every viewer the same order', () => {
+    const state = voteState();
+    const a = publicView(state, 'host', T0).captions.map((c) => c.id);
+    const b = publicView(state, 'b1', T0).captions.map((c) => c.id);
+    const c = publicView(state, 'b2', T0 + 5000).captions.map((x) => x.id);
+    expect(a).toEqual(b);
+    expect(a).toEqual(c);
+    expect([...a].sort()).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('is a function of code and round, so a different room shuffles differently', () => {
+    const orderFor = (code: string) => publicView(voteState(code), 'host', T0).captions.map((c) => c.id);
+    const orders = new Set([orderFor('ABCD'), orderFor('WXYZ'), orderFor('K7QM')].map((o) => o.join(',')));
+    // Three rooms, three seeds: at least two distinct orders (a collision of all three is the bug we would catch).
+    expect(orders.size).toBeGreaterThan(1);
+  });
+});
+
+describe('publicView redaction', () => {
+  it('never leaks bot jobs', () => {
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    const view = publicView(state, 'host', T0) as unknown as Record<string, unknown>;
+    expect('botJobs' in view).toBe(false);
+    expect(view.serverTime).toBe(T0);
+  });
+
+  it('shows a player only their own caption during the caption phase', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'mine', 'c-host', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'theirs', 'c-b1', T0 + 2).state;
+
+    const hostView = publicView(state, 'host', T0 + 3);
+    expect(hostView.captions).toEqual([{ id: 'c-host', text: 'mine', playerId: 'host' }]);
+
+    const botView = publicView(state, 'b1', T0 + 3);
+    expect(botView.captions).toEqual([{ id: 'c-b1', text: 'theirs', playerId: 'b1' }]);
+  });
+
+  it('never shows authorship during the vote phase, and marks the viewer own caption unvotable', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'mine', 'c-host', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'theirs', 'c-b1', T0 + 2).state;
+    state = submitCaption(state, 'b2', 'third', 'c-b2', T0 + 3).state;
+    expect(state.phase).toBe('vote');
+
+    const view = publicView(state, 'host', T0 + 4);
+    expect(view.captions).toHaveLength(3);
+    for (const c of view.captions) expect(c.playerId).toBeUndefined();
+
+    const own = view.captions.find((c) => c.id === 'c-host')!;
+    expect(own).toEqual({ id: 'c-host', text: 'mine', isOwn: true, canVote: false });
+    const other = view.captions.find((c) => c.id === 'c-b1')!;
+    expect(other).toEqual({ id: 'c-b1', text: 'theirs', isOwn: false, canVote: true });
+
+    // And the raw JSON of the whole view carries no author id for anyone else.
+    const json = JSON.stringify(view);
+    expect(json.includes('"playerId"')).toBe(false);
+  });
+
+  it('attaches authors from reveal on', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    const view = publicView(state, 'b1', T0 + 2000);
+    expect(view.captions.every((c) => typeof c.playerId === 'string')).toBe(true);
+  });
+});
+
+describe('voting rules', () => {
+  function voteState(): RoomState {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'a', 'c1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'b', 'c2', T0 + 2).state;
+    state = submitCaption(state, 'b2', 'c', 'c3', T0 + 3).state;
+    return state;
+  }
+
+  it('rejects a self vote', () => {
+    const state = voteState();
+    expect(submitVote(state, 'host', 'c1', T0 + 4).error).toBe('you cannot vote for your own caption');
+  });
+
+  it('rejects a second vote', () => {
+    let state = voteState();
+    state = submitVote(state, 'host', 'c2', T0 + 4).state;
+    expect(submitVote(state, 'host', 'c3', T0 + 5).error).toBe('you already voted this round');
+  });
+
+  it('rejects an unknown caption id', () => {
+    expect(submitVote(voteState(), 'host', 'nope', T0 + 4).error).toBe('that caption is not in this round');
+  });
+
+  it('gives every tied top caption the win and the points', () => {
+    let state = voteState();
+    state = submitVote(state, 'host', 'c2', T0 + 4).state;
+    state = submitVote(state, 'b1', 'c3', T0 + 5).state;
+    state = submitVote(state, 'b2', 'c1', T0 + 6).state;
+    expect(state.phase).toBe('reveal');
+    expect(state.history[0].winnerCaptionIds.sort()).toEqual(['c1', 'c2', 'c3']);
+    expect(state.players.map((p) => p.score)).toEqual([1, 1, 1]);
   });
 });
 
 describe('void round', () => {
-  it('voids the round when fewer than 2 captions exist', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    // Only host captions; force the phase to end on timeout with just 1 caption.
-    state = submitCaption(state, 'host', 'lonely caption', 'c1', T0).state;
-    expect(state.phase).toBe('caption');
-
-    const ended = endCaptionPhase(state, T0 + 999_999);
-    state = ended.state;
+  it('awards nothing when fewer than two captions exist', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'the only one', 'c1', T0 + 1).state;
+    state = endCaptionPhase(state, state.phaseEndsAt!).state;
     expect(state.phase).toBe('vote');
-    expect(state.captions.length).toBe(1);
 
-    const votedOut = endVotePhase(state, T0 + 9_999_999);
-    state = votedOut.state;
+    state = submitVote(state, 'b1', 'c1', T0 + 2).state;
+    state = endVotePhase(state, state.phaseEndsAt!).state;
+
     expect(state.phase).toBe('reveal');
     expect(state.history[0].winnerCaptionIds).toEqual([]);
-    // No score awarded for a void round.
-    expect(state.players.find((p) => p.id === 'host')!.score).toBe(0);
+    expect(state.players.every((p) => p.score === 0)).toBe(true);
   });
 });
 
-describe('self-vote rejected', () => {
-  it('rejects voting for your own caption', () => {
+describe('tally', () => {
+  it('counts votes and returns every tied top caption', () => {
+    const captions = [
+      { id: 'a', playerId: 'p1', text: 'a' },
+      { id: 'b', playerId: 'p2', text: 'b' },
+      { id: 'c', playerId: 'p3', text: 'c' },
+    ];
+    const { counts, winnerCaptionIds } = tally(captions, { p1: 'b', p2: 'c', p3: 'b', p4: 'c' });
+    expect(counts).toEqual({ a: 0, b: 2, c: 2 });
+    expect(winnerCaptionIds.sort()).toEqual(['b', 'c']);
+  });
+
+  it('has no winner when nobody voted', () => {
+    expect(tally([{ id: 'a', playerId: 'p1', text: 'a' }], {}).winnerCaptionIds).toEqual([]);
+  });
+});
+
+describe('host-only actions', () => {
+  it('refuses a non-host start', () => {
     let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'mine', 'c1', T0).state;
-    state = submitCaption(state, 'b1', 'b1 caption', 'c2', T0).state;
-    state = submitCaption(state, 'b2', 'b2 caption', 'c3', T0).state;
-    expect(state.phase).toBe('vote');
-    const hostCaptionId = state.captions.find((c) => c.playerId === 'host')!.id;
-    const res = submitVote(state, 'host', hostCaptionId, T0);
-    expect(res.error).toBe('cannot vote for your own caption');
-    expect(res.state).toEqual(state);
+    state = join(state, { id: 'p2', name: 'Friend' }, T0).state;
+    expect(start(state, 'p2', PHOTO, T0).error).toBe('only the host can start');
+  });
+
+  it('refuses a non-host next', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    expect(advance(state, 'b1', state.phaseStartedAt + 60_000, PHOTO_2).error).toBe('only the host can move on');
+  });
+
+  it('refuses a second start', () => {
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    expect(start(state, 'host', PHOTO, T0).error).toBe('this game already started');
   });
 });
 
-describe('double caption rejected', () => {
-  it('rejects a second caption from the same player, first write wins', () => {
+describe('joining', () => {
+  it('rejects an empty name', () => {
+    expect(join(twoRoundRoom(), { id: 'x', name: '   ' }, T0).error).toBe('name required');
+  });
+
+  it('rejects the ninth human', () => {
     let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    const res1 = submitCaption(state, 'host', 'first', 'c1', T0);
-    state = res1.state;
-    const res2 = submitCaption(state, 'host', 'second', 'c2', T0);
-    expect(res2.error).toBe('already captioned this round');
-    expect(res2.state.captions).toEqual(state.captions);
-    expect(res2.state.captions[0].text).toBe('first');
+    for (let i = 2; i <= 8; i++) state = join(state, { id: `p${i}`, name: `P${i}` }, T0).state;
+    expect(state.players.filter((p) => !p.isBot)).toHaveLength(8);
+    expect(join(state, { id: 'p9', name: 'P9' }, T0).error).toBe('this room is full');
+  });
+
+  it('rejects joining a finished game', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    state = advance(state, 'host', state.phaseStartedAt + REVEAL_MIN_MS, PHOTO_2).state;
+    state = playRoundHostWins(state, T0 + 90_000);
+    state = advance(state, 'host', state.phaseStartedAt + REVEAL_MIN_MS).state;
+    expect(state.phase).toBe('done');
+    expect(join(state, { id: 'late', name: 'Late' }, T0 + 99_000).error).toBe('this game is over');
   });
 });
 
-describe('non-host start rejected', () => {
-  it('rejects start from a non-host player', () => {
+describe('touch (lastSeenAt)', () => {
+  it('updates the timestamp without bumping the version', () => {
     const state = twoRoundRoom();
-    const res = start(state, 'b1', PHOTO, T0);
-    expect(res.error).toBe('only the host can start');
-    expect(res.state.phase).toBe('lobby');
+    const next = touch(state, 'host', T0 + 5000);
+    expect(next.players[0].lastSeenAt).toBe(T0 + 5000);
+    expect(next.version).toBe(state.version);
+  });
+
+  it('ignores an unknown player', () => {
+    const state = twoRoundRoom();
+    expect(touch(state, 'nobody', T0 + 5000)).toBe(state);
   });
 });
 
-describe('non-host advance rejected', () => {
-  it('rejects advance from a non-host, non-timer actor', () => {
-    let state = twoRoundRoom();
+describe('advanceIfDue', () => {
+  it('does nothing while the phase is still running', () => {
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    expect(advanceIfDue(state, T0 + 1000).state).toBe(state);
+  });
+
+  it('ends an overdue caption phase and opens a fresh vote window', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'a', 'c1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'b', 'c2', T0 + 2).state;
+    // b2 never captions, so only the timer can move things on. One call can
+    // only complete ONE timer-driven transition, because the phase it opens
+    // gets its deadline from the same `now`: the vote window that just opened
+    // is not also overdue.
+    const first = advanceIfDue(state, T0 + 10 * 60 * 1000);
+    expect(first.state.phase).toBe('vote');
+    expect(first.state.history).toHaveLength(0);
+
+    const second = advanceIfDue(first.state, first.state.phaseEndsAt!);
+    expect(second.state.phase).toBe('reveal');
+    expect(second.state.history).toHaveLength(1);
+  });
+
+  it('chains transitions in one pass when they are act-driven, not timer-driven', () => {
+    // 1 human, 0 bots: the single caption completes the roster (-> vote), and
+    // in the vote phase the only caption is the player's own, so there is
+    // nothing they can vote for and the round is over immediately.
+    let state = createRoom('SOLO', { id: 'host', name: 'JJ' }, normalizeOptions({ rounds: 1, botCount: 0 }), [], T0);
     state = start(state, 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'a', 'c1', T0).state;
-    state = submitCaption(state, 'b1', 'b', 'c2', T0).state;
-    state = submitCaption(state, 'b2', 'c', 'c3', T0).state;
-    const c1 = state.captions[0].id;
-    state = submitVote(state, 'b1', c1, T0).state;
-    state = submitVote(state, 'b2', c1, T0).state;
-    state = submitVote(state, 'host', state.captions[1].id, T0).state;
+    state = submitCaption(state, 'host', 'alone in here', 'c1', T0 + 1).state;
     expect(state.phase).toBe('reveal');
+    expect(state.history[0].winnerCaptionIds).toEqual([]);
+  });
 
-    const res = advance(state, 'b1', T0);
-    expect(res.error).toBe('only the host can advance');
+  it('stops at reveal and asks for a photo', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    const result = advanceIfDue(state, T0 + 10 * 60 * 1000);
+    expect(result.needsPhoto).toBe(true);
+    expect(result.state.phase).toBe('reveal');
+  });
+
+  it('finishes the game after the last round with no photo needed', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1000);
+    state = advance(state, 'host', state.phaseStartedAt + REVEAL_MIN_MS, PHOTO_2).state;
+    state = playRoundHostWins(state, T0 + 60_000);
+    const result = advanceIfDue(state, T0 + 10 * 60 * 1000);
+    expect(result.needsPhoto).toBeUndefined();
+    expect(result.state.phase).toBe('done');
   });
 });
 
-describe('publicView', () => {
-  it('hides other players captions during caption phase but shows your own', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'host caption', 'c1', T0).state;
-    // b1 hasn't captioned yet so the phase is still 'caption'.
-    const hostView = publicView(state, 'host');
-    expect(hostView.captions.map((c) => c.text)).toEqual(['host caption']);
-
-    const b1View = publicView(state, 'b1');
-    expect(b1View.captions).toEqual([]);
-  });
-
-  it('hides authors during vote and shows them in reveal', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'a', 'c1', T0).state;
-    state = submitCaption(state, 'b1', 'b', 'c2', T0).state;
-    state = submitCaption(state, 'b2', 'c', 'c3', T0).state;
-    expect(state.phase).toBe('vote');
-
-    const voteView = publicView(state, 'host');
-    expect(voteView.captions.every((c) => c.playerId === undefined)).toBe(true);
-    expect(voteView.captions.length).toBe(3);
-
-    const c1 = state.captions[0].id;
-    state = submitVote(state, 'b1', c1, T0).state;
-    state = submitVote(state, 'b2', c1, T0).state;
-    state = submitVote(state, 'host', state.captions[1].id, T0).state;
-    expect(state.phase).toBe('reveal');
-
-    const revealView = publicView(state, 'host');
-    expect(revealView.captions.every((c) => typeof c.playerId === 'string')).toBe(true);
+describe('options', () => {
+  it('clamps nonsense to a playable room', () => {
+    expect(normalizeOptions({ rounds: 0, captionSeconds: 1, voteSeconds: 9999, revealSeconds: 0, botCount: 99 })).toEqual({
+      rounds: 1,
+      captionSeconds: 15,
+      voteSeconds: 120,
+      revealSeconds: 3,
+      botCount: 4,
+    });
   });
 });
 
-describe('mid-game joiner', () => {
-  it('plays from the next round, not the one in progress', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-
-    const joinRes = join(state, { id: 'late', name: 'Latecomer' }, T0 + 500);
-    expect(joinRes.error).toBeUndefined();
-    state = joinRes.state;
-    expect(state.players.find((p) => p.id === 'late')!.connected).toBe(false);
-
-    // The round completes without the late joiner captioning.
-    state = submitCaption(state, 'host', 'a', 'c1', T0).state;
-    state = submitCaption(state, 'b1', 'b', 'c2', T0).state;
-    const res = submitCaption(state, 'b2', 'c', 'c3', T0);
-    state = res.state;
-    expect(state.phase).toBe('vote');
-
-    const c1 = state.captions[0].id;
-    state = submitVote(state, 'b1', c1, T0).state;
-    state = submitVote(state, 'b2', c1, T0).state;
-    state = submitVote(state, 'host', state.captions[1].id, T0).state;
-    expect(state.phase).toBe('reveal');
-
-    const advanced = advance(state, 'host', T0, PHOTO_2);
-    state = advanced.state;
-    expect(state.phase).toBe('caption');
-    // Now active for round 2.
-    expect(state.players.find((p) => p.id === 'late')!.connected).toBe(true);
-  });
-});
-
-describe('champion computed at done', () => {
-  it('names every tied top scorer as champion', () => {
-    const options = normalizeOptions({ rounds: 1 });
-    let state = createRoom('WXYZ', { id: 'a', name: 'A' }, options, [], T0);
-    state = { ...state, players: [{ id: 'a', name: 'A', isBot: false, score: 5, connected: true }, { id: 'b', name: 'B', isBot: false, score: 5, connected: true }] };
-    state = { ...state, phase: 'reveal', round: 1 };
-    const res = advance(state, 'a', T0);
-    expect(res.state.phase).toBe('done');
-    expect(res.state.championIds!.sort()).toEqual(['a', 'b']);
-  });
-});
-
-describe('normalizeOptions clamping', () => {
-  it('clamps out-of-range values into the allowed bands', () => {
-    const opts = normalizeOptions({ rounds: 999, captionSeconds: 1, voteSeconds: 1, revealSeconds: 999, botCount: 99 });
-    expect(opts.rounds).toBe(20);
-    expect(opts.captionSeconds).toBe(15);
-    expect(opts.voteSeconds).toBe(10);
-    expect(opts.revealSeconds).toBe(60);
-    expect(opts.botCount).toBe(4);
+describe('text sanitizers', () => {
+  it('trims a name, collapses whitespace, and caps it at 20 characters', () => {
+    expect(sanitizeName('  JJ  ')).toBe('JJ');
+    expect(sanitizeName('J   J')).toBe('J J');
+    expect(sanitizeName('x'.repeat(50))).toHaveLength(20);
+    expect(sanitizeName('   ')).toBe('');
   });
 
-  it('applies defaults when nothing is given', () => {
-    const opts = normalizeOptions();
-    expect(opts.rounds).toBe(5);
-    expect(opts.botCount).toBe(2);
+  it('folds a multi-line caption onto one line', () => {
+    expect(sanitizeCaption('one\ntwo\r\nthree')).toBe('one two three');
+    expect(sanitizeCaption('  spaced   out  ')).toBe('spaced out');
+    expect(sanitizeCaption('y'.repeat(200))).toHaveLength(120);
   });
-});
 
-describe('room full', () => {
-  it('rejects a join once max human players is reached', () => {
-    const options = normalizeOptions();
-    let state = createRoom('FULL', { id: 'h', name: 'Host' }, options, [], T0);
-    for (let i = 0; i < 7; i++) {
-      state = join(state, { id: `p${i}`, name: `P${i}` }, T0).state;
-    }
-    expect(state.players.length).toBe(8);
-    const res = join(state, { id: 'overflow', name: 'One Too Many' }, T0);
-    expect(res.error).toBe('room is full');
+  it('keeps an injection-shaped caption as literal text, character for character', () => {
+    const payload = '<img src=x onerror=alert(1)>';
+    expect(sanitizeCaption(payload)).toBe(payload);
+    expect(sanitizeName(payload)).toBe(payload.slice(0, 20));
+  });
+
+  it('stores an injection-shaped caption verbatim through the reducer', () => {
+    const payload = '<img src=x onerror=alert(1)>';
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', payload, 'c1', T0 + 1).state;
+    expect(state.captions[0].text).toBe(payload);
+  });
+
+  it('strips a model preamble and wrapping quotes, but only on the bot path', () => {
+    expect(cleanModelCaption('  "Just a goat being a goat."  ')).toBe('Just a goat being a goat.');
+    expect(cleanModelCaption("Here's a caption: Goat sees all")).toBe('Goat sees all');
+    // The human path leaves quotes alone.
+    expect(sanitizeCaption('"quoted on purpose"')).toBe('"quoted on purpose"');
   });
 });
 
 describe('caption validation', () => {
-  it('rejects empty and over-length captions', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    const empty = submitCaption(state, 'host', '   ', 'c1', T0);
-    expect(empty.error).toMatch(/1-120/);
-    const tooLong = submitCaption(state, 'host', 'x'.repeat(121), 'c2', T0);
-    expect(tooLong.error).toMatch(/1-120/);
+  it('rejects an empty caption', () => {
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    expect(submitCaption(state, 'host', '   ', 'c1', T0 + 1).error).toBe('caption cannot be empty');
   });
 
-  it('trims whitespace from a valid caption', () => {
-    let state = twoRoundRoom();
-    state = start(state, 'host', PHOTO, T0).state;
-    const res = submitCaption(state, 'host', '  hello world  ', 'c1', T0);
-    expect(res.state.captions[0].text).toBe('hello world');
+  it('rejects a second caption from the same player', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'first', 'c1', T0 + 1).state;
+    expect(submitCaption(state, 'host', 'second', 'c2', T0 + 2).error).toBe('you already captioned this round');
+  });
+
+  it('rejects captioning outside the caption phase', () => {
+    const state = twoRoundRoom();
+    expect(submitCaption(state, 'host', 'too early', 'c1', T0).error).toBe('not in the caption phase');
   });
 });

@@ -13,23 +13,104 @@ vitest for the game logic. Same shape as `/Users/joyd/Bilingual Vocab Game Gener
 ## Commands
 
 ```
-npm install       # install dependencies
-npm run dev       # vite dev server (client only, no worker)
+npm install        # install dependencies
+npm run dev        # vite dev server (client only, no worker)
 npm run cf:dev     # build + wrangler dev (full worker + DO + AI locally)
-npm test          # vitest run (src/shared/room.ts and friends)
-npm run typecheck # tsc --noEmit for both the client/shared and worker configs
-npm run build     # vite build -> dist/client
-npm run deploy    # build + wrangler deploy
+npm test           # vitest run (room reducer, photo fetch, bots, scheduler)
+npm run typecheck  # tsc --noEmit for both the client/shared and worker configs
+npm run check:xss  # fails if any innerHTML shows up in src/client
+npm run build      # vite build -> dist/client
+npm run deploy     # build + wrangler deploy
+npm run ai:smoke   # hit the deployed /api/ai-smoke and fail loudly if a model is dead
+npm run fixture    # regenerate src/shared/fixture-photo.ts from tests/fixtures/photo.jpg
 ```
+
+## Worker API
+
+Every route is JSON in, JSON out, errors always `{ "error": "..." }`, and an unknown room is 404.
+Responses carry `serverTime` so a phone can render an honest countdown without trusting its own clock.
+
+| Route | Who | What |
+|---|---|---|
+| `POST /api/rooms` | anyone | `{ name, options? }` -> `{ code, playerId, playerSecret, state, serverTime }`. Creator is host; bots are added here. |
+| `POST /api/rooms/:code/join` | anyone | `{ name }` -> `{ playerId, playerSecret, state, serverTime }` |
+| `POST /api/rooms/:code/start` | host | lobby -> caption. Fetches round 1's photo. |
+| `POST /api/rooms/:code/caption` | player in the round | `{ text }` |
+| `POST /api/rooms/:code/vote` | player in the round | `{ captionId }`, never your own |
+| `POST /api/rooms/:code/next` | host | reveal -> next round, or done after the last one |
+| `GET /api/rooms/:code?v=N` | player | `{ state, serverTime }`, or `{ unchanged: true, nextPollMs, serverTime }` when `v` matches |
+| `GET /api/rooms/:code/photo/:round` | anyone with the code | the round's image bytes, `Cache-Control: private, max-age=3600` |
+| `POST /api/ai-smoke` | header `x-smoke-token` | the deploy gate, see below |
+
+**Credentials.** Create and join hand back `{ playerId, playerSecret }`. Every other route (including
+the state poll) must send them as `x-player-id` and `x-player-secret`; a mismatch is 403. Secrets live
+in their own Durable Object storage key and never appear in any state response.
+
+The photo route is the one exception: a browser `<img>` tag cannot send headers, and pushing a room
+secret into a URL would leave it in logs and browser history. The bytes are a public internet photo,
+so that route is open to anyone who has the 4-letter code, while the room state behind it still needs
+both headers.
+
+**What a client sees.** During `caption` a player gets only their own caption back. During `vote`
+every caption arrives as `{ id, text, isOwn, canVote }`, with no author, in an order seeded by
+`code + round` so every screen shows the same shuffle. Authors appear only from `reveal` on. Bot job
+state is never sent to anyone.
+
+## Configuration
+
+Nothing tunable is a literal in game logic. Per-room settings are host options at create time
+(clamped server-side); everything else is a wrangler `var` in `wrangler.jsonc`, with a typed default
+in `src/shared/config.ts` if the var is missing.
+
+| Var | Default | What it does |
+|---|---|---|
+| `PHOTO_TAGS` | `dog,cat,funny,awkward,party,baby,goat,costume,fail` | the tag pool loremflickr draws from |
+| `PHOTO_WIDTH` / `PHOTO_HEIGHT` | `800` / `600` | requested photo size |
+| `PHOTO_MAX_BYTES` | `2000000` | hard byte cap, enforced while the image streams in |
+| `VISION_MODEL` | `@cf/meta/llama-3.2-11b-vision-instruct` | writes bot captions |
+| `VISION_MODEL_FALLBACK` | `@cf/llava-hf/llava-1.5-7b-hf` | tried once if the primary fails |
+| `TEXT_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | casts bot votes, in JSON mode |
+| `BOT_TIMEOUT_MS` | `20000` | hard stop on one bot's model call |
+| `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
+| `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke`. Unset means the endpoint is off. |
+
+Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
+(60), `voteSeconds` 10-120 (30), `revealSeconds` 3-60 (10), `botCount` 0-4 (2).
+
+## Deploy and smoke test
+
+The model ids above are a guess until something calls them: `wrangler ai models list` fails on this
+account (auth code 10000), so the catalogue cannot be checked locally. `POST /api/ai-smoke` is how the
+deployed Worker answers the question, on the real account, with the real binding. It runs a real
+bundled photo through the vision model and a real JSON-mode ballot through the text model, and returns
+which model ids answered.
+
+```
+# 1. pick a token and give it to the Worker (it prompts for the value)
+npx wrangler secret put SMOKE_TOKEN
+
+# 2. deploy
+npm run deploy
+
+# 3. gate: this must pass before anyone is handed the link
+CAPTION_WARS_URL=https://caption-wars.<subdomain>.workers.dev \
+SMOKE_TOKEN=<the same value> \
+npm run ai:smoke
+```
+
+`npm run ai:smoke` exits non-zero if either model is dead, and prints the model ids that answered. If
+the vision model fails but the fallback answers, the smoke result names which one did the work: put
+that id in `VISION_MODEL` and redeploy.
 
 ## Layout
 
 ```
 src/shared/   pure game logic (types, config, personas, rng, ids, room reducer) + no I/O
 src/client/   the browser app (vanilla TS, no framework)
-src/worker/   the Cloudflare Worker: HTTP router + RoomDO (durable object per room)
+src/worker/   the Cloudflare Worker: index (router), room-do (one DO per room), photo, bots, smoke
 agent/        agent-native path: a terminal script that joins a room over the same HTTP API
-tests/        vitest specs for src/shared/
+scripts/      node helpers with no dependencies: ai-smoke.mjs, make-fixture.mjs
+tests/        vitest specs (room, photo, bots, scheduler) + the bundled goat fixture
 ```
 
 ## Agent player
