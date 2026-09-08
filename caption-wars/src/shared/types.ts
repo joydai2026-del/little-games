@@ -124,6 +124,8 @@ export interface PublicCaption {
  */
 export interface PublicRoomState extends Omit<RoomState, 'captions' | 'botJobs'> {
   captions: PublicCaption[];
+  /** Captions submitted so far this round (visible during `caption` so players see "N of M in"). */
+  captionCount: number;
   serverTime: number;
 }
 

@@ -560,5 +560,5 @@ export function publicView(state: RoomState, viewerId: string, now: number): Pub
     }));
   }
 
-  return { ...rest, captions, serverTime: now };
+  return { ...rest, captions, captionCount: state.captions.length, serverTime: now };
 }
