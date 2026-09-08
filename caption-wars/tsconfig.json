@@ -17,6 +17,7 @@
   // (Env, DurableObjectNamespace, Ai), so they are typechecked by
   // tsconfig.worker.json instead, which loads @cloudflare/workers-types.
   "exclude": [
+    "tests/bots.test.ts",
     "tests/room-do.test.ts",
     "tests/ai-try.test.ts",
     "tests/worker-index.test.ts",

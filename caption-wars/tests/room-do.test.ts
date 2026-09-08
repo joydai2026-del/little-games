@@ -68,7 +68,7 @@ vi.mock('../src/worker/photo', () => ({
 
 import { RoomDO } from '../src/worker/room-do';
 import { createRoom, start, submitCaption } from '../src/shared/room';
-import { normalizeOptions } from '../src/shared/config';
+import { BOT_VOTE_TEMPERATURE, normalizeOptions } from '../src/shared/config';
 import type { Env } from '../src/worker/env';
 import type { PhotoMeta, Player, RoomState } from '../src/shared/types';
 
@@ -903,5 +903,70 @@ describe('RoomDO when Workers AI is out of its daily allocation', () => {
     const body = (await res.json()) as { state: { aiOffline?: boolean; endedReason?: string } };
     expect(body.state.aiOffline).toBe(true);
     expect(body.state.endedReason).toBe('ai-unavailable');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BOT_VOTE_TEMPERATURE, from the wrangler var all the way onto the wire.
+//
+// The var is the knob that stopped the AI players voting only for each other
+// (2026-09-08). A knob that parses correctly but never reaches the model is the
+// same bug as the literal it replaced, and nothing else in the suite crosses the
+// four boundaries between them: wrangler var -> settings() -> botModels() ->
+// generateBotVote's request body. Codex review round 1, must-fix 1.
+// ---------------------------------------------------------------------------
+
+/** A room in the vote phase with one bot vote job due right now. */
+function roomWithDueVoteJob(): RoomState {
+  const now = Date.now();
+  let room = seededRoom({ phaseEndsAt: now + 60_000 });
+  room = submitCaption(room, 'host', 'human caption', 'c-host', Date.now()).state;
+  room = submitCaption(room, 'b1', 'daisy caption', 'c-b1', Date.now()).state;
+  room = submitCaption(room, 'b2', 'chip caption', 'c-b2', Date.now()).state;
+  return {
+    ...room,
+    phase: 'vote',
+    phaseEndsAt: now + 60_000,
+    botJobs: [
+      { jobId: 'v1', botId: 'b1', round: 1, phase: 'vote', dueAt: now - 1, deadline: now + 20_000, status: 'pending' },
+    ],
+  };
+}
+
+describe('BOT_VOTE_TEMPERATURE reaches the model', () => {
+  /** An AI binding that records what it was asked, and votes for the human. */
+  function recordingAi(over: Record<string, string> = {}): { env: Env; seen: Record<string, unknown>[] } {
+    const seen: Record<string, unknown>[] = [];
+    const env = {
+      AI: {
+        run: async (_model: string, input: unknown) => {
+          seen.push(input as Record<string, unknown>);
+          return { response: { captionId: 'c-host' } };
+        },
+      },
+      ...over,
+    } as unknown as Env;
+    return { env, seen };
+  }
+
+  it('sends the temperature the wrangler var asks for', async () => {
+    // Deliberately not 0.9: a passing test must mean the VAR was read, not that
+    // the code default happened to match.
+    const { env, seen } = recordingAi({ BOT_VOTE_TEMPERATURE: '0.35' });
+    const { room } = await buildWith(roomWithDueVoteJob(), env);
+    await room.alarm();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].temperature).toBe(0.35);
+  });
+
+  it('sends the measured default when the var is unset or nonsense', async () => {
+    for (const over of [{}, { BOT_VOTE_TEMPERATURE: 'warm' }, { BOT_VOTE_TEMPERATURE: '9' }]) {
+      const { env, seen } = recordingAi(over as Record<string, string>);
+      const { room } = await buildWith(roomWithDueVoteJob(), env);
+      await room.alarm();
+      expect(seen).toHaveLength(1);
+      expect(seen[0].temperature).toBe(BOT_VOTE_TEMPERATURE);
+    }
   });
 });

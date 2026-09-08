@@ -357,6 +357,7 @@ export class RoomDO implements DurableObject {
       textModel: chosen.textModel,
       timeoutMs: this.set.botTimeoutMs,
       judgeTimeoutMs: this.set.captionJudgeTimeoutMs,
+      voteTemperature: this.set.botVoteTemperature,
       visionMaxBytes: this.set.visionMaxBytes,
     };
   }

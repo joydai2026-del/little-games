@@ -86,7 +86,7 @@ the change).
 - "recognises the two OpenAI ACCOUNT-level codes"
 - "leaves an OpenAI rate limit alone: a 429 is a hiccup unless it says quota"
 
-## Verification (all run 2026-09-08, in `/Users/joyd/little games/caption-wars`)
+## Verification (all run 2026-09-08, in `caption-wars`)
 
 ```
 npm run typecheck   -> clean, no output (tsc -p tsconfig.json && tsc -p tsconfig.worker.json)
@@ -177,7 +177,7 @@ green while every live text call returned 400. That is the shape to watch for in
 translation test can only prove what goes on the wire, never that the far end accepts it. The
 per-family expectations are still grade C for the same reason.
 
-### Verification (run 2026-09-08 in `/Users/joyd/little games/caption-wars`, exit 0)
+### Verification (run 2026-09-08 in `caption-wars`, exit 0)
 
 ```
 npm run typecheck && npm test && npm run check:xss && npm run build
@@ -268,7 +268,7 @@ for both temperature and effort, and the legal values per id are documented in `
 the README instead of hardcoded. The protection that mattered (nothing is ever GUESSED) is now
 structural rather than per-family.
 
-### Verification (run 2026-09-08 in `/Users/joyd/little games/caption-wars`, exit 0)
+### Verification (run 2026-09-08 in `caption-wars`, exit 0)
 
 ```
 npm run typecheck && npm test && npm run check:xss && npm run build
@@ -363,7 +363,7 @@ survived 359/359), which is why it is now part of the round.
 | photo catch without `noteIfSubrequestLimit` | 1 failed / 10 passed |
 | `calls += 1` before the call | 1 failed / 68 passed |
 
-### Verification (run 2026-09-08 in `/Users/joyd/little games/caption-wars`, exit 0)
+### Verification (run 2026-09-08 in `caption-wars`, exit 0)
 
 ```
 npm run typecheck && npm test && npm run check:xss && npm run build

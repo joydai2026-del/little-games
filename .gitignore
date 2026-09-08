@@ -8,3 +8,9 @@ dist/
 .vault
 scratch/
 wrangler.toml
+
+# Demo recorder scratch output: only the mp4/gif/stills get committed.
+caption-wars/docs/demo/*.webm
+caption-wars/docs/demo/events.json
+caption-wars/docs/demo/_video_raw/
+__pycache__/

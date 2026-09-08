@@ -67,6 +67,26 @@ export const AI_TRY_MAX_SAMPLES = 24;
 // absent, and 160 is over three times the free plan's 50-subrequest ceiling.
 export const AI_TRY_MAX_MODEL_CALLS = 40;
 
+/**
+ * Sampling temperature for the bot VOTE call (2026-09-08, JJ: bots only voted
+ * for each other), overridable through the wrangler var BOT_VOTE_TEMPERATURE.
+ *
+ * It was 0.3, a literal in bots.ts. At 0.3 with a fixed ballot order the four
+ * bots are near-deterministic and converge on the same caption, which in game
+ * JG34 was always another bot's. Measured with scripts/vote-bias-check.mjs on
+ * gpt-4.1-nano over the four real JG34 ballots: the old prompt sent 15% of its
+ * votes to the human caption and three of the four personas sent ZERO of 24. The
+ * rewritten prompt at 0.9, with the ballot shuffled per bot, sends 30% over the
+ * same 96 calls (a fair share is about 33% on a three-caption ballot) and every
+ * persona now votes human between 21% and 42% of the time.
+ *
+ * This is the TYPED DEFAULT, the value that fires when the var is absent or
+ * nonsense. The live knob is the var: `settings()` parses it (0 to 2, anything
+ * else falls back to here) onto `BotModels.voteTemperature`, so the next tuning
+ * run changes policy rather than code.
+ */
+export const BOT_VOTE_TEMPERATURE = 0.9;
+
 /** Byte cap on a fetched photo, overridable through the wrangler var PHOTO_MAX_BYTES. */
 export const PHOTO_MAX_BYTES = 2_000_000;
 

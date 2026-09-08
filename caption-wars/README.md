@@ -8,7 +8,17 @@ Plan (the contract this is built from): `docs/plans/2026-09-07-mvp-plan.md`.
 ## Stack
 
 One Cloudflare Worker (static assets + API), one Durable Object per room, Workers AI for the bots,
-vitest for the game logic. Same shape as `/Users/joyd/Bilingual Vocab Game Generator`.
+vitest for the game logic. Same shape as the author's Bilingual Vocab Game.
+
+## Run it yourself
+
+1. Node 22.12 or newer (vitest 5 needs it) and a free Cloudflare account.
+2. `cd caption-wars && npm install`.
+3. `npx wrangler login` once, then `npx wrangler secret put SMOKE_TOKEN` (any long random string,
+   it guards the two ops routes) and, for OpenAI bots, `npx wrangler secret put OPENAI_API_KEY`.
+   Without the OpenAI key the bots fall back to Workers AI, no other change needed.
+4. `npm run deploy`, wait about 15 seconds, then `CAPTION_WARS_URL=<your worker url> SMOKE_TOKEN=<the same string> npm run ai:smoke`.
+5. `npm test` and `npm run typecheck` for the suite.
 
 ## Commands
 
@@ -86,6 +96,7 @@ in `src/shared/config.ts` if the var is missing.
 | `TEXT_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | casts bot votes, in JSON mode |
 | `BOT_TIMEOUT_MS` | `20000` | the budget for one bot's WHOLE caption ladder (up to three model calls), which is also the deadline the job is reaped at |
 | `CAPTION_JUDGE_TIMEOUT_MS` | `10000` | budget for ONE caption-judge call, clamped again by what is left of the job deadline. 6000 measured too tight |
+| `BOT_VOTE_TEMPERATURE` | `0.9` | how random the AI players' votes are, `0` to `2`. It was a literal `0.3`, which made all four bots near-deterministic and land on the same caption: one of the three causes of "the bots only voted for each other". Measured, not guessed (`docs/2026-09-08-vote-bias-fix.md`); anything outside the range falls back to the default |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
 | `AI_TRY_MAX_SAMPLES` | `24` | cost ceiling on one `POST /api/ai-try` call: photos x personas |
 | `AI_TRY_MAX_MODEL_CALLS` | `40` | HARD ceiling on model calls in one `ai-try` request (captions, caption judges, photo descriptions, relevance judges). Reserved before every call, so a cap below one photo batch really does stop the batch |

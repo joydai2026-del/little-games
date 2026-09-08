@@ -16,6 +16,7 @@ import {
   AI_TRY_MAX_MODEL_CALLS,
   AI_TRY_MAX_SAMPLES,
   BOT_TIMEOUT_MS,
+  BOT_VOTE_TEMPERATURE,
   CAPTION_JUDGE_TIMEOUT_MS,
   CAPTION_MAX_CHARS,
   PHOTO_MAX_BYTES,
@@ -61,6 +62,17 @@ export interface Env {
 
   BOT_TIMEOUT_MS: string;
   CAPTION_JUDGE_TIMEOUT_MS: string;
+  /**
+   * Sampling temperature for the bot VOTE call. A var and not a literal because
+   * it is one of the three knobs that stopped the bots voting only for each
+   * other (2026-09-08), and the next tuning run has to be able to move it
+   * without a code change. See BOT_VOTE_TEMPERATURE in src/shared/config.ts.
+   *
+   * Parsed by `range`, not `num`: unlike every other number here it may legally
+   * be ZERO (a deterministic judge is a valid setting to measure), and it has a
+   * real ceiling, which `num` cannot express.
+   */
+  BOT_VOTE_TEMPERATURE: string;
   REVEAL_MIN_MS: string;
   AI_TRY_MAX_SAMPLES: string;
   AI_TRY_MAX_MODEL_CALLS: string;
@@ -97,6 +109,8 @@ export interface Settings {
   openaiReasoningEffort: string;
   botTimeoutMs: number;
   captionJudgeTimeoutMs: number;
+  /** See Env.BOT_VOTE_TEMPERATURE. Clamped to a temperature a model will accept. */
+  botVoteTemperature: number;
   revealMinMs: number;
   captionMaxChars: number;
   aiTryMaxSamples: number;
@@ -106,6 +120,24 @@ export interface Settings {
 function num(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * A var that may legally be ZERO and has a real ceiling, which `num` cannot
+ * express (it rejects everything <= 0 and bounds nothing above).
+ *
+ * Absent, blank, not a number, or outside [min, max] all mean the default. That
+ * last clause is the point: a typo in wrangler.jsonc must not put `NaN` or `47`
+ * in a model request body, because a rejected request is a bot that never votes
+ * and a round that ends on its timer with nothing in it.
+ */
+function range(raw: string | undefined, min: number, max: number, fallback: number): number {
+  const s = (raw ?? '').trim();
+  // Checked before Number(), because Number('') is 0 and 0 is inside the range:
+  // an unset var would otherwise silently mean zero rather than the default.
+  if (s.length === 0) return fallback;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
 function str(raw: string | undefined, fallback: string): string {
@@ -232,6 +264,9 @@ export function settings(env: Env): Settings {
     openaiReasoningEffort: str(env.OPENAI_REASONING_EFFORT, DEFAULT_REASONING_EFFORT),
     botTimeoutMs: num(env.BOT_TIMEOUT_MS, BOT_TIMEOUT_MS),
     captionJudgeTimeoutMs: num(env.CAPTION_JUDGE_TIMEOUT_MS, CAPTION_JUDGE_TIMEOUT_MS),
+    // 0..2 is the range both providers accept (OpenAI Chat Completions and the
+    // Workers AI text models). Anything else is the measured default.
+    botVoteTemperature: range(env.BOT_VOTE_TEMPERATURE, 0, 2, BOT_VOTE_TEMPERATURE),
     revealMinMs: num(env.REVEAL_MIN_MS, REVEAL_MIN_MS),
     captionMaxChars: CAPTION_MAX_CHARS,
     aiTryMaxSamples: num(env.AI_TRY_MAX_SAMPLES, AI_TRY_MAX_SAMPLES),

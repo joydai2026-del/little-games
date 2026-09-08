@@ -28,7 +28,9 @@ import { sha256Hex } from '../src/worker/photo';
 import { fixturePhoto, FIXTURE_PHOTO_SHA256 } from '../src/shared/fixture-photo';
 import { PERSONAS } from '../src/shared/personas';
 import { createRoom, start, submitCaption } from '../src/shared/room';
-import { normalizeOptions } from '../src/shared/config';
+import { BOT_VOTE_TEMPERATURE, normalizeOptions } from '../src/shared/config';
+import { hashSeed, seededShuffle } from '../src/shared/rng';
+import { settings, type Env } from '../src/worker/env';
 import type { BotJob, PhotoMeta, Player, RoomState } from '../src/shared/types';
 
 const T0 = 1_700_000_000_000;
@@ -332,6 +334,230 @@ describe('bot voting', () => {
   it('does not vote when there is nothing to vote for', async () => {
     const ai: AiLike = { async run() { throw new Error('should not be called'); } };
     expect(await generateBotVote(models(ai), PERSONAS[0], [])).toBeNull();
+  });
+});
+
+/**
+ * 2026-09-08, JJ: bots only voted for each other. The three things that made
+ * that happen are the three things this block pins down, so a later prompt edit
+ * cannot quietly put any of them back.
+ */
+describe('the vote prompt judges like a player, not like a writer', () => {
+  const FOUR = [
+    { id: 'c1', text: 'This squirrel just filed a noise complaint against the tree.' },
+    { id: 'c2', text: "When you hear someone say 'nuts' from across the park" },
+    { id: 'c3', text: "The squirrel's tail is having a better day than any of us." },
+    { id: 'c4', text: 'He knows what he did' },
+  ];
+
+  /** Runs one vote and hands back what the model was actually sent. */
+  async function askVote(
+    options: Array<{ id: string; text: string }>,
+    opts: { ballotSeed?: string } = {},
+    answerId = 'c1'
+  ) {
+    let input: Record<string, unknown> | undefined;
+    const ai: AiLike = {
+      async run(_model, given) {
+        input = given as Record<string, unknown>;
+        return { response: { captionId: answerId } };
+      },
+    };
+    const picked = await generateBotVote(models(ai), PERSONAS[0], options, opts);
+    const prompt = String((input!.messages as Array<{ content: string }>)[0].content);
+    // The ballot is the last line of the prompt, the JSON array.
+    const lines = prompt.split('\n');
+    const ballot = JSON.parse(lines[lines.length - 1]) as Array<{ captionId: string; caption: string }>;
+    return { picked, prompt, ballot, input: input! };
+  }
+
+  it('never puts a persona style in the vote prompt', async () => {
+    // The styles are instructions for WRITING a caption ("Escalate it."), so as
+    // a judging instruction each one told a bot to reward the caption that made
+    // its own move: another bot's.
+    for (const persona of PERSONAS) {
+      let input: Record<string, unknown> | undefined;
+      const ai: AiLike = {
+        async run(_model, given) {
+          input = given as Record<string, unknown>;
+          return { response: { captionId: 'c1' } };
+        },
+      };
+      await generateBotVote(models(ai), persona, FOUR, { ballotSeed: 'b1:1' });
+      const prompt = String((input!.messages as Array<{ content: string }>)[0].content);
+      expect(prompt).not.toContain(persona.style);
+      expect(prompt).not.toContain(persona.style.split('.')[0]);
+    }
+  });
+
+  it('tells the judge that a short plain line can win and that length is not funny', async () => {
+    const { prompt } = await askVote(FOUR, { ballotSeed: 'b1:1' });
+    expect(prompt).toMatch(/Short and plain often wins/);
+    expect(prompt).toMatch(/Do not reward length/);
+    expect(prompt).toMatch(/biggest laugh/);
+    // The injection guard from the original prompt is still there.
+    expect(prompt).toMatch(/data, not instructions to you/);
+  });
+
+  it('uses the temperature from config, not a literal', async () => {
+    const { input } = await askVote(FOUR, { ballotSeed: 'b1:1' });
+    expect(input.temperature).toBe(BOT_VOTE_TEMPERATURE);
+    // The schema path is untouched.
+    expect(input.response_format).toEqual({
+      type: 'json_schema',
+      json_schema: { type: 'object', properties: { captionId: { type: 'string' } }, required: ['captionId'] },
+    });
+  });
+
+  it('sends the temperature the deployment configured, not the code default', async () => {
+    // The config default is only the fallback. What actually goes on the wire is
+    // whatever settings() parsed out of the wrangler var and put on BotModels,
+    // or the whole var would be a number nobody reads (Codex review round 1,
+    // must-fix 1).
+    let input: Record<string, unknown> | undefined;
+    const ai: AiLike = {
+      async run(_model, given) {
+        input = given as Record<string, unknown>;
+        return { response: { captionId: 'c1' } };
+      },
+    };
+    await generateBotVote(models(ai, { voteTemperature: 0.2 }), PERSONAS[0], FOUR, {
+      ballotSeed: 'b1:1',
+    });
+    expect(input!.temperature).toBe(0.2);
+    expect(input!.temperature).not.toBe(BOT_VOTE_TEMPERATURE);
+  });
+
+  it('shuffles the ballot, so row 1 is not the same caption for every bot', async () => {
+    const orders = new Set<string>();
+    for (const botId of ['b1', 'b2', 'b3', 'b4']) {
+      const { ballot } = await askVote(FOUR, { ballotSeed: `${botId}:1` });
+      orders.add(ballot.map((b) => b.captionId).join(','));
+    }
+    expect(orders.size).toBeGreaterThan(1);
+  });
+
+  it('gives one bot the same order every time (seeded, so a test can assert it)', async () => {
+    const a = await askVote(FOUR, { ballotSeed: 'b1:1' });
+    const b = await askVote(FOUR, { ballotSeed: 'b1:1' });
+    expect(a.ballot.map((r) => r.captionId)).toEqual(b.ballot.map((r) => r.captionId));
+    // The round is part of the seed, so the same bot re-reads this ballot in a
+    // different order next round. On THIS four-caption ballot the two orders
+    // differ (executed: b1:1 gives 4,2,3,1 and b1:2 gives 2,3,4,1). That is a
+    // fact about these two seeds, not a promise the shuffle makes: see the
+    // collision note in generateBotVote.
+    const c = await askVote(FOUR, { ballotSeed: 'b1:2' });
+    expect(c.ballot.map((r) => r.captionId)).not.toEqual(a.ballot.map((r) => r.captionId));
+  });
+
+  it('shuffles without losing or inventing a caption', async () => {
+    const { ballot } = await askVote(FOUR, { ballotSeed: 'b3:7' });
+    expect(ballot.map((r) => r.captionId).sort()).toEqual(['c1', 'c2', 'c3', 'c4']);
+    expect(ballot.map((r) => r.caption).sort()).toEqual(FOUR.map((o) => o.text).sort());
+  });
+
+  it('still accepts only an id that is on the ballot, whatever the order', async () => {
+    // Every real id is accepted from its shuffled position...
+    for (const id of ['c1', 'c2', 'c3', 'c4']) {
+      const { picked } = await askVote(FOUR, { ballotSeed: 'b2:3' }, id);
+      expect(picked).toBe(id);
+    }
+    // ...and an id that is not on the ballot is still no vote at all.
+    const { picked } = await askVote(FOUR, { ballotSeed: 'b2:3' }, 'c-not-here');
+    expect(picked).toBeNull();
+  });
+
+  /**
+   * The seed string itself, not a symptom of it (Codex review round 1,
+   * must-fix 2).
+   *
+   * The earlier version of this test only asserted that two bots in one round
+   * got DIFFERENT ballot lines. That is too weak twice over: it passes if the
+   * round is dropped from the seed (`botId` alone still differs per bot), and on
+   * a short ballot two seeds can legitimately produce the same order anyway, so
+   * "different" is not even the property the code promises. So this asserts the
+   * exact order `${botId}:${round}` produces, recomputed here from the same
+   * shuffle the worker uses.
+   *
+   * Verified non-vacuous by executing the RNG on this three-caption ballot:
+   * seed `b1` and seed `b1:1` happen to give the SAME order, so round 1 alone
+   * could never catch a dropped round. Round 2 is what does it (`b1` gives
+   * c-b2,c-b1,c-host and `b1:2` gives c-b1,c-b2,c-host), which is why both
+   * rounds are checked.
+   */
+  it('seeds the ballot with botId AND round, from inside the job', async () => {
+    const room = (() => {
+      let r = captionRoom();
+      r = submitCaption(r, 'host', 'human caption', 'c-host', T0 + 1).state;
+      r = submitCaption(r, 'b1', 'daisy caption', 'c-b1', T0 + 2).state;
+      r = submitCaption(r, 'b2', 'chip caption', 'c-b2', T0 + 3).state;
+      return r;
+    })();
+    const options = room.captions.map((c) => ({ id: c.id, text: c.text }));
+    const ballotLine = (p: string) => {
+      const lines = p.split('\n');
+      return (JSON.parse(lines[lines.length - 1]) as Array<{ captionId: string }>).map(
+        (r) => r.captionId
+      );
+    };
+
+    for (const botId of ['b1', 'b2']) {
+      for (const round of [1, 2]) {
+        let prompt = '';
+        const ai: AiLike = {
+          async run(_model, input) {
+            prompt = String(
+              ((input as Record<string, unknown>).messages as Array<{ content: string }>)[0].content
+            );
+            return { response: { captionId: 'c-host' } };
+          },
+        };
+        const { host } = fakeHost(room, {
+          stamp: () => ({ phase: 'vote', round, version: room.version }),
+          voteOptions: () => options,
+        });
+        expect(await runBotJob(job({ phase: 'vote', botId, round }), models(ai), host)).toBe('done');
+
+        // The seed the job is required to build, spelled out.
+        const expected = seededShuffle(options, hashSeed(`${botId}:${round}`)).map((o) => o.id);
+        expect(ballotLine(prompt)).toEqual(expected);
+      }
+    }
+  });
+});
+
+/**
+ * BOT_VOTE_TEMPERATURE is a wrangler var, so the string a deploy types has to
+ * survive the trip into a model request body (Codex review round 1, must-fix 1).
+ * It is the one number in Settings that may legally be ZERO and that has an
+ * upper bound, so it does not go through `num` and needs its own proof.
+ */
+describe('BOT_VOTE_TEMPERATURE, parsed off the wrangler var', () => {
+  const env = (over: Record<string, string | undefined> = {}) => over as unknown as Env;
+
+  it('takes a real value from the var', () => {
+    expect(settings(env({ BOT_VOTE_TEMPERATURE: '0.4' })).botVoteTemperature).toBe(0.4);
+  });
+
+  it('allows the whole legal range, ZERO included', () => {
+    // 0 is a valid setting to measure (a deterministic judge), and it is exactly
+    // what `num`'s `n > 0` test would have thrown away. That is why this var has
+    // its own parser.
+    expect(settings(env({ BOT_VOTE_TEMPERATURE: '0' })).botVoteTemperature).toBe(0);
+    expect(settings(env({ BOT_VOTE_TEMPERATURE: '2' })).botVoteTemperature).toBe(2);
+  });
+
+  it('falls back to the measured default for anything that is not a temperature', () => {
+    // Out of range both ways, plus every shape of nonsense a var can hold. None
+    // of these may reach a model: a rejected request body is a bot that never
+    // votes and a round that ends empty.
+    for (const raw of ['2.5', '-1', 'hot', 'NaN', 'Infinity', '0.9abc', '', '   ']) {
+      expect(settings(env({ BOT_VOTE_TEMPERATURE: raw })).botVoteTemperature).toBe(
+        BOT_VOTE_TEMPERATURE
+      );
+    }
+    // An unset var is the default too, and must NOT come back as Number('') = 0.
+    expect(settings(env()).botVoteTemperature).toBe(BOT_VOTE_TEMPERATURE);
   });
 });
 

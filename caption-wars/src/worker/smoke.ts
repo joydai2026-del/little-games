@@ -69,6 +69,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
     textModel: chosen.textModel,
     timeoutMs: set.botTimeoutMs,
     judgeTimeoutMs: set.captionJudgeTimeoutMs,
+    voteTemperature: set.botVoteTemperature,
     visionMaxBytes: set.visionMaxBytes,
   };
 
