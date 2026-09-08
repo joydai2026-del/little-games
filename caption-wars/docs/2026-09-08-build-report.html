@@ -29,7 +29,7 @@ a{color:#79b8ff}ul{padding-left:20px}li{margin:4px 0}
 <li>Open the link on your phone, type a name, tap <strong>Create a room</strong>. Share the 4-character code or the link.</li>
 <li>Friends open the same link and join with the code. You pick rounds, timers and how many AI players (0 to 4).</li>
 <li>Each round: photo, write a caption, vote for someone else's, see who wrote what and who won. Champion at the end.</li>
-<li>Let Claude play from your Mac: <code>source ~/.config/little-games/env.sh &amp;&amp; node caption-wars/agent/play.mjs --url $CAPTION_WARS_URL --room CODE --name Claude --brain claude</code> (also <code>--brain codex</code>; <code>grok</code> plays without seeing the photo).</li>
+<li>Let Claude play from your Mac: <code>export CAPTION_WARS_URL=&lt;worker url&gt; &amp;&amp; node caption-wars/agent/play.mjs --url $CAPTION_WARS_URL --room CODE --name Claude --brain claude</code> (also <code>--brain codex</code>; <code>grok</code> plays without seeing the photo).</li>
 </ul>
 
 <h2>Done tests from the plan</h2>
@@ -74,7 +74,7 @@ a{color:#79b8ff}ul{padding-left:20px}li{margin:4px 0}
 <ul>
 <li>Plan with every decision and amendment: <code>caption-wars/docs/plans/2026-09-07-mvp-plan.md</code></li>
 <li>Agent rules for the repo: <code>CLAUDE.md</code> (also <code>AGENTS.md</code>)</li>
-<li>Secrets and URL: <code>~/.config/little-games/env.sh</code> (Worker secret <code>SMOKE_TOKEN</code> for the two operator endpoints)</li>
+<li>Secrets and URL: a local env file outside the repo (Worker secret <code>SMOKE_TOKEN</code> for the two operator endpoints)</li>
 </ul>
 </main></body></html>
 <!--

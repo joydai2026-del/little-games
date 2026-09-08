@@ -57,6 +57,16 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+/** Same rule as readJson, for a body that was already read as text. */
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const body = JSON.parse(text) as unknown;
+    return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 function roomStub(env: Env, code: string) {
   return env.ROOMS.get(env.ROOMS.idFromName(code));
 }
@@ -166,7 +176,12 @@ async function handleRoomAction(
   code: string,
   action: string
 ): Promise<Response> {
-  const body = await readJson(request);
+  // `start` and `next` carry no fields, and the README documents them with no
+  // body. An agent that followed the README got "body must be JSON" (found
+  // 2026-09-08 by the first API-only game), so those two accept an empty body.
+  const noBody = action === 'start' || action === 'next';
+  const text = await request.text();
+  const body = text.length === 0 && noBody ? {} : parseJsonObject(text);
   if (!body) return badRequest('body must be JSON');
 
   switch (action) {

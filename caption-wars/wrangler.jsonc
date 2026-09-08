@@ -112,6 +112,15 @@
     // One caption-judge call (rule 50), clamped again by what is left of the
     // bot job's deadline. 6000 measured too tight under a four-persona burst.
     "CAPTION_JUDGE_TIMEOUT_MS": "10000",
+    // How random the AI players' VOTES are. One of the three things that stopped
+    // them voting only for each other (2026-09-08): at the old 0.3, with a fixed
+    // ballot order, all four bots were near-deterministic and piled onto the same
+    // caption. Measured on gpt-4.1-nano over the four real JG34 ballots, 0.9 is
+    // where the human's caption goes from 15% of the votes to 30% (about 33% is a
+    // fair share on a three-caption ballot). Legal range is 0 to 2; anything else
+    // here falls back to the measured default in src/shared/config.ts. Re-measure
+    // before moving it: node scripts/vote-bias-check.mjs --runs 6
+    "BOT_VOTE_TEMPERATURE": "0.9",
     "REVEAL_MIN_MS": "3000",
     // The cost ceiling on one POST /api/ai-try request (the prompt tuning rig).
     // Samples = photos x personas; the model-call cap counts every caption

@@ -257,6 +257,7 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     textModel: chosen.textModel,
     timeoutMs: set.botTimeoutMs,
     judgeTimeoutMs: set.captionJudgeTimeoutMs,
+    voteTemperature: set.botVoteTemperature,
     visionMaxBytes: set.visionMaxBytes,
   };
 

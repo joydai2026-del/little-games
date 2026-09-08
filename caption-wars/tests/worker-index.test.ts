@@ -106,3 +106,53 @@ describe('POST /api/rooms rate limit', () => {
     expect(created).toHaveLength(1);
   });
 });
+
+describe('start and next accept an empty body (2026-09-08, the first API-only game got 400)', () => {
+  /** A fake room DO that records which action the worker forwarded. */
+  function recordingEnv() {
+    const actions: string[] = [];
+    const env = {
+      ROOMS: {
+        idFromName: (name: string) => name,
+        get: () => ({
+          async fetch(req: Request) {
+            actions.push(new URL(req.url).pathname.replace(/^\//, ''));
+            return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+          },
+        }),
+      },
+    } as unknown as Env;
+    return { env, actions };
+  }
+  const headers = { 'x-player-id': 'p1', 'x-player-secret': 's1' };
+
+  it.each(['start', 'next'])('POST /%s with no body reaches the room', async (action) => {
+    const { env, actions } = recordingEnv();
+    const res = await worker.fetch(
+      new Request(`https://example.test/api/rooms/ABCD/${action}`, { method: 'POST', headers }),
+      env
+    );
+    expect(res.status).toBe(200);
+    expect(actions).toEqual([action]);
+  });
+
+  it.each(['null', '"x"', '[1]', '{bad', ' ', '\t\n'])('start with malformed body %s is still refused', async (raw) => {
+    const { env, actions } = recordingEnv();
+    const res = await worker.fetch(
+      new Request('https://example.test/api/rooms/ABCD/start', { method: 'POST', headers, body: raw }),
+      env
+    );
+    expect(res.status).toBe(400);
+    expect(actions).toEqual([]);
+  });
+
+  it('caption with no body is still refused before it reaches the room', async () => {
+    const { env, actions } = recordingEnv();
+    const res = await worker.fetch(
+      new Request('https://example.test/api/rooms/ABCD/caption', { method: 'POST', headers }),
+      env
+    );
+    expect(res.status).toBe(400);
+    expect(actions).toEqual([]);
+  });
+});
