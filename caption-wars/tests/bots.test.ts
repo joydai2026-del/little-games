@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildBotJobs,
+  composeBotCaption,
   generateBotCaption,
   generateBotVote,
   parseVoteAnswer,
@@ -76,7 +77,11 @@ function job(overrides: Partial<BotJob> = {}): BotJob {
     round: 1,
     phase: 'caption',
     dueAt: T0,
-    deadline: T0 + 20_000,
+    // The deadline is a REAL wall-clock moment, not T0-relative: since round 5
+    // the caption ladder measures its own budget against it (composeBotCaption),
+    // so a job stamped in 2023 would be out of time before its first attempt.
+    // The dedicated budget tests below drive that clock explicitly instead.
+    deadline: Date.now() + 20_000,
     status: 'pending',
     ...overrides,
   };
@@ -532,5 +537,91 @@ describe('the bot content guard and the refusal detector', () => {
     expect(applied).toEqual([
       { kind: 'caption', botId: 'b1', value: 'the goat has seen things.' },
     ]);
+  });
+});
+
+// --- one budget for the whole caption ladder (review round 5) ----------------
+//
+// The twin of tests/photo.test.ts's budget test, and it exists for the same
+// reason: two numbers that must not drift apart. `buildBotJobs` gives a job
+// `now + BOT_TIMEOUT_MS` as its deadline, and `reapBotJobs` fails the job at
+// that moment; the ladder inside it makes up to three sequential model calls.
+// Before round 5 each of those calls got the FULL BOT_TIMEOUT_MS, so the job's
+// worst case was 3x its own deadline: on a slow evening both bots were reaped
+// mid-answer, `botGaveUp` counted them as having acted, and a solo game ended
+// the round VOID while both models were still writing.
+
+describe('the caption ladder lives inside the bot job deadline', () => {
+  it('never exceeds the deadline it was given, however slow every rung is', async () => {
+    const clock = { now: 1_000_000 };
+    const startedAt = clock.now;
+    const deadlineAt = startedAt + 20_000; // BOT_TIMEOUT_MS, as buildBotJobs sets it
+
+    // A model that burns its whole per-call budget and then answers with a
+    // refusal, which is the worst case: a refusal is what makes the ladder retry.
+    // It advances the clock by at most what is left, which is what the abort
+    // signal does in the real runtime.
+    const ai: AiLike = {
+      async run() {
+        clock.now += Math.max(0, Math.min(10_000, deadlineAt - clock.now));
+        return { response: 'As an AI, I do not find this funny.' };
+      },
+    };
+
+    const { attempts, final } = await composeBotCaption(models(ai), PERSONAS[0], fixturePhoto(), {
+      deadlineAt,
+      now: () => clock.now,
+    });
+
+    expect(final).toBeNull();
+    // Worst case: the whole run fits in the job's own deadline. Before the fix
+    // this was 3 x BOT_TIMEOUT_MS against a 1 x BOT_TIMEOUT_MS deadline.
+    expect(clock.now - startedAt).toBeLessThanOrEqual(20_000);
+    // The rung it could not afford is RECORDED, not silently dropped.
+    expect(attempts).toHaveLength(3);
+    expect(attempts[2].reason).toMatch(/budget spent/);
+    expect(attempts[2].verdict).toBe('empty');
+  });
+
+  it('runs the whole ladder when the rungs are fast, and times each one', async () => {
+    const clock = { now: 1_000_000 };
+    const answers = [
+      'Black people just standing there.',
+      'still bad: black people',
+      'the goat has seen things',
+    ];
+    let i = 0;
+    const ai: AiLike = {
+      async run() {
+        clock.now += 900; // a realistic fast vision call
+        return { response: answers[i++] ?? '' };
+      },
+    };
+
+    const { attempts, final } = await composeBotCaption(models(ai), PERSONAS[0], fixturePhoto(), {
+      deadlineAt: clock.now + 20_000,
+      now: () => clock.now,
+    });
+
+    expect(attempts).toHaveLength(3);
+    expect(attempts.map((a) => a.ms)).toEqual([900, 900, 900]);
+    expect(final).toBe('the goat has seen things');
+  });
+
+  it('a job dispatched after its own deadline makes no model call at all', async () => {
+    const clock = { now: 1_000_000 };
+    let calls = 0;
+    const ai: AiLike = {
+      async run() {
+        calls += 1;
+        return { response: 'the goat has seen things' };
+      },
+    };
+    const { final } = await composeBotCaption(models(ai), PERSONAS[0], fixturePhoto(), {
+      deadlineAt: clock.now - 1,
+      now: () => clock.now,
+    });
+    expect(calls).toBe(0);
+    expect(final).toBeNull();
   });
 });

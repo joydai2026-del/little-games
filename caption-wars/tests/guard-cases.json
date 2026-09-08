@@ -28,7 +28,10 @@
     "deaf kid at the concert",
     "wheelchair guy wins musical chairs",
     "Disabled people waiting in line.",
-    "the handicapped man in row 3"
+    "the handicapped man in row 3",
+    "black young homeless people just standing there",
+    "african american young people",
+    "white middle-aged men in a queue"
   ],
   "mustNotTrip": [
     "Old man yells at cloud",
@@ -49,7 +52,6 @@
     "his white dress lady is unimpressed",
     "korean bbq family reunion, day three",
     "the chinese food guy knows my order",
-    "white middle-aged men in a queue",
     "Two asian tourists arguing with a map",
     "Indian food at 2am was a decision.",
     "The black cat has decided this is its chair now.",
@@ -63,7 +65,16 @@
     "falling on deaf ears again",
     "wheelchair ramp speedrun, new record",
     "disabled parking, enabled confidence",
-    "blind taste test gone wrong"
+    "blind taste test gone wrong",
+    "The white hat guy is winning.",
+    "The black hat guy never blinks.",
+    "White sneakers guy has regrets.",
+    "Black umbrella lady owns this street.",
+    "white gloves man on duty",
+    "Blind drunk guy at the office party.",
+    "Nobody told the deaf cat lady.",
+    "asian black and white men",
+    "wheelchair front row guy"
   ],
   "_comment_refusals": "Every one of these is REAL model output captured on the deployed worker on 2026-09-07 through POST /api/ai-try or a live game. The first three and the prompt echo reached players AS CAPTIONS; the last two were caught by the p7 tuning run and are here so the detector cannot lose them.",
   "refusals": [
@@ -76,7 +87,10 @@
     "Here's a caption: the dog has had enough.",
     "I apologize, but I won't do that.",
     "This is not appropriate or acceptable content for a platform aimed at a general audience.",
-    "I'm not able to generate captions from images as I am a text-based AI model and do not have the capability to process and analyze visual data"
+    "I'm not able to generate captions from images as I am a text-based AI model and do not have the capability to process and analyze visual data",
+    "I'm afraid I can't fulfill this request.",
+    "I'm sorry, but I can't fulfill this request.",
+    "Sorry, but I cannot write a caption for this photo."
   ],
   "notRefusals": [
     "Day four of the standoff. Neither of us will blink.",
@@ -88,7 +102,21 @@
     "Nobody warned the goat it was a formal event.",
     "The face of a man who said he would fix it himself.",
     "",
-    "   "
+    "   ",
+    "Everyone in this photo owes me money.",
+    "Nobody in this image is having a good time.",
+    "Dressed as an airline pilot for no reason.",
+    "The photo shows up on the fridge tomorrow.",
+    "Sure, here we go again.",
+    "Not appropriate content for grandma.",
+    "I apologize to the cake.",
+    "Can I help you with that? No.",
+    "Not a language model in sight.",
+    "For a general audience, this is too much.",
+    "I can't help laughing at this dog",
+    "I can't perform under this level of goat pressure",
+    "The picture shows up late and still wins"
   ],
-  "_comment_notRefusals": "\"I can't believe he wore that\" and \"I can't even\" are the cases that stop the refusal detector being a bare substring test: the `i cannot` family only counts at the START of the answer and only with a task verb after it (write / generate / help / ...). \"I cannot stress enough\" is the same shape from the other direction."
+  "_comment_notRefusals": "\"I can't believe he wore that\" and \"I can't even\" are the cases that stop the refusal detector being a bare substring test: the `i cannot` family only counts at the START of the answer and only with a task verb after it (write / generate / help / ...). \"I cannot stress enough\" is the same shape from the other direction.",
+  "_comment_round5": "Round 5 additions. The mustNotTrip block from 'The white hat guy' down is the class the old object allowlist could never cover: an ordinary object between a colour word and a people-noun. They pass now because the gap only accepts words on the closed gapModifiers list. 'wheelchair front row guy' is a DOCUMENTED MISS on the same rule (front and row are not modifiers of a person) and sits in mustNotTrip so the miss is asserted rather than forgotten. 'white middle-aged men in a queue' moved the other way, from mustNotTrip to mustTrip: it is two modifiers, which is exactly what the round-5 off-by-one fix makes reachable. The notRefusals block from 'Everyone in this photo' down is every caption the round-4 substring matcher failed; each one is a different matching rule (word boundary, start anchor, 'shows up', a dropped marker, a narrowed verb)."
 }

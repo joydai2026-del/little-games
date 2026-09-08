@@ -546,8 +546,14 @@ export function advanceIfDue(
  * PHOTO_MAX_ATTEMPTS the game ends honestly with `endedReason:
  * 'photo-unavailable'` and the scoreboard everyone already earned.
  *
- * Bookkeeping only, so it deliberately does not bump `version` unless the game
- * actually ends (which players must see).
+ * IT BUMPS `version` (review round 5, must-fix). It used to be "bookkeeping
+ * only", which was true until round 4 put `photoRetryAt` in the public view and
+ * made both the lobby's Start and the reveal's Next read "Waiting for a
+ * photo... 42s" off it. `handleState` answers `{ unchanged: true }` whenever the
+ * client's `v` equals `room.version`, so without the bump a polling phone never
+ * learned the countdown existed: the reveal screen said "Next round any moment."
+ * for ever, and the host's Next button stayed enabled and did nothing. A state
+ * change every player's screen renders is exactly what `version` is for.
  */
 export function notePhotoFailure(
   state: RoomState,
@@ -575,6 +581,7 @@ export function notePhotoFailure(
     state: {
       ...state,
       photoRetry: { attempts, nextAttemptAt: now + photoRetryDelayMs(attempts) },
+      version: state.version + 1,
     },
   };
 }
@@ -582,6 +589,34 @@ export function notePhotoFailure(
 /** True while a failed photo fetch is still serving out its backoff. */
 export function photoRetryBlocked(state: RoomState, now: number): boolean {
   return state.photoRetry !== undefined && now < state.photoRetry.nextAttemptAt;
+}
+
+/**
+ * Drops a spent photo backoff that nothing will ever consume (review round 5).
+ *
+ * Every other phase consumes a `photoRetry`: `advanceIfDue` returns
+ * `needsPhoto` at a rollover, the fetch runs, and the attempt tally moves. The
+ * LOBBY does not: `advanceIfDue` does nothing on a lobby state, so a failed
+ * POST /start left a `photoRetry` behind that no code path would ever clear. It
+ * spun the Durable Object's alarm (fixed in nextAlarmAt as well; two places,
+ * because one is the symptom and this is the litter) and it kept `photoRetryAt`
+ * in the public view, so the host's Start button would count down from a moment
+ * that had already passed.
+ *
+ * CONSEQUENCE, in writing: in the lobby the attempt tally therefore resets once
+ * a backoff expires, so a lobby can no longer reach `endedReason:
+ * 'photo-unavailable'` on its own. That is deliberate. A room that never started
+ * should not be marked over because an image host had a bad minute, and the
+ * outbound rate is still bounded, by the backoff: at most one photo call per
+ * PHOTO_RETRY_BACKOFF_MS, and only when a human taps Start. The hard attempt cap
+ * still applies where it matters, on the AUTOMATIC mid-game rollovers, which are
+ * the ones that would otherwise spin without anybody asking.
+ */
+export function clearSpentLobbyPhotoRetry(state: RoomState, now: number): RoomState {
+  if (state.phase !== 'lobby') return state;
+  if (state.photoRetry === undefined) return state;
+  if (now < state.photoRetry.nextAttemptAt) return state;
+  return { ...state, photoRetry: undefined };
 }
 
 // --- bot jobs ----------------------------------------------------------------
@@ -668,9 +703,25 @@ export function dueBotJobs(state: RoomState, now: number): BotJob[] {
   );
 }
 
-/** The earliest moment a pending bot job wants the alarm to fire, if any. */
+/**
+ * The earliest moment a bot job wants the alarm to fire, if any: a PENDING job's
+ * `dueAt` (run me) or a RUNNING job's `deadline` (reap me).
+ *
+ * The running half is review round 5, should-fix. `isLive` requires
+ * `status === 'pending'`, so a job abandoned in `running` by a Durable Object
+ * that died mid-model-call contributed no alarm at all, and the reap that ends
+ * the round was delivered only by the next human poll. That was defensible while
+ * the reap was a tidy-up; since round 5 it is load-bearing, because the reap is
+ * what turns a bot that ran out of budget into "this bot has acted" and lets the
+ * round move on. The server should not need a phone to notice its own deadline.
+ */
 export function nextBotJobDueAt(state: RoomState, now: number): number | undefined {
-  const times = state.botJobs.filter((j) => isLive(state, j, now)).map((j) => j.dueAt);
+  const times: number[] = [];
+  for (const job of state.botJobs) {
+    if (job.round !== state.round || job.phase !== state.phase) continue;
+    if (isLive(state, job, now)) times.push(job.dueAt);
+    else if (job.status === 'running' && job.deadline > now) times.push(job.deadline);
+  }
   return times.length > 0 ? Math.min(...times) : undefined;
 }
 

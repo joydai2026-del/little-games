@@ -17,6 +17,7 @@ import { PERSONAS } from '../shared/personas';
 import { fixturePhoto, FIXTURE_PHOTO_SHA256 } from '../shared/fixture-photo';
 import { generateBotCaption, generateBotVote, type BotModels } from './bots';
 import { settings, type Env } from './env';
+import { secretsMatch } from './token';
 
 export interface SmokeResult {
   vision: { model: string; fallback: string; ok: boolean; sample: string | null };
@@ -51,7 +52,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
   if (!expected) {
     return json({ error: 'the smoke test is off: set the SMOKE_TOKEN secret first' }, 503);
   }
-  if (request.headers.get('x-smoke-token') !== expected) {
+  if (!secretsMatch(request.headers.get('x-smoke-token'), expected)) {
     return json({ error: 'bad smoke token' }, 401);
   }
 

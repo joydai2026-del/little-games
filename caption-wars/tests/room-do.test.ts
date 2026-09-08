@@ -658,20 +658,44 @@ describe('RoomDO photo retries on the host Start path', () => {
     expect(after.photoRetry?.nextAttemptAt).toBeGreaterThan(Date.now());
   });
 
-  it('ends the game with a reason once the attempts run out', async () => {
+  it('drops a SPENT backoff instead of counting it, and stays in the lobby', async () => {
+    // Review round 5. Nothing in the lobby consumes a photoRetry: advanceIfDue
+    // does nothing on a lobby state, so the row sat there for the room's whole
+    // TTL and nextAlarmAt returned `now` for ever, re-firing the Durable Object's
+    // alarm as fast as Cloudflare would deliver it. settle() now clears a spent
+    // one, and the DOCUMENTED CONSEQUENCE is asserted here rather than left to be
+    // discovered: the lobby's attempt tally restarts, so a room that has not
+    // started is never sent to `done` by an image host having a bad minute. The
+    // outbound rate is still bounded by the backoff, and the hard attempt cap
+    // still applies on the automatic rollovers (the Next path above), which are
+    // the ones that spin without anybody asking.
     resetPhotoControl({ fail: true });
-    const { room } = await build(
+    const { room, storage } = await build(
       lobbyRoom({ photoRetry: { attempts: 2, nextAttemptAt: Date.now() - 1 } })
     );
 
     const res = await room.fetch(hostPost('start'));
 
-    // Third failure. A game that cannot get its first photo says so instead of
-    // leaving the host tapping Start for two hours.
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { state: { phase: string; endedReason?: string } };
-    expect(body.state.phase).toBe('done');
-    expect(body.state.endedReason).toBe('photo-unavailable');
+    expect(res.status).toBe(502);
+    const after = storage.map.get('state') as RoomState;
+    expect(after.phase).toBe('lobby');
+    expect(after.endedReason).toBeUndefined();
+    expect(after.photoRetry?.attempts).toBe(1);
+  });
+
+  it('tells a POLLING client about the backoff, by bumping version', async () => {
+    // Round 5 must-fix: handleState answers `unchanged` while the version is
+    // equal, so without the bump the countdown in the public view could only
+    // ever reach a client that tapped a button.
+    resetPhotoControl({ fail: true });
+    const { room, storage } = await build(lobbyRoom());
+    const before = (storage.map.get('state') as RoomState).version;
+
+    await room.fetch(hostPost('start'));
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.version).toBe(before + 1);
+    expect(after.photoRetry?.nextAttemptAt).toBeGreaterThan(Date.now());
   });
 
   it('measures the retry backoff from AFTER the download, not before it', async () => {

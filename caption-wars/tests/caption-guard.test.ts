@@ -43,8 +43,8 @@ describe('labellingMatch: the whole word list, not just the reported cases', () 
   // Round 3's must-not-trip list was exactly the eight captions the round-3
   // review handed over, and none from the group round 3 ADDED, which is how a
   // guard that blocked "Old man yells at cloud" shipped green. So: every label
-  // word and every allowlisted compound gets both directions, generated from
-  // the shipped JSON so a new entry cannot arrive untested.
+  // word and every gap modifier gets both directions, generated from the shipped
+  // JSON so a new entry cannot arrive untested.
 
   it('every label word trips next to a people-noun', () => {
     for (const word of BLOCKED_TERMS.labelWords) {
@@ -58,29 +58,73 @@ describe('labellingMatch: the whole word list, not just the reported cases', () 
     }
   });
 
-  it('every allowlisted compound is safe in front of a people-noun', () => {
-    for (const compound of BLOCKED_TERMS.nonPeopleCompounds ?? []) {
-      expect(labellingMatch(`The ${compound} guy again.`), compound).toBeNull();
+  it('every gap modifier carries a label word to a people-noun', () => {
+    for (const mod of BLOCKED_TERMS.gapModifiers ?? []) {
+      // not.toBeNull rather than an exact term: a few modifiers are also half
+      // of a `phrases` entry ("old people"), which is checked first and wins.
+      expect(labellingMatch(`Three black ${mod} people waiting.`), mod).not.toBeNull();
     }
   });
 
-  it('no allowlisted compound disables the guard for the rest of the caption', () => {
-    for (const compound of BLOCKED_TERMS.nonPeopleCompounds ?? []) {
-      expect(labellingMatch(`${compound}, and three black people.`), compound).not.toBeNull();
+  it('two gap modifiers still carry it: the round-5 off-by-one', () => {
+    for (const mod of BLOCKED_TERMS.gapModifiers ?? []) {
+      expect(labellingMatch(`Three black young ${mod} people waiting.`), mod).not.toBeNull();
+    }
+  });
+
+  it('an ordinary OBJECT in the gap ends the walk, for every label word', () => {
+    // This is the round-5 replacement for the old nonPeopleCompounds coverage.
+    // The allowlist could only ever assert the objects somebody thought of; the
+    // closed modifier list makes the statement general: anything that is not a
+    // modifier ends the walk.
+    for (const word of BLOCKED_TERMS.labelWords) {
+      for (const object of ['hat', 'umbrella', 'sneakers', 'gloves', 'cat', 'friday']) {
+        expect(labellingMatch(`The ${word} ${object} guy again.`), `${word} ${object}`).toBeNull();
+      }
+    }
+  });
+
+  it('the gap modifier list stays short, and is not a back door for labels', () => {
+    const mods = BLOCKED_TERMS.gapModifiers ?? [];
+    expect(mods.length).toBeGreaterThan(0);
+    expect(mods.length).toBeLessThan(30);
+    for (const mod of mods) {
+      expect(BLOCKED_TERMS.labelWords, mod).not.toContain(mod);
+      expect(BLOCKED_TERMS.peopleNouns, mod).not.toContain(mod);
     }
   });
 });
 
 describe('labellingMatch: the principle, stated as tests', () => {
-  it('(b) survives up to two words between the label and the people-noun', () => {
+  it('(b) survives up to two MODIFIER words between the label and the people-noun', () => {
     expect(labellingMatch('Black homeless people just standing there.')).toBe('black people');
     expect(labellingMatch('Asian looking guys at the buffet.')).toBe('asian guys');
-    // Three words is past the gap. It is a guard, not a classifier.
-    expect(labellingMatch('white middle-aged men in a queue')).toBeNull();
+    expect(labellingMatch('black young homeless people just standing there')).toBe('black people');
+    expect(labellingMatch('white middle-aged men in a queue')).toBe('white men');
+    // Three modifiers is past the gap. It is a guard, not a classifier.
+    expect(labellingMatch('black young homeless american people')).toBeNull();
   });
 
-  it('(b) a grammar word between the halves means they are different phrases', () => {
+  it('(b) a word that is not a modifier of a person ends the walk', () => {
+    // The round-5 change: the gap accepts a closed list of modifiers, so an
+    // object between the two halves is ordinary play with no allowlist needed.
     expect(labellingMatch('a black dog and the guy holding it')).toBeNull();
+    expect(labellingMatch('The white hat guy is winning.')).toBeNull();
+    expect(labellingMatch('Black umbrella lady owns this street.')).toBeNull();
+    expect(labellingMatch('Nobody told the deaf cat lady.')).toBeNull();
+    // A documented miss, asserted so it cannot be quietly "fixed" by widening
+    // the modifier list: front and row are not modifiers of a person.
+    expect(labellingMatch('wheelchair front row guy')).toBeNull();
+  });
+
+  it('(b) a colour PAIR does not start a walk, which is accepted in writing', () => {
+    expect(labellingMatch('black and white family photo energy')).toBeNull();
+    expect(labellingMatch('asian black and white men')).toBeNull();
+    // The accepted cost of the pair rule, stated as a test so nobody discovers
+    // it by surprise: see THE GAP in src/shared/caption-guard.ts.
+    expect(labellingMatch('black and white people')).toBeNull();
+    // ...but a colour word that is NOT the tail of a pair still walks.
+    expect(labellingMatch('white people just standing there')).toBe('white people');
   });
 
   it('(c) standalone slurs and clinical labels trip with no people-noun at all', () => {

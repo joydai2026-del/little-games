@@ -11,6 +11,8 @@
 // from the vitest suite with no Cloudflare runtime.
 
 import {
+  AI_TRY_MAX_MODEL_CALLS,
+  AI_TRY_MAX_SAMPLES,
   BOT_TIMEOUT_MS,
   CAPTION_MAX_CHARS,
   PHOTO_MAX_BYTES,
@@ -35,6 +37,8 @@ export interface Env {
   TEXT_MODEL: string;
   BOT_TIMEOUT_MS: string;
   REVEAL_MIN_MS: string;
+  AI_TRY_MAX_SAMPLES: string;
+  AI_TRY_MAX_MODEL_CALLS: string;
 
   /** wrangler secret, set with `npx wrangler secret put SMOKE_TOKEN`. Absent = /api/ai-smoke is off. */
   SMOKE_TOKEN?: string;
@@ -53,6 +57,8 @@ export interface Settings {
   botTimeoutMs: number;
   revealMinMs: number;
   captionMaxChars: number;
+  aiTryMaxSamples: number;
+  aiTryMaxModelCalls: number;
 }
 
 function num(raw: string | undefined, fallback: number): number {
@@ -90,5 +96,7 @@ export function settings(env: Env): Settings {
     botTimeoutMs: num(env.BOT_TIMEOUT_MS, BOT_TIMEOUT_MS),
     revealMinMs: num(env.REVEAL_MIN_MS, REVEAL_MIN_MS),
     captionMaxChars: CAPTION_MAX_CHARS,
+    aiTryMaxSamples: num(env.AI_TRY_MAX_SAMPLES, AI_TRY_MAX_SAMPLES),
+    aiTryMaxModelCalls: num(env.AI_TRY_MAX_MODEL_CALLS, AI_TRY_MAX_MODEL_CALLS),
   };
 }

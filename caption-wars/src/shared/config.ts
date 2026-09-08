@@ -37,6 +37,19 @@ export const REVEAL_MIN_MS = 3000;
 /** Hard stop on one bot's model call, overridable through the wrangler var BOT_TIMEOUT_MS. */
 export const BOT_TIMEOUT_MS = 20000;
 
+/**
+ * The cost ceiling on ONE POST /api/ai-try request, overridable through the
+ * wrangler vars AI_TRY_MAX_SAMPLES and AI_TRY_MAX_MODEL_CALLS.
+ *
+ * The route is token-gated and off entirely when SMOKE_TOKEN is unset, but it is
+ * the only route in the worker that spends model calls in a loop: photos x
+ * personas captions, each up to three ladder rungs, plus one description per
+ * photo and one relevance judge per caption. Both numbers are policy, not code,
+ * so a tuning session can raise them for a run without a deploy of new logic.
+ */
+export const AI_TRY_MAX_SAMPLES = 24;
+export const AI_TRY_MAX_MODEL_CALLS = 160;
+
 /** Byte cap on a fetched photo, overridable through the wrangler var PHOTO_MAX_BYTES. */
 export const PHOTO_MAX_BYTES = 2_000_000;
 

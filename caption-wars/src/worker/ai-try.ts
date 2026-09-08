@@ -24,11 +24,15 @@ import { PERSONAS, type Persona } from '../shared/personas';
 import {
   CAPTION_PROMPT_VERSION,
   composeBotCaption,
+  describePhoto,
+  judgeRelevance,
   type BotModels,
   type CaptionAttempt,
+  type RelevanceVerdict,
 } from './bots';
 import { fetchPhoto } from './photo';
 import { settings, type Env } from './env';
+import { secretsMatch } from './token';
 
 /** Hard cap: this is model spend, and a Worker has a subrequest budget. */
 const MAX_PHOTOS = 10;
@@ -38,10 +42,18 @@ export interface AiTrySample {
   photoSha: string;
   photoSource: string;
   photoBytes: number;
+  /**
+   * What the VISION model says is in this photo, in one sentence, from a plain
+   * "describe this photo" prompt. It is the evidence behind `relevance`: a rate
+   * with no descriptions under it would be a number nobody could check.
+   */
+  photoDescription: string | null;
   persona: string;
   model: string;
   attempts: CaptionAttempt[];
   final: string | null;
+  /** Is the delivered caption about THIS photo? Tuning only. See judgeRelevance. */
+  relevance: RelevanceVerdict;
 }
 
 export interface AiTryResult {
@@ -55,6 +67,10 @@ export interface AiTryResult {
     final_ok: number;
     final_failed: number;
     labelling_anywhere: number;
+    /** on-photo / off-photo / unknown, counted over the samples that produced a caption. */
+    relevance: Record<string, number>;
+    /** Every model call this request made, so the spend is visible in the answer. */
+    model_calls: number;
   };
   photoErrors: string[];
 }
@@ -77,11 +93,15 @@ function seedCode(): string {
 }
 
 export async function handleAiTry(request: Request, env: Env): Promise<Response> {
+  // Its own method check as well as the router's (src/worker/index.ts). Two
+  // lines, and the route stops depending on where it happens to be mounted.
+  if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
+
   const expected = env.SMOKE_TOKEN;
   if (!expected) {
     return json({ error: 'ai-try is off: set the SMOKE_TOKEN secret first' }, 503);
   }
-  if (request.headers.get('x-smoke-token') !== expected) {
+  if (!secretsMatch(request.headers.get('x-smoke-token'), expected)) {
     return json({ error: 'bad smoke token' }, 401);
   }
 
@@ -92,11 +112,7 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     body = {};
   }
 
-  const wanted = Number(body.photos);
-  const photoCount = Math.min(
-    MAX_PHOTOS,
-    Math.max(1, Number.isFinite(wanted) ? Math.trunc(wanted) : DEFAULT_PHOTOS)
-  );
+  const set = settings(env);
   const personas: Persona[] =
     Array.isArray(body.personas) && body.personas.length > 0
       ? PERSONAS.filter((p) => body.personas!.includes(p.id) || body.personas!.includes(p.name))
@@ -105,7 +121,18 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     return json({ error: `no persona matched; ids are ${PERSONAS.map((p) => p.id).join(', ')}` }, 400);
   }
 
-  const set = settings(env);
+  // THE COST CAP (review round 5, should-fix). One valid-token call used to be
+  // able to spend 10 photos x 4 personas x 3 ladder rungs with nothing bounding
+  // it but the Worker's own subrequest budget, and round 5 added a description
+  // call per photo and a judge call per caption on top. So the request is
+  // clamped twice: by SAMPLES (photos x personas) and by a hard ceiling on model
+  // calls that stops the loop wherever it has got to. Both are wrangler vars, so
+  // a tuning session can raise them without a code change.
+  const wanted = Number(body.photos);
+  const asked = Math.max(1, Number.isFinite(wanted) ? Math.trunc(wanted) : DEFAULT_PHOTOS);
+  const byCap = Math.max(1, Math.floor(set.aiTryMaxSamples / personas.length));
+  const photoCount = Math.min(MAX_PHOTOS, asked, byCap);
+
   const models: BotModels = {
     ai: env.AI as unknown as BotModels['ai'],
     visionModel: set.visionModel,
@@ -117,8 +144,14 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
 
   const samples: AiTrySample[] = [];
   const photoErrors: string[] = [];
+  let modelCalls = 0;
+  const spent = (): boolean => modelCalls >= set.aiTryMaxModelCalls;
 
   for (let i = 0; i < photoCount; i++) {
+    if (spent()) {
+      photoErrors.push(`stopped at the ${set.aiTryMaxModelCalls}-model-call cap for one request`);
+      break;
+    }
     let photo;
     try {
       photo = await fetchPhoto(set, seedCode(), i + 1);
@@ -131,19 +164,32 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       continue;
     }
 
+    // One plain description of this photo, shared by every persona's sample. It
+    // is what makes `relevance` checkable by a human reading the table.
+    modelCalls += 1;
+    const description = await describePhoto(models, photo.bytes);
+
     // The personas for one photo run together: same picture, four voices, which
     // is exactly the shape of a real round.
     const forPhoto = await Promise.all(
       personas.map(async (persona) => {
         const { attempts, final } = await composeBotCaption(models, persona, photo.bytes);
+        modelCalls += attempts.length;
+        let relevance: RelevanceVerdict = 'unknown';
+        if (final !== null && description !== null) {
+          modelCalls += 1;
+          relevance = await judgeRelevance(models, description, final);
+        }
         return {
           photoSha: photo.meta.sha256,
           photoSource: photo.meta.source,
           photoBytes: photo.meta.bytes,
+          photoDescription: description,
           persona: persona.name,
           model: models.visionModel,
           attempts,
           final,
+          relevance,
         } satisfies AiTrySample;
       })
     );
@@ -151,11 +197,13 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
   }
 
   const firstAttempt: Record<string, number> = { ok: 0, refusal: 0, labelling: 0, empty: 0 };
+  const relevance: Record<string, number> = { 'on-photo': 0, 'off-photo': 0, unknown: 0 };
   let labellingAnywhere = 0;
   for (const sample of samples) {
     const first = sample.attempts[0];
     if (first) firstAttempt[first.verdict] = (firstAttempt[first.verdict] ?? 0) + 1;
     if (sample.attempts.some((a) => a.verdict === 'labelling')) labellingAnywhere += 1;
+    if (sample.final !== null) relevance[sample.relevance] = (relevance[sample.relevance] ?? 0) + 1;
   }
 
   const result: AiTryResult = {
@@ -168,9 +216,24 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       final_ok: samples.filter((s) => s.final !== null).length,
       final_failed: samples.filter((s) => s.final === null).length,
       labelling_anywhere: labellingAnywhere,
+      relevance,
+      model_calls: modelCalls,
     },
     photoErrors,
   };
 
-  return json(result, samples.length > 0 ? 200 : 502);
+  if (samples.length > 0) return json(result, 200);
+  // Nit: two different 502s used to be indistinguishable without reading the
+  // body. `error` now names which one it is, because "every photo fetch failed"
+  // and "the AI binding is dead" want completely different next steps.
+  return json(
+    {
+      ...result,
+      error:
+        photoErrors.length > 0
+          ? 'no samples: every photo fetch failed (see photoErrors)'
+          : 'no samples: nothing was attempted, check the AI binding and the personas filter',
+    },
+    502
+  );
 }

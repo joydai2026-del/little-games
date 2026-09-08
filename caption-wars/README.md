@@ -84,8 +84,10 @@ in `src/shared/config.ts` if the var is missing.
 | `VISION_MODEL` | `@cf/meta/llama-3.2-11b-vision-instruct` | writes bot captions |
 | `VISION_MODEL_FALLBACK` | `@cf/llava-hf/llava-1.5-7b-hf` | tried once if the primary fails |
 | `TEXT_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | casts bot votes, in JSON mode |
-| `BOT_TIMEOUT_MS` | `20000` | hard stop on one bot's model call |
+| `BOT_TIMEOUT_MS` | `20000` | the budget for one bot's WHOLE caption ladder (up to three model calls), which is also the deadline the job is reaped at |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
+| `AI_TRY_MAX_SAMPLES` | `24` | cost ceiling on one `POST /api/ai-try` call: photos x personas |
+| `AI_TRY_MAX_MODEL_CALLS` | `160` | hard ceiling on model calls in one `ai-try` request (captions, photo descriptions and relevance judges) |
 | `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke` and `POST /api/ai-try`. Unset means both are off. |
 
 Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
@@ -106,9 +108,11 @@ So there are three defences, in this order of importance:
    reads to a safety-tuned model as a request to decline, which is what produced the refusals.
 2. **The content guard** (`src/shared/caption-guard.ts`, term list in `src/shared/blocked-terms.json`).
    It is a BACKSTOP, not a classifier. It blocks one shape: a race / ethnicity / religion / nationality
-   word landing on a word meaning "a person", with up to two words in between, minus an explicit
-   allowlist of object compounds (`black cat`, `black tie`, `Black Friday`, `white wine`, `korean bbq`).
-   Standalone slurs and clinical labels (`obese`, `crippled`, `retarded`, `midget`, `dwarf`) trip on
+   word landing on a word meaning "a person", with up to two words in between, and every one of those
+   in-between words must be on a short CLOSED list of person-modifiers (`homeless`, `young`, `looking`,
+   `american`, `middle`, `aged`, ...). Anything else ends the walk, which is why "The white hat guy",
+   "Black Friday crowd control" and "the black cat lady" are ordinary play with no allowlist to
+   maintain. Standalone slurs and clinical labels (`obese`, `crippled`, `retarded`, `midget`, `dwarf`) trip on
    their own. Ordinary body and age adjectives (`old`, `bald`, `fat`, `skinny`, `ugly`) are
    deliberately NOT blocked: "Old man yells at cloud" is the median caption for a photo of a person,
    and a guard that fires on ordinary play just silences the bots, which in a solo game voids the
@@ -132,7 +136,9 @@ moderate players.
 
 `POST /api/ai-try` (same `SMOKE_TOKEN` guard as `ai-smoke`) runs real photos through the real
 `fetchPhoto` and the real bot caption pipeline for every persona, and reports each attempt verbatim
-with its verdict (`ok` / `refusal` / `labelling` / `empty`).
+with its verdict (`ok` / `refusal` / `labelling` / `empty`), how long it took, and whether the caption
+is actually ABOUT the photo: the vision model describes each photo in one sentence and the text model
+judges each delivered caption `on-photo` / `off-photo` against that description.
 
 ```bash
 CAPTION_WARS_URL=https://caption-wars.<subdomain>.workers.dev \
@@ -140,8 +146,9 @@ SMOKE_TOKEN=<the wrangler secret> \
 npm run ai:try -- --samples 24 --photos-per-call 3
 ```
 
-It prints the captions and the rates, and exits non-zero above 10% first-attempt refusal/meta or on any
-labelling trip. **Run it after any change to the caption prompt, the personas, the content rule or the
+It prints the captions grouped under their photo's description, the rates, and the per-attempt latency
+(which is what `BOT_TIMEOUT_MS` has to cover). It exits non-zero above 10% first-attempt refusal/meta,
+on any labelling trip, or below an 80% on-photo rate. **Run it after any change to the caption prompt, the personas, the content rule or the
 models.** The numbers the shipped prompt produced are recorded in the plan (rule 40) as the bar.
 
 ## Deploy and smoke test

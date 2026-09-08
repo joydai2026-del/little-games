@@ -8,6 +8,7 @@ import { nextAlarmAt } from '../src/worker/schedule';
 import {
   advance,
   advanceIfDue,
+  clearSpentLobbyPhotoRetry,
   createRoom,
   dueBotJobs,
   enqueueBotJobs,
@@ -257,6 +258,45 @@ describe('photo failure backoff', () => {
     expect(nextAlarmAt(state, at + 20_000)).toBe(state.expiresAt);
   });
 
+  it('a LOBBY retry never becomes the alarm, because nothing in the lobby consumes it', () => {
+    // Review round 5, must-fix. A failed POST /start leaves the room in `lobby`
+    // with a photoRetry, and advanceIfDue does nothing at all on a lobby state.
+    // nextAlarmAt used to put the spent retry moment in the candidates, so
+    // Math.max(now, Math.min(...)) was exactly `now` and alarm() re-armed from
+    // it: the Durable Object re-fired as fast as Cloudflare would deliver it,
+    // doing nothing each time, until the room's 2h TTL expired.
+    const room = lobby();
+    const failed = notePhotoFailure(room, T0).state;
+    expect(failed.phase).toBe('lobby');
+    expect(failed.photoRetry?.nextAttemptAt).toBe(T0 + 5_000);
+
+    // While it is backing off AND after it has expired: the answer is the room
+    // expiry either way, never `now`.
+    expect(nextAlarmAt(failed, T0 + 1)).toBe(failed.expiresAt);
+    expect(nextAlarmAt(failed, T0 + 5_001)).toBe(failed.expiresAt);
+    expect(nextAlarmAt(failed, T0 + 60_000)).toBe(failed.expiresAt);
+  });
+
+  it('clears a spent lobby retry, so it cannot linger in the public view', () => {
+    const failed = notePhotoFailure(lobby(), T0).state;
+    // Still backing off: left alone, because photoRetryBlocked reads it and the
+    // host's Start button counts down from it.
+    expect(clearSpentLobbyPhotoRetry(failed, T0 + 4_999)).toBe(failed);
+    // Spent: dropped.
+    expect(clearSpentLobbyPhotoRetry(failed, T0 + 5_000).photoRetry).toBeUndefined();
+    // A running phase keeps its retry: there it IS consumed, by advanceIfDue.
+    const running = notePhotoFailure(stuckAtRollover(), T0).state;
+    expect(clearSpentLobbyPhotoRetry(running, T0 + 60_000)).toBe(running);
+  });
+
+  it('bumps the version, so a polling client learns the countdown exists', () => {
+    // Round 5 must-fix: handleState answers `{ unchanged: true }` while the
+    // version matches, and round 4 put photoRetryAt in the view.
+    const room = lobby();
+    const failed = notePhotoFailure(room, T0).state;
+    expect(failed.version).toBe(room.version + 1);
+  });
+
   it('forgets the failure once a round actually opens', () => {
     let state = stuckAtRollover();
     state = notePhotoFailure(state, state.phaseEndsAt! + 1).state;
@@ -299,6 +339,22 @@ describe('bot job reaping', () => {
     // Once the first attempt is recorded failed, a retry is allowed again.
     const failed = setJobStatus(running, 'first', 'failed');
     expect(dueBotJobs(failed, T0).map((j) => j.jobId)).toEqual(['second']);
+  });
+
+  it('a RUNNING job puts its own deadline on the alarm (round 5 should-fix)', () => {
+    // isLive requires `pending`, so a job abandoned in `running` used to
+    // contribute no alarm at all and the reap that ends the round was delivered
+    // by whichever human happened to poll next. Since round 5 that reap is
+    // load-bearing (it is what turns a bot that ran out of budget into "this bot
+    // has acted"), so the server schedules it itself.
+    const base = start(lobby(), 'host', PHOTO, T0).state;
+    const state = markJobsRunning(enqueueBotJobs(base, [jobAt(T0, { jobId: 'j1' })]), ['j1'], T0);
+
+    expect(nextBotJobDueAt(state, T0 + 1)).toBe(T0 + 20_000);
+    expect(nextAlarmAt(state, T0 + 1)).toBe(T0 + 20_000);
+    // Past the deadline it is no longer a candidate: reapBotJobs owns it now,
+    // and re-arming to a moment in the past is the hot loop rule 5 forbids.
+    expect(nextBotJobDueAt(state, T0 + 20_001)).toBeUndefined();
   });
 
   it('takes a lease with a startedAt stamp when a job starts running', () => {

@@ -31,10 +31,17 @@ test('toOneLine collapses multi-line text into one line', () => {
   assert.equal(toOneLine(''), '');
 });
 
-test('capLength enforces a hard character cap', () => {
+test('capLength caps at a WORD boundary, not mid-word', () => {
+  // Round-5 nit: the worker's model path has trimmed at a word boundary since
+  // round 4 (src/shared/text.ts), and the agent is a model path too.
   const long = 'x'.repeat(200);
-  assert.equal(capLength(long, 120).length, 120);
+  assert.equal(capLength(long, 120).length, 120); // nothing to break on: hard cut
   assert.equal(capLength('short', 120), 'short');
+  const words = 'the winner claims ownership of a trophy nobody wanted at all today';
+  const cut = capLength(words, 40);
+  assert.ok(cut.length <= 40);
+  assert.ok(!words.slice(cut.length, cut.length + 1).match(/[a-z]/i) || words[cut.length] === ' ');
+  assert.equal(cut, 'the winner claims ownership of a trophy');
 });
 
 test('sanitizeCaption composes one-line + quote-strip + cap, and never throws', () => {
@@ -225,10 +232,15 @@ test('every label word trips next to a people-noun, and not without one', () => 
   }
 });
 
-test('every allowlisted compound is safe, and none disables the rest of the guard', () => {
-  for (const compound of BLOCKED_TERMS.nonPeopleCompounds ?? []) {
-    assert.equal(labellingMatch(`The ${compound} guy again.`), null, compound);
-    assert.notEqual(labellingMatch(`${compound}, and three black people.`), null, compound);
+test('every gap modifier carries the walk, and an object ends it', () => {
+  for (const mod of BLOCKED_TERMS.gapModifiers ?? []) {
+    assert.notEqual(labellingMatch(`Three black ${mod} people waiting.`), null, mod);
+    assert.notEqual(labellingMatch(`Three black young ${mod} people waiting.`), null, mod);
+  }
+  for (const word of BLOCKED_TERMS.labelWords) {
+    for (const object of ['hat', 'umbrella', 'sneakers', 'gloves', 'cat', 'friday']) {
+      assert.equal(labellingMatch(`The ${word} ${object} guy again.`), null, `${word} ${object}`);
+    }
   }
 });
 

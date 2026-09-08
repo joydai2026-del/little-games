@@ -25,9 +25,19 @@ export function nextAlarmAt(state: RoomState, now: number): number | undefined {
   // in the past. Honouring that would set the alarm to `now`, which fires
   // instantly and fetches again: a hot loop. While a retry is pending the
   // backoff time REPLACES the dead phase deadline.
-  const retryAt = state.photoRetry?.nextAttemptAt;
+  //
+  // ONLY in a phase that CONSUMES the retry (review round 5, must-fix). A failed
+  // POST /start leaves the room in `lobby` with a `photoRetry`, and nothing in
+  // the lobby ever consumes one: `advanceIfDue` does nothing at all on a lobby
+  // state, so `Math.max(now, Math.min(...))` returned exactly `now`, `alarm()`
+  // re-armed from it, and the Durable Object re-fired its alarm as fast as
+  // Cloudflare would deliver it for the room's whole 2h TTL, doing nothing each
+  // time. That is billable, and it is a DO that can never hibernate. In the
+  // lobby the room's only real deadline is `expiresAt`; the host's next tap is
+  // what retries the photo, and `photoRetryBlocked` still refuses one early.
   const phaseRunning =
     state.phase === 'caption' || state.phase === 'vote' || state.phase === 'reveal';
+  const retryAt = phaseRunning ? state.photoRetry?.nextAttemptAt : undefined;
   if (retryAt !== undefined) candidates.push(retryAt);
   else if (phaseRunning && state.phaseEndsAt !== undefined) candidates.push(state.phaseEndsAt);
 

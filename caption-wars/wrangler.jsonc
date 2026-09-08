@@ -35,6 +35,11 @@
     "VISION_MODEL_FALLBACK": "@cf/llava-hf/llava-1.5-7b-hf",
     "TEXT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "BOT_TIMEOUT_MS": "20000",
-    "REVEAL_MIN_MS": "3000"
+    "REVEAL_MIN_MS": "3000",
+    // The cost ceiling on one POST /api/ai-try request (the prompt tuning rig).
+    // Samples = photos x personas; the model-call cap counts every caption
+    // attempt, every photo description and every relevance judge.
+    "AI_TRY_MAX_SAMPLES": "24",
+    "AI_TRY_MAX_MODEL_CALLS": "160"
   }
 }

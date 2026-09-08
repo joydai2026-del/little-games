@@ -13,7 +13,7 @@ import {
   shouldRebuildScreen,
   voteChoice,
 } from '../src/client/screens/lifecycle';
-import type { CaptionView } from '../src/client/contract';
+import type { CaptionView, RoomView } from '../src/client/contract';
 
 describe('shouldRebuildScreen', () => {
   it('builds the first screen', () => {
@@ -82,5 +82,184 @@ describe('voteChoice', () => {
     expect(voteChoice(null)).toBeNull();
     expect(voteChoice(undefined)).toBeNull();
     expect(voteChoice('')).toBeNull();
+  });
+});
+
+// --- the photo frame, on a hand-rolled DOM ---------------------------------
+//
+// Codex review round 5, should-fix 2. The `<img>` hang fallback (round 4) was
+// source-correct and completely untested: an image that fires NEITHER `load` nor
+// `error` is the one case the API deadline cannot cover, and it is also the one
+// case a fake DOM can drive exactly, because "nothing happens" is easy to
+// simulate and impossible to observe by reading. About sixty lines of fakes,
+// the same trick tests/client-poll.test.ts uses for the poll loop.
+
+interface FakeTimer {
+  id: number;
+  fn: () => void;
+}
+
+interface FakeEl {
+  tagName: string;
+  className: string;
+  textContent: string;
+  alt?: string;
+  src?: string;
+  children: FakeEl[];
+  classes: Set<string>;
+  classList: {
+    add(name: string): void;
+    remove(name: string): void;
+    contains(name: string): boolean;
+    toggle(name: string, on?: boolean): void;
+  };
+  listeners: Map<string, Array<() => void>>;
+  addEventListener(type: string, fn: () => void): void;
+  append(child: FakeEl | string): void;
+  setAttribute(key: string, value: string): void;
+  fire(type: string): void;
+}
+
+function fakeElement(tag: string): FakeEl {
+  const classes = new Set<string>();
+  const listeners = new Map<string, Array<() => void>>();
+  const el: FakeEl = {
+    tagName: tag,
+    className: '',
+    textContent: '',
+    children: [],
+    classes,
+    classList: {
+      add: (n) => void classes.add(n),
+      remove: (n) => void classes.delete(n),
+      contains: (n) => classes.has(n),
+      toggle: (n, on) => void (on ?? !classes.has(n) ? classes.add(n) : classes.delete(n)),
+    },
+    listeners,
+    addEventListener: (type, fn) => {
+      listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+    },
+    append: (child) => {
+      if (typeof child !== 'string') el.children.push(child);
+    },
+    setAttribute: () => {},
+    fire: (type) => {
+      for (const fn of [...(listeners.get(type) ?? [])]) fn();
+    },
+  };
+  return el;
+}
+
+/** document.createElement + window.setTimeout/clearTimeout, and nothing else. */
+function installFakeDom(): {
+  restore(): void;
+  timers: FakeTimer[];
+  runTimers(): void;
+} {
+  const timers: FakeTimer[] = [];
+  let nextId = 1;
+  const g = globalThis as Record<string, unknown>;
+  const saved = { window: g.window, document: g.document };
+  g.window = {
+    setTimeout: (fn: () => void) => {
+      const id = nextId++;
+      timers.push({ id, fn });
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      const i = timers.findIndex((t) => t.id === id);
+      if (i >= 0) timers.splice(i, 1);
+    },
+  };
+  g.document = {
+    createElement: (tag: string) => fakeElement(tag),
+    createTextNode: (text: string) => text,
+  };
+  return {
+    timers,
+    restore() {
+      g.window = saved.window;
+      g.document = saved.document;
+    },
+    runTimers() {
+      for (const timer of timers.splice(0)) timer.fn();
+    },
+  };
+}
+
+describe('photoFrame: an <img> that never answers', () => {
+  const ctx = {
+    code: 'ABCD',
+    playerId: 'p1',
+    ownCaptionId: () => null,
+    actions: {} as never,
+  };
+  const view = {
+    round: 2,
+    photo: { round: 2, source: 'loremflickr', sha256: 'a'.repeat(64), bytes: 100 },
+  } as unknown as RoomView;
+
+  it('says so once the hang timer fires, and clears the timer on destroy', async () => {
+    const dom = installFakeDom();
+    try {
+      const { photoFrame } = await import('../src/client/screens/common');
+      const frame = photoFrame(ctx as never, 'big');
+      const [img, fallback] = (frame.el as unknown as FakeEl).children;
+
+      frame.set(view);
+      expect(fallback.textContent).toBe('The photo is on its way.');
+      expect(img.src).toBe('/api/rooms/ABCD/photo/2');
+      expect(dom.timers).toHaveLength(1);
+
+      // Neither `load` nor `error` ever fires. This is the whole bug.
+      dom.runTimers();
+      expect(fallback.textContent).toBe('The photo did not load. The captions still count.');
+      expect((frame.el as unknown as FakeEl).classList.contains('photo-broken')).toBe(true);
+
+      // And the timer for a NEW round is cleared when the screen goes away, so a
+      // destroyed screen cannot repaint a live one.
+      frame.set({ ...view, round: 3, photo: { ...view.photo!, round: 3 } } as RoomView);
+      expect(dom.timers).toHaveLength(1);
+      frame.destroy();
+      expect(dom.timers).toHaveLength(0);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it('a photo that loads clears the hang timer and the message', async () => {
+    const dom = installFakeDom();
+    try {
+      const { photoFrame } = await import('../src/client/screens/common');
+      const frame = photoFrame(ctx as never, 'small');
+      const [img, fallback] = (frame.el as unknown as FakeEl).children;
+
+      frame.set(view);
+      img.fire('load');
+
+      expect(fallback.textContent).toBe('');
+      expect(dom.timers).toHaveLength(0);
+      dom.runTimers(); // nothing left to fire
+      expect(fallback.textContent).toBe('');
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it('an <img> that errors says the same thing as one that hangs', async () => {
+    const dom = installFakeDom();
+    try {
+      const { photoFrame } = await import('../src/client/screens/common');
+      const frame = photoFrame(ctx as never, 'big');
+      const [img, fallback] = (frame.el as unknown as FakeEl).children;
+
+      frame.set(view);
+      img.fire('error');
+
+      expect(fallback.textContent).toBe('The photo did not load. The captions still count.');
+      expect(dom.timers).toHaveLength(0);
+    } finally {
+      dom.restore();
+    }
   });
 });

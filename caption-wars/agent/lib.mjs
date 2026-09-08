@@ -38,11 +38,31 @@ export function toOneLine(text) {
     .trim();
 }
 
-/** Truncates to at most `max` characters (no ellipsis, just a hard cap; trims trailing whitespace). */
+/**
+ * Truncates to at most `max` characters at a WORD boundary.
+ *
+ * Twin of trimToWordBoundary in src/shared/text.ts, which the worker's model
+ * path has used since round 4 after a live run produced "...claiming ownership
+ * of a t", cut dead at the 120-character cap. This is a model path too: the
+ * terminal agent's brain writes the caption and the agent caps it, so the severed
+ * word is our doing here in exactly the same way. Prefers the last sentence end,
+ * then the last space, and only slices mid-word if the text has neither.
+ */
 export function capLength(text, max) {
-  const s = String(text ?? '');
+  const s = String(text ?? '').trim();
   if (s.length <= max) return s;
-  return s.slice(0, max).trim();
+  const window = s.slice(0, max);
+
+  const sentenceEnd = Math.max(
+    window.lastIndexOf('. '),
+    window.lastIndexOf('! '),
+    window.lastIndexOf('? ')
+  );
+  if (sentenceEnd >= max * 0.4) return window.slice(0, sentenceEnd + 1).trim();
+
+  const lastSpace = window.lastIndexOf(' ');
+  if (lastSpace > 0) return window.slice(0, lastSpace).trim();
+  return window.trim();
 }
 
 /**
@@ -104,8 +124,8 @@ export function parsePickedNumber(raw, count) {
 // THE PRINCIPLE lives in the header of src/shared/caption-guard.ts and is the
 // written standard for both copies. In one line: the guard is a backstop, it
 // blocks group labelling (a race / ethnicity / religion / nationality word
-// landing on a people-noun within two words, minus an allowlist of object
-// compounds), standalone slurs trip anywhere, and ordinary body/age adjectives
+// landing on a people-noun over at most two words, every one of which must be on
+// the closed gapModifiers list), standalone slurs trip anywhere, and body/age adjectives
 // are deliberately NOT blocked because they are the median caption vocabulary
 // for a photo of a person. HUMANS ARE NOT FILTERED: this only sees model output.
 
@@ -113,11 +133,8 @@ export const BLOCKED_TERMS = JSON.parse(
   fs.readFileSync(new URL('../src/shared/blocked-terms.json', import.meta.url), 'utf8')
 );
 
-/** Must stay identical to MAX_GAP in src/shared/caption-guard.ts (the reason is written there). */
-const MAX_GAP = 2;
-
-/** A word that no list contains, left where an allowlisted compound was. */
-const ALLOWLISTED = 'allowlisted';
+/** Must stay identical to MAX_GAP_WORDS in src/shared/caption-guard.ts (the reason is written there). */
+const MAX_GAP_WORDS = 2;
 
 function normalizeTerm(text) {
   return String(text ?? '')
@@ -126,18 +143,9 @@ function normalizeTerm(text) {
     .trim();
 }
 
-/** Replaces "the label word belongs to an object" compounds with a neutral word. */
-function neutralizeCompounds(flat, compounds) {
-  let padded = ` ${flat} `;
-  const ordered = [...compounds]
-    .map(normalizeTerm)
-    .filter((c) => c.length > 0)
-    .sort((a, b) => b.split(' ').length - a.split(' ').length);
-  for (const compound of ordered) {
-    const needle = ` ${compound} `;
-    while (padded.includes(needle)) padded = padded.replace(needle, ` ${ALLOWLISTED} `);
-  }
-  return padded.trim();
+/** True when this label word is the tail of a colour pair ("black AND white"). */
+function isPairTail(words, i, labels, conjunctions) {
+  return i >= 2 && conjunctions.has(words[i - 1]) && labels.has(words[i - 2]);
 }
 
 /** The term that made this read as a label on the people in the photo, or null. */
@@ -155,16 +163,22 @@ export function labellingMatch(text, terms = BLOCKED_TERMS) {
     if (standalone.has(word)) return word;
   }
 
-  const words = neutralizeCompounds(flat, terms.nonPeopleCompounds ?? []).split(' ');
+  // The modifier walk. Round 5 replaced the object allowlist + neutralizer with
+  // a CLOSED list of modifiers: any word in the gap that is not a modifier ends
+  // the walk. The reasoning, and the accepted consequences, are written in the
+  // header of src/shared/caption-guard.ts under THE GAP.
+  const words = flat.split(' ');
   const labels = new Set((terms.labelWords ?? []).map(normalizeTerm));
   const peopleNouns = new Set((terms.peopleNouns ?? []).map(normalizeTerm));
-  const stops = new Set((terms.gapStopWords ?? []).map(normalizeTerm));
+  const modifiers = new Set((terms.gapModifiers ?? []).map(normalizeTerm));
+  const conjunctions = new Set((terms.pairConjunctions ?? []).map(normalizeTerm));
 
   for (let i = 0; i < words.length; i++) {
     if (!labels.has(words[i])) continue;
-    for (let j = i + 1; j <= i + MAX_GAP && j < words.length; j++) {
+    if (isPairTail(words, i, labels, conjunctions)) continue;
+    for (let j = i + 1; j <= i + MAX_GAP_WORDS + 1 && j < words.length; j++) {
       if (peopleNouns.has(words[j])) return `${words[i]} ${words[j]}`;
-      if (stops.has(words[j])) break;
+      if (!modifiers.has(words[j])) break;
     }
   }
 
@@ -177,42 +191,39 @@ export function looksLikeLabelling(text, terms = BLOCKED_TERMS) {
 }
 
 // The refusal / meta detector. Twin of the same section in
-// src/shared/caption-guard.ts, including the marker lists: live runs on
-// 2026-09-07 shipped "I'm a large language model...", "I cannot write a caption
-// that makes a joke at the expense of a dog." and "The party game photo shows a
-// man wearing a suit and tie..." to players AS CAPTIONS.
+// src/shared/caption-guard.ts, including the marker lists and the round-5
+// matching rules (word boundaries everywhere, META markers anchored to the start
+// of the answer, "shows up" is not "shows"). Live runs on 2026-09-07 shipped
+// "I'm a large language model...", "I cannot write a caption that makes a joke at
+// the expense of a dog." and "The party game photo shows a man wearing a suit and
+// tie..." to players AS CAPTIONS; round 5's probes then showed the round-4
+// substring matching failing ordinary captions like "Dressed as an airline pilot
+// for no reason." Both halves have to stay true, in both implementations.
+
+const SELF_REFERENCE_RE =
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:a\s+)?(?:large\s+|small\s+|text[\s-]based\s+)?(?:language model|ai|artificial intelligence)\b/;
 
 const REFUSAL_MARKERS = [
-  'language model',
-  'text-based ai',
   "i'm not designed",
   'i am not designed',
   'against my guidelines',
   'not appropriate or acceptable',
-  'appropriate content',
-  'acceptable content',
-  'for a general audience',
-  'as an ai',
-  'as an artificial intelligence',
-  "i'm an ai",
-  'i am an ai',
   'i must clarify',
   "i'm happy to help",
   'i am happy to help',
-  'i apologize',
-  'i apologise',
-  'can i help you with',
   "i don't have the capability",
   'i do not have the capability',
   "i'm not capable",
   'i am not capable',
 ];
 
+const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
+
 // The "I cannot ..." family, matched only at the START and only with a task
 // verb after it: "I can't believe he wore that to a wedding." is a caption, not
 // a refusal. Must stay identical to REFUSAL_OPENER_RE in caption-guard.ts.
 const REFUSAL_OPENER_RE =
-  /^(?:(?:i'm\s+|i\s+am\s+)?sorry[,.!\s]+|unfortunately[,.!\s]+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|perform|fulfil|fulfill|comply|help|assist|caption|continue|complete|answer|respond)\b/;
+  /^(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|fulfil|fulfill|comply|assist|caption|continue|complete|answer|respond|help\s+(?:you|with))\b/;
 
 const META_MARKERS = [
   'the party game photo shows',
@@ -229,10 +240,20 @@ const META_MARKERS = [
   "here's a caption",
   'here is a caption',
   'here are some captions',
-  'sure, here',
 ];
 
-const CAPTION_PREFIX_RE = /^\s*(?:the\s+)?caption(?:\s+is)?\s*[:\-\u2013\u2014]\s*/i;
+/** Twin of markerRe in src/shared/caption-guard.ts. */
+function markerRe(marker, anchored) {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const lead = anchored ? '^' : '\\b';
+  const tail = /\b(?:shows|depicts)$/.test(marker) ? '\\b(?!\\s+up\\b)' : '\\b';
+  return new RegExp(`${lead}${escaped}${tail}`);
+}
+
+const REFUSAL_RES = REFUSAL_MARKERS.map((m) => markerRe(m, false));
+const META_RES = META_MARKERS.map((m) => markerRe(m, true));
+
+const CAPTION_PREFIX_RE = /^\s*(?:the\s+)?caption(?:\s+is)?\s*[:\-–—]\s*/i;
 
 /** Removes a leading "Caption:" label. Stripped, never failed. */
 export function stripCaptionPrefix(text) {
@@ -243,15 +264,17 @@ export function stripCaptionPrefix(text) {
 export function refusalMatch(text) {
   const flat = stripCaptionPrefix(String(text ?? ''))
     .toLowerCase()
-    .replace(/[\u2018\u2019\u02bc]/g, "'")
+    .replace(/[‘’ʼ]/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
   if (flat.length === 0) return null;
-  for (const marker of REFUSAL_MARKERS) {
-    if (flat.includes(marker)) return marker;
+  if (SELF_REFERENCE_RE.test(flat)) return 'model talking about itself';
+  if (APOLOGY_RE.test(flat)) return 'i apologize, but';
+  for (let i = 0; i < REFUSAL_MARKERS.length; i++) {
+    if (REFUSAL_RES[i].test(flat)) return REFUSAL_MARKERS[i];
   }
-  for (const marker of META_MARKERS) {
-    if (flat.includes(marker)) return marker;
+  for (let i = 0; i < META_MARKERS.length; i++) {
+    if (META_RES[i].test(flat)) return META_MARKERS[i];
   }
   const opener = flat.match(REFUSAL_OPENER_RE);
   if (opener) return opener[0];

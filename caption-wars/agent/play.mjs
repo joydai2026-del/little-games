@@ -526,7 +526,14 @@ async function actOnVotePhase(ctx, state, memory) {
 function announceReveal(ctx, state, memory) {
   if (memory.revealed.has(state.round)) return;
   memory.revealed.add(state.round);
-  const result = (state.history || [])[state.history.length - 1];
+  // The LAST history entry, but only if it is THIS round's. At reveal it always
+  // is, so this is belt and braces; the browser's reveal screen has refused a
+  // stale entry the same way since round 3 (src/client/screens/reveal.ts), and a
+  // log line that confidently reports the wrong round is worse than one that
+  // says it has nothing yet.
+  const history = state.history || [];
+  const lastEntry = history[history.length - 1];
+  const result = lastEntry && lastEntry.round === state.round ? lastEntry : undefined;
   const players = new Map((state.players || []).map((p) => [p.id, p.name]));
   if (!result) {
     log(`Round ${state.round}: reveal (no round result recorded yet).`);

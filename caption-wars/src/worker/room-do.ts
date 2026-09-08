@@ -42,6 +42,7 @@ import type { BotJob, PhotoMeta, Player, RoomOptions, RoomState } from '../share
 import {
   advance,
   advanceIfDue,
+  clearSpentLobbyPhotoRetry,
   dueBotJobs,
   enqueueBotJobs,
   markJobsRunning,
@@ -157,6 +158,18 @@ export class RoomDO implements DurableObject {
    */
   private async settle(now: number): Promise<void> {
     await this.reapJobs(now);
+
+    // A spent backoff in the LOBBY has no consumer, so it is dropped here rather
+    // than left to spin the alarm and to show the host a countdown that has
+    // already run out. No version bump: the value it removes is one the view
+    // already renders as zero. See clearSpentLobbyPhotoRetry.
+    if (this.room) {
+      const tidied = clearSpentLobbyPhotoRetry(this.room, now);
+      if (tidied !== this.room) {
+        this.room = tidied;
+        await this.save();
+      }
+    }
 
     for (let pass = 0; pass < 3; pass++) {
       if (!this.room) return;

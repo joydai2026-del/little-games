@@ -94,14 +94,29 @@ if (args.json) {
 }
 
 console.log(`\nprompt ${promptVersion}, ${all.length} samples\n`);
-console.log(
-  `${cell('persona', 18)} ${cell('v1', 10)} ${cell('final caption / why not', 84)}`
-);
-console.log('-'.repeat(115));
+// Grouped by photo, with the vision model's own one-sentence description above
+// its four captions: the relevance rate below is only trustworthy if a human can
+// read the picture and the caption side by side, which is the whole point of the
+// round-5 addition (a live game scored 24/24 on the old bar while shipping "It's
+// been raining all day, so we went for a hike." for a photo of a horse).
+const byPhoto = new Map();
 for (const s of all) {
-  const first = s.attempts[0] ?? {};
-  const shown = s.final ?? `NO CAPTION (${s.attempts.map((a) => a.verdict).join(' -> ')})`;
-  console.log(`${cell(s.persona, 18)} ${cell(first.verdict, 10)} ${cell(shown, 84)}`);
+  if (!byPhoto.has(s.photoSha)) byPhoto.set(s.photoSha, []);
+  byPhoto.get(s.photoSha).push(s);
+}
+for (const [sha, group] of byPhoto) {
+  console.log(`\nphoto ${sha.slice(0, 8)}: ${group[0].photoDescription ?? '(no description)'}`);
+  console.log(
+    `  ${cell('persona', 16)} ${cell('v1', 9)} ${cell('rel', 10)} ${cell('ms', 6)} ${cell('final caption / why not', 70)}`
+  );
+  for (const s of group) {
+    const first = s.attempts[0] ?? {};
+    const shown = s.final ?? `NO CAPTION (${s.attempts.map((a) => a.verdict).join(' -> ')})`;
+    const ms = s.attempts.reduce((sum, a) => sum + (a.ms ?? 0), 0);
+    console.log(
+      `  ${cell(s.persona, 16)} ${cell(first.verdict, 9)} ${cell(s.relevance, 10)} ${cell(ms, 6)} ${cell(shown, 70)}`
+    );
+  }
 }
 
 const firsts = all.map((s) => s.attempts[0]?.verdict ?? 'empty');
@@ -119,14 +134,39 @@ console.log('\nWHOLE PIPELINE');
 console.log(`  captions delivered   ${all.length - failed}/${all.length}`);
 console.log(`  bots that sat it out ${failed}`);
 console.log(`  labelling anywhere   ${labelling}`);
+
+// RELEVANCE (round 5): is the caption about the photo at all? Counted over the
+// samples that produced a caption, because a bot that sat the round out has no
+// caption to be about anything.
+const delivered = all.filter((s) => s.final !== null);
+const rel = (v) => delivered.filter((s) => s.relevance === v).length;
+const onPhoto = rel('on-photo');
+const onPhotoPct = delivered.length > 0 ? (onPhoto / delivered.length) * 100 : 0;
+console.log('\nRELEVANCE (is the caption about THIS photo)');
+console.log(`  on-photo   ${onPhoto}/${delivered.length}\t${onPhotoPct.toFixed(1)}%`);
+console.log(`  off-photo  ${rel('off-photo')}`);
+console.log(`  unknown    ${rel('unknown')}`);
+
+const attemptTimes = all.flatMap((s) => s.attempts.map((a) => a.ms ?? 0)).filter((n) => n > 0);
+if (attemptTimes.length > 0) {
+  const sorted = [...attemptTimes].sort((a, b) => a - b);
+  const mean = Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length);
+  console.log('\nPER-ATTEMPT LATENCY (what BOT_TIMEOUT_MS has to cover)');
+  console.log(`  attempts ${sorted.length}  mean ${mean}ms  p50 ${sorted[Math.floor(sorted.length * 0.5)]}ms  p95 ${sorted[Math.floor(sorted.length * 0.95)]}ms  max ${sorted[sorted.length - 1]}ms`);
+}
 if (photoErrors.length > 0) console.log(`\nphoto errors: ${photoErrors.length}`);
 
-// The acceptance bar from the plan. Refusals and echoes are counted as the same
-// thing on purpose: to a player they are both "that is not a caption".
+// The acceptance bar from the plan (rule 40). Refusals and echoes are counted as
+// the same thing on purpose: to a player they are both "that is not a caption".
+// Round 5 added the on-photo bar, because the other three numbers can all be
+// perfect while the captions are about a different photo entirely.
 const refusalPct = (count('refusal') / all.length) * 100;
 const bad = [];
 if (refusalPct >= 10) bad.push(`refusal/meta first-attempt rate ${refusalPct.toFixed(1)}% (bar: under 10%)`);
 if (labelling > 0) bad.push(`${labelling} labelling trip(s) (bar: 0)`);
+if (delivered.length > 0 && onPhotoPct < 80) {
+  bad.push(`on-photo rate ${onPhotoPct.toFixed(1)}% (bar: at least 80%)`);
+}
 if (bad.length > 0) {
   console.log(`\nai:try BELOW THE BAR - ${bad.join('; ')}`);
   process.exit(1);

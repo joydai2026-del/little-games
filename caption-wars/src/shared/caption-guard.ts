@@ -2,11 +2,12 @@
 // answered with a refusal instead of a caption.
 //
 // ============================================================================
-// THE PRINCIPLE (settled in review round 4, 2026-09-07). This is the written
-// standard. A later round may tune the word lists in blocked-terms.json; it may
-// NOT flip these four rules without changing this comment and the plan's rule
-// 30/34 together, because three rounds of "too loose" / "too tight" flip-flop is
-// what this paragraph exists to stop.
+// THE PRINCIPLE (settled in review round 4, 2026-09-07; the gap mechanism was
+// replaced in round 5, see THE GAP below). This is the written standard. A later
+// round may tune the word lists in blocked-terms.json; it may NOT flip these
+// four rules without changing this comment and the plan's rule 38 together,
+// because three rounds of "too loose" / "too tight" flip-flop is what this
+// paragraph exists to stop.
 //
 // (a) THE GUARD IS A BACKSTOP. The prompt is the primary defence. Every bot
 //     caption prompt carries one short, calm content rule. This file is the
@@ -18,13 +19,9 @@
 // (b) IT BLOCKS GROUP LABELLING. One shape: a race / ethnicity / religion /
 //     nationality word landing on a word that means "a human being", with up to
 //     two words in between ("black homeless people", "black young men", "asian
-//     looking guys", "african american people"). The two-word gap is what makes
-//     it survive an inserted adjective, which is exactly how round 3's version
-//     was defeated. The gap is also why `nonPeopleCompounds` exists: without an
-//     explicit allowlist, "Black Friday crowd control" and "the white wine guy"
-//     would trip. Words that begin a gap and are pure grammar (`and`, `the`,
-//     `of`, ...) break the match, because they mean the two halves belong to
-//     different phrases.
+//     looking guys", "african american people", "black young homeless people").
+//     The gap is what makes it survive an inserted adjective, which is exactly
+//     how round 3's version was defeated.
 //
 // (c) STANDALONE SLURS AND CLINICAL LABELS TRIP ANYWHERE, no people-noun
 //     needed: `obese`, `crippled`, `retarded`, `midget`, `dwarf`, and the
@@ -49,6 +46,53 @@
 //     people`, `fat guys`, `ugly people`, `ugly guys`, `old people`.
 //
 // HUMANS ARE NOT FILTERED, ever. This only sees model output.
+//
+// ----------------------------------------------------------------------------
+// THE GAP: A CLOSED LIST OF MODIFIERS, NOT AN OPEN LIST OF OBJECTS
+// (settled in review round 5, 2026-09-07. Do not invert this back.)
+//
+// Rounds 3 and 4 let ANY word sit in the gap and tried to buy the false
+// positives back with `nonPeopleCompounds`: an allowlist of OBJECTS a label word
+// might belong to (black cat, white wine, korean bbq, ...). Round 5 measured
+// what that costs. These all fired on ordinary play, because their object simply
+// was not on the 66-entry list: "The white hat guy is winning.", "Black umbrella
+// lady owns this street.", "white gloves man on duty", "Nobody told the deaf cat
+// lady.", "Blind drunk guy at the office party." Hats, sneakers, umbrellas,
+// gloves and cats will never all be enumerated: the allowlist is finite, the set
+// of objects in the world is not, and by principle (a) a false positive silences
+// a bot for a round.
+//
+// So the gap is inverted. A word may sit between a label word and a people-noun
+// ONLY if it is on `gapModifiers` in blocked-terms.json: a short, closed list of
+// words that describe a PERSON (homeless, young, elderly, looking, american,
+// middle, aged, ...). ANY other word ends the walk, grammar words included, so
+// `gapStopWords` is gone as a separate idea (it was a subset of "not a
+// modifier"). Up to TWO modifiers may sit in the gap, so "black young homeless
+// people" and "african american young people" trip: round 4's loop said `j <= i
+// + MAX_GAP` which actually allowed only ONE intervening word, and Codex round 5
+// proved both of those sailed through.
+//
+// The `neutralizeCompounds` pass is gone with the allowlist. It could CREATE
+// matches as well as remove them: collapsing a 3-word compound into one word
+// pulled a label and a people-noun inside the gap that were four words apart
+// ("asian black and white men" -> "asian ALLOWLISTED men" -> "asian men").
+//
+// ONE special case survives, and it is closed too: a label word joined to
+// another label word by "and" / "or" is a colour PAIR ("black and white"), and
+// its second half never starts a walk. That keeps "black and white family photo
+// energy" and "asian black and white men" ordinary.
+//
+// ACCEPTED CONSEQUENCES, in writing, so a later round cannot flip them quietly:
+//   - "black and white people" does NOT trip. The phrase is ambiguous with a
+//     black-and-white photograph, and this is a backstop, not a classifier.
+//   - "wheelchair front row guy" does NOT trip: `front` and `row` are not
+//     modifiers of a person, and adding them to buy this one case back would
+//     re-open the gap the whole change closes.
+//   - "white middle-aged men in a queue" now DOES trip (two modifiers, middle +
+//     aged). Round 4 listed it as must-not-trip on the strength of the off-by-one
+//     bug. It is a race label on a group of people, so it belongs on the tripping
+//     side; it moved in tests/guard-cases.json rather than being argued away.
+// ----------------------------------------------------------------------------
 // ============================================================================
 //
 // Why any of it exists: in a live game on 2026-09-07 a Workers AI bot looked at
@@ -70,28 +114,26 @@ export interface BlockedTerms {
   /** Whole phrases that are othering or a group insult however they are placed. */
   phrases: string[];
   /**
-   * Compounds where a label word belongs to an OBJECT, not a person
-   * ("black cat", "white wine", "korean bbq"). Neutralized before the gap
-   * matcher runs, so they can never reach a people-noun. Optional so a
-   * caller-supplied term list (the tests do this) need not carry it.
+   * The ONLY words allowed between a label word and a people-noun (up to two of
+   * them). Every other word ends the walk. Optional so a caller-supplied term
+   * list (the tests do this) need not carry it: absent means "no gap at all",
+   * which is the safe direction.
    */
-  nonPeopleCompounds?: string[];
-  /** Pure grammar words that break a gap: they mean the two halves are different phrases. */
-  gapStopWords?: string[];
+  gapModifiers?: string[];
+  /** Words that join two label words into a colour pair ("black AND white"). */
+  pairConjunctions?: string[];
 }
 
 export const BLOCKED_TERMS: BlockedTerms = blocked as BlockedTerms;
 
 /**
- * How many words may sit between a label word and a people-noun. 2, so an
- * inserted adjective ("black HOMELESS people", "asian LOOKING guys", "african
- * AMERICAN people") does not defeat the whole guard. Round 3 used 1 and every
- * one of those sailed through.
+ * How many MODIFIER words may sit between a label word and a people-noun. 2, so
+ * an inserted adjective ("black HOMELESS people", "asian LOOKING guys", "african
+ * AMERICAN people") and two of them ("black YOUNG HOMELESS people") do not
+ * defeat the guard. Round 3 used 1; round 4 wrote 2 but its loop condition
+ * (`j <= i + MAX_GAP`) still allowed only one intervening word.
  */
-const MAX_GAP = 2;
-
-/** A word that no list contains, left where an allowlisted compound was. */
-const ALLOWLISTED = 'allowlisted';
+const MAX_GAP_WORDS = 2;
 
 /** Lower-cased, punctuation flattened to spaces, so matching never depends on typography. */
 function normalize(text: string): string {
@@ -102,22 +144,17 @@ function normalize(text: string): string {
 }
 
 /**
- * Replaces every "the label word belongs to an object" compound with a neutral
- * word, so the gap matcher below cannot walk from it to a people-noun. Longest
- * compounds first, so "black and white" is taken before "black" can be reached
- * by anything shorter.
+ * True when this label word is the second half of a colour pair ("black AND
+ * white"), which describes the picture far more often than the people in it.
+ * The pair's second half never starts a walk. See THE GAP in the header.
  */
-function neutralizeCompounds(flat: string, compounds: string[]): string {
-  let padded = ` ${flat} `;
-  const ordered = [...compounds]
-    .map((c) => normalize(c))
-    .filter((c) => c.length > 0)
-    .sort((a, b) => b.split(' ').length - a.split(' ').length);
-  for (const compound of ordered) {
-    const needle = ` ${compound} `;
-    while (padded.includes(needle)) padded = padded.replace(needle, ` ${ALLOWLISTED} `);
-  }
-  return padded.trim();
+function isPairTail(
+  words: string[],
+  i: number,
+  labels: Set<string>,
+  conjunctions: Set<string>
+): boolean {
+  return i >= 2 && conjunctions.has(words[i - 1]) && labels.has(words[i - 2]);
 }
 
 /**
@@ -141,19 +178,23 @@ export function labellingMatch(text: string, terms: BlockedTerms = BLOCKED_TERMS
     if (standalone.has(word)) return word;
   }
 
-  // Principle (b): the gap matcher, on text with the object compounds taken out.
-  const words = neutralizeCompounds(flat, terms.nonPeopleCompounds ?? []).split(' ');
+  // Principle (b): the modifier walk. A label word reaches a people-noun over at
+  // most MAX_GAP_WORDS words, and every one of those words must be a modifier of
+  // a person. Anything else ends the walk, which is what keeps "the white HAT
+  // guy" and "Black FRIDAY crowd control" ordinary play (see THE GAP above).
+  const words = flat.split(' ');
   const labels = new Set((terms.labelWords ?? []).map((t) => normalize(t)));
   const peopleNouns = new Set((terms.peopleNouns ?? []).map((t) => normalize(t)));
-  const stops = new Set((terms.gapStopWords ?? []).map((t) => normalize(t)));
+  const modifiers = new Set((terms.gapModifiers ?? []).map((t) => normalize(t)));
+  const conjunctions = new Set((terms.pairConjunctions ?? []).map((t) => normalize(t)));
 
   for (let i = 0; i < words.length; i++) {
     if (!labels.has(words[i])) continue;
-    for (let j = i + 1; j <= i + MAX_GAP && j < words.length; j++) {
+    if (isPairTail(words, i, labels, conjunctions)) continue;
+    // j walks the people-noun slot: adjacent first, then over 1 and 2 modifiers.
+    for (let j = i + 1; j <= i + MAX_GAP_WORDS + 1 && j < words.length; j++) {
       if (peopleNouns.has(words[j])) return `${words[i]} ${words[j]}`;
-      // A grammar word between the two halves means they belong to different
-      // phrases ("a black dog AND the guy"), so stop walking.
-      if (stops.has(words[j])) break;
+      if (!modifiers.has(words[j])) break;
     }
   }
 
@@ -179,35 +220,61 @@ export function looksLikeLabelling(text: string, terms: BlockedTerms = BLOCKED_T
 // their own detector and the same treatment: retry, then the fallback model,
 // then the bot sits the round out.
 
+// ROUND 5: every marker below is matched on WORD BOUNDARIES, not as a bare
+// substring, and the descriptive ones are anchored to the START of the answer.
+// Round 4 used `flat.includes(marker)` for all 37, which failed ordinary
+// captions in two different ways, both measured on the shipped code:
+//
+//   "Dressed as an airline pilot for no reason."  -> matched `as an ai`
+//   "Everyone in this photo owes me money."       -> matched `in this photo`
+//   "The photo shows up on the fridge tomorrow."  -> matched `the photo shows`
+//   "Not appropriate content for grandma."        -> matched `appropriate content`
+//   "Can I help you with that? No."               -> matched `can i help you with`
+//   "Not a language model in sight."              -> matched `language model`
+//
+// A false refusal is not free: it costs a regeneration and then a fallback-model
+// attempt, which is time the bot job's budget has to pay for.
+
 /**
- * Markers of a model talking about itself, matched ANYWHERE in the answer.
- * Every one of these is a sentence about the assistant, which a caption never is.
+ * A model talking about ITSELF. The marker is not the phrase "language model"
+ * (a caption may contain that); it is a model SAYING IT IS ONE. Matched
+ * anywhere, because a refusal often gets there in its second clause ("I'm happy
+ * to help, but I must clarify that I'm a large language model").
+ */
+const SELF_REFERENCE_RE =
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:a\s+)?(?:large\s+|small\s+|text[\s-]based\s+)?(?:language model|ai|artificial intelligence)\b/;
+
+/**
+ * Markers of a model talking about itself or about the request, matched ANYWHERE
+ * in the answer but on WORD BOUNDARIES. Every one is a sentence about the
+ * assistant, which a caption never is.
+ *
+ * Dropped in round 5, with the reason, so they are not re-added by reflex:
+ *   `appropriate content`, `acceptable content`, `for a general audience` are
+ *      ordinary English mid-sentence; the real refusal that carried them is
+ *      still caught by `not appropriate or acceptable`.
+ *   `can i help you with` is a question a caption can ask; the refusal that
+ *      carried it is caught by REFUSAL_OPENER_RE at the start of the answer.
+ *   `i apologize` on its own failed "I apologize to the cake.", so it now
+ *      requires the "but" that every real refusal has.
+ *   `language model`, `text-based ai`, `as an ai` moved into SELF_REFERENCE_RE.
  */
 const REFUSAL_MARKERS = [
-  'language model',
-  'text-based ai',
   "i'm not designed",
   'i am not designed',
   'against my guidelines',
   'not appropriate or acceptable',
-  'appropriate content',
-  'acceptable content',
-  'for a general audience',
-  'as an ai',
-  'as an artificial intelligence',
-  "i'm an ai",
-  'i am an ai',
   'i must clarify',
   "i'm happy to help",
   'i am happy to help',
-  'i apologize',
-  'i apologise',
-  'can i help you with',
   "i don't have the capability",
   'i do not have the capability',
   "i'm not capable",
   'i am not capable',
 ];
+
+/** "I apologize, but ..." is a refusal; "I apologize to the cake." is a caption. */
+const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
 
 /**
  * The "I cannot ..." family, which is NOT safe as a bare substring: "I can't
@@ -217,9 +284,32 @@ const REFUSAL_MARKERS = [
  * is what separates "I cannot write a caption" from "I can't even".
  */
 const REFUSAL_OPENER_RE =
-  /^(?:(?:i'm\s+|i\s+am\s+)?sorry[,.!\s]+|unfortunately[,.!\s]+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|perform|fulfil|fulfill|comply|help|assist|caption|continue|complete|answer|respond)\b/;
+  /^(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|fulfil|fulfill|comply|assist|caption|continue|complete|answer|respond|help\s+(?:you|with))\b/;
+// Round 5 removed two verbs from that list, because both failed captions the
+// tuning rig produced: bare `help` failed "I can't help laughing at this dog"
+// (so `help` now needs "you" or "with" after it, which is the refusal shape),
+// and `perform` failed "I can't perform under this level of goat pressure".
+//
+// Round 5 also WIDENED the lead-in, after the p10 tuning run put these in front
+// of a player as captions, verdict `ok`, on the deployed worker:
+//   "I'm afraid I can't fulfill this request."      (afraid was not a lead-in)
+//   "I'm sorry, but I can't fulfill this request."  ("but" was not allowed after it)
+// The old lead-in accepted only a bare "sorry" or "unfortunately" immediately
+// followed by the "I cannot" clause. It now takes up to two apology clauses
+// (sorry / afraid, with or without "I'm") and an optional "but". The anchor and
+// the required task verb are untouched, which is what keeps "I can't believe he
+// wore that to a wedding." a caption.
 
-/** Markers of a model DESCRIBING the photo (or narrating the task) instead of captioning it. */
+/**
+ * Markers of a model DESCRIBING the photo (or narrating the task) instead of
+ * captioning it. Anchored to the START of the answer: a description always opens
+ * that way, while "Everyone IN THIS PHOTO owes me money." is a caption. The
+ * `shows` / `depicts` markers additionally refuse "shows up", which is a verb a
+ * caption uses ("The photo shows up on the fridge tomorrow.").
+ *
+ * `sure, here` was dropped in round 5: it failed "Sure, here we go again." and
+ * the shapes it existed for are covered by the "here is a caption" markers.
+ */
 const META_MARKERS = [
   'the party game photo shows',
   'this image shows',
@@ -235,8 +325,22 @@ const META_MARKERS = [
   "here's a caption",
   'here is a caption',
   'here are some captions',
-  'sure, here',
 ];
+
+/**
+ * Compiles a marker into a word-boundary regex. `anchored` pins it to the start
+ * of the answer (the META markers); `noShowsUp` refuses a marker that ends in
+ * "shows"/"depicts" when the next word is "up".
+ */
+function markerRe(marker: string, anchored: boolean): RegExp {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const lead = anchored ? '^' : '\\b';
+  const tail = /\b(?:shows|depicts)$/.test(marker) ? '\\b(?!\\s+up\\b)' : '\\b';
+  return new RegExp(`${lead}${escaped}${tail}`);
+}
+
+const REFUSAL_RES = REFUSAL_MARKERS.map((m) => markerRe(m, false));
+const META_RES = META_MARKERS.map((m) => markerRe(m, true));
 
 /**
  * A leading label a model likes to put in front of the answer. Stripped, never
@@ -264,11 +368,13 @@ export function refusalMatch(text: string): string | null {
     .trim();
   if (flat.length === 0) return null;
 
-  for (const marker of REFUSAL_MARKERS) {
-    if (flat.includes(marker)) return marker;
+  if (SELF_REFERENCE_RE.test(flat)) return 'model talking about itself';
+  if (APOLOGY_RE.test(flat)) return 'i apologize, but';
+  for (let i = 0; i < REFUSAL_MARKERS.length; i++) {
+    if (REFUSAL_RES[i].test(flat)) return REFUSAL_MARKERS[i];
   }
-  for (const marker of META_MARKERS) {
-    if (flat.includes(marker)) return marker;
+  for (let i = 0; i < META_MARKERS.length; i++) {
+    if (META_RES[i].test(flat)) return META_MARKERS[i];
   }
   const opener = flat.match(REFUSAL_OPENER_RE);
   if (opener) return opener[0];
