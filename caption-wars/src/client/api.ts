@@ -31,7 +31,7 @@ function plainError(status: number): string {
   if (status === 0) return 'No connection. Check your signal and try again.';
   if (status === 400) return 'That did not go through. Try again.';
   if (status === 403) return 'This device is no longer signed in to that room. Join it again.';
-  if (status === 404) return 'No room with that code. Check the 4 letters.';
+  if (status === 404) return 'No room with that code. Check the 4 characters.';
   if (status === 409) return 'That room is not taking that right now.';
   if (status === 413) return 'That is too long.';
   if (status === 429) return 'Too many tries at once. Wait a moment.';

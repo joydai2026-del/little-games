@@ -36,7 +36,7 @@ function route(current: Route): void {
   if (first === 'room' && second) {
     const code = normalizeCode(second);
     if (code.length !== 4) {
-      showMessage('Bad link', 'A room code is 4 letters. Ask the host for the link again.');
+      showMessage('Bad link', 'A room code is 4 letters or numbers. Ask the host for the link again.');
       return;
     }
     cleanup = renderRoom(root!, code);

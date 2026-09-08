@@ -120,7 +120,9 @@ describe('room code', () => {
   it('forces four upper-case letters', () => {
     expect(normalizeCode('abcd')).toBe('ABCD');
     expect(normalizeCode(' a b c d ')).toBe('ABCD');
-    expect(normalizeCode('ab3cd9')).toBe('ABCD');
+    expect(normalizeCode('ab3cd9')).toBe('AB3C');
+    expect(normalizeCode('b83d')).toBe('B83D');
+    expect(normalizeCode('a-b_c d!')).toBe('ABCD');
     expect(normalizeCode('abcdefgh')).toBe('ABCD');
     expect(normalizeCode('')).toBe('');
   });

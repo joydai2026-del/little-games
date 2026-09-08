@@ -27,7 +27,9 @@ export function identityKey(code: string): string {
 
 /** A room code as the server wants it: 4 upper-case letters, nothing else. */
 export function normalizeCode(raw: string): string {
-  return raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  // Room codes use the server alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (src/shared/ids.ts):
+  // letters minus I and O, digits 2 to 9. Keep both.
+  return raw.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 4);
 }
 
 function sessionStore(): StorageLike | null {
