@@ -4,6 +4,7 @@
 // hosts redirect before they answer.
 
 import { describe, it, expect } from 'vitest';
+import { ACTION_TIMEOUT_MS, PHOTO_TIMEOUT_MS } from '../src/shared/config';
 import { fetchPhoto, loremflickrUrl, picsumUrl, sha256Hex, PhotoError } from '../src/worker/photo';
 import { fixturePhoto, FIXTURE_PHOTO_SHA256 } from '../src/shared/fixture-photo';
 
@@ -185,6 +186,67 @@ describe('fetchPhoto', () => {
     expect(signals).toHaveLength(3);
     expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
     expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  it('spends ONE budget across all three attempts, not one each', async () => {
+    // Review round 4, must-fix 3. Each attempt used to get its own
+    // photoTimeoutMs, so the legal worst case for POST /start was 3 x 8000 =
+    // 24s while the browser gives up at ACTION_TIMEOUT_MS = 20s: the host's
+    // Start button re-enabled itself with the first start still running inside
+    // the Durable Object, and the second tap answered "This game already
+    // started." at the moment the game started.
+    //
+    // Real clock, real abort timers, three hosts that accept the connection and
+    // then say nothing. With a per-attempt budget this takes 3 x 300ms; with one
+    // whole-call budget it cannot pass 300ms plus scheduling slack.
+    const budget = 300;
+    const attempts: number[] = [];
+    const started = Date.now();
+
+    await expect(
+      fetchPhoto({ ...SETTINGS, photoTimeoutMs: budget }, 'ABCD', 1, {
+        random: fixedRandom([0, 0]),
+        fetchImpl: (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            attempts.push(Date.now() - started);
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          }),
+      })
+    ).rejects.toThrow(/could not load a photo/);
+
+    const elapsed = Date.now() - started;
+    expect(attempts.length).toBeGreaterThan(1); // it really did try the fallbacks
+    expect(elapsed).toBeLessThan(budget + 200);
+    // and the per-attempt behaviour is unchanged for a single slow host
+    expect(elapsed).toBeGreaterThanOrEqual(budget - 50);
+  });
+
+  it('stops trying once the whole-call budget is spent', async () => {
+    // The clock jumps past the deadline while the first attempt is in flight,
+    // so attempts 2 and 3 must not fire at all.
+    let clock = 0;
+    const urls: string[] = [];
+
+    await expect(
+      fetchPhoto({ ...SETTINGS, photoTimeoutMs: 800 }, 'ABCD', 1, {
+        random: fixedRandom([0, 0]),
+        now: () => clock,
+        fetchImpl: async (url) => {
+          urls.push(url);
+          clock += 5_000; // that attempt took five seconds of an 800ms budget
+          throw new Error('host is being slow then failing');
+        },
+      })
+    ).rejects.toThrow(/budget of 800ms spent/);
+
+    expect(urls).toHaveLength(1);
+  });
+
+  it('leaves the client more time than the server can legally take', () => {
+    // The two constants are on opposite sides of the wire and drifted apart
+    // once already. 5s of margin covers sha256 plus the two storage writes that
+    // follow the download inside the same request.
+    expect(ACTION_TIMEOUT_MS).toBeGreaterThanOrEqual(PHOTO_TIMEOUT_MS + 5_000);
   });
 
   it('gives up with one error naming every attempt when nothing works', async () => {

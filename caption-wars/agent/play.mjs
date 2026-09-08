@@ -28,7 +28,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { brains, BRAIN_NAMES } from './brains.mjs';
-import { sanitizeCaption, parsePickedNumber, labellingMatch } from './lib.mjs';
+import { sanitizeCaption, parsePickedNumber, labellingMatch, refusalMatch } from './lib.mjs';
 
 /**
  * Read from src/shared/limits.json, the same file src/shared/config.ts imports,
@@ -52,7 +52,7 @@ const FETCH_TIMEOUT_MS = (() => {
 })();
 
 /**
- * One request with a deadline.
+ * One request with a deadline, INCLUDING the body read.
  *
  * A fetch that never settles (a phone-shaped network drop, a Worker holding the
  * request open, a stalled image host) parks the whole agent: the await never
@@ -60,6 +60,18 @@ const FETCH_TIMEOUT_MS = (() => {
  * alive. The race is what bounds it; the abort is what stops the real socket.
  * A timeout surfaces as an ordinary throw, which every caller already handles as
  * "that poll failed, try again".
+ *
+ * The body is read INSIDE the race (review round 4). Racing only the fetch call
+ * settles the moment the HEADERS land, and `.finally` then clears the timer, so
+ * `res.json()` and `res.arrayBuffer()` afterwards ran with no deadline at all: a
+ * server that sent headers and then stalled its body hung the agent for ever,
+ * with no failure for MAX_POLL_FAILURES to count. Measured before the fix: still
+ * parked at 3001ms with a 300ms deadline. The browser twin in src/client/api.ts
+ * always did it this way; this is the sibling path that was missed.
+ *
+ * Returns a plain object rather than a Response, because the payload has already
+ * been consumed: `{ ok, status, headers, buffer }`. `readJson` below is how
+ * JSON callers use it; the photo path reads `reply.buffer` directly.
  */
 function fetchWithTimeout(fetchImpl, input, init = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -70,10 +82,22 @@ function fetchWithTimeout(fetchImpl, input, init = {}, timeoutMs = FETCH_TIMEOUT
       reject(new Error(`Request timed out after ${timeoutMs}ms: ${String(input)}`));
     }, timeoutMs);
   });
-  return Promise.race([
-    Promise.resolve(fetchImpl(input, { ...init, signal: controller.signal })),
-    deadline,
-  ]).finally(() => clearTimeout(timer));
+  const attempt = async () => {
+    const res = await fetchImpl(input, { ...init, signal: controller.signal });
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return { ok: res.ok, status: res.status, headers: res.headers, buffer };
+  };
+  return Promise.race([attempt(), deadline]).finally(() => clearTimeout(timer));
+}
+
+/** The already-read payload as JSON, or null when it was not JSON. */
+function readJson(reply) {
+  try {
+    const text = reply.buffer.toString('utf8');
+    return text.length > 0 ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
 }
 
 function log(message) {
@@ -158,14 +182,6 @@ class RoomHttpError extends Error {
   }
 }
 
-async function safeJson(res) {
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 function authHeaders(ctx) {
   const headers = {};
   if (ctx.playerId) headers['x-player-id'] = ctx.playerId;
@@ -180,7 +196,7 @@ async function joinRoom(ctx) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: ctx.name }),
   });
-  const body = await safeJson(res);
+  const body = readJson(res);
   if (!res.ok || !body) {
     throw new Error(`Join failed (${res.status}): ${body && body.error ? body.error : 'no response body'}`);
   }
@@ -195,7 +211,7 @@ async function pollRoom(ctx, version) {
   const url = new URL(`/api/rooms/${ctx.room}`, ctx.baseUrl);
   url.searchParams.set('v', String(version));
   const res = await ctx.fetch(url, { headers: authHeaders(ctx) });
-  const body = await safeJson(res);
+  const body = readJson(res);
   if (!res.ok || !body) {
     throw new RoomHttpError(
       `Poll failed (${res.status}): ${body && body.error ? body.error : 'no response body'}`,
@@ -212,7 +228,8 @@ async function downloadPhoto(ctx, round) {
   if (!res.ok) throw new Error(`Photo download failed (${res.status})`);
   const contentType = res.headers.get('content-type') || 'image/jpeg';
   const ext = contentType.includes('png') ? '.png' : contentType.includes('webp') ? '.webp' : '.jpg';
-  const buf = Buffer.from(await res.arrayBuffer());
+  // The bytes were read inside the deadline; nothing left to await here.
+  const buf = res.buffer;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'caption-wars-'));
   const file = path.join(dir, `round-${round}${ext}`);
   fs.writeFileSync(file, buf);
@@ -233,7 +250,7 @@ async function submitCaption(ctx, text) {
     headers: { 'content-type': 'application/json', ...authHeaders(ctx) },
     body: JSON.stringify({ playerId: ctx.playerId, text }),
   });
-  const body = await safeJson(res);
+  const body = readJson(res);
   if (!res.ok) throw new Error(`Caption submit failed (${res.status}): ${body && body.error ? body.error : ''}`);
   return body;
 }
@@ -244,62 +261,81 @@ async function submitVote(ctx, captionId) {
     headers: { 'content-type': 'application/json', ...authHeaders(ctx) },
     body: JSON.stringify({ playerId: ctx.playerId, captionId }),
   });
-  const body = await safeJson(res);
+  const body = readJson(res);
   if (!res.ok) throw new Error(`Vote submit failed (${res.status}): ${body && body.error ? body.error : ''}`);
   return body;
 }
 
 /**
- * The one content rule every caption prompt carries.
- *
- * A live game on 2026-09-07 produced the bot caption "Black people just
- * standing there." The photos are real pictures of real strangers, so the model
- * has to be told, every single time, that the joke is about the SITUATION and
- * never about who the people are. Output is checked as well (labellingMatch),
- * because a prompt is a request, not a guarantee.
- *
- * What the output check covers, exactly: race, ethnicity, religion, skin colour,
- * body, age and disability. Gender is in the rule because the model should hear
- * it, but it is deliberately not in the word list (see src/shared/caption-guard.ts
- * and the plan's rule 30 for why).
+ * The one content rule every caption prompt carries. ONE calm sentence, the
+ * same wording the worker uses (src/worker/bots.ts) and the same reason: round
+ * 3's eight-category prohibition read to a safety-tuned model as a request to
+ * decline, and the next live run answered a photo of a dog with "I cannot write
+ * a caption that makes a joke at the expense of a dog." The guard in
+ * agent/lib.mjs is the backstop; the principle is written in the header of
+ * src/shared/caption-guard.ts. Plan rule 38.
  */
-const CONTENT_RULE =
-  'Joke about the situation in the photo, never about anyone in it. ' +
-  "Never mention or joke about a person's race, ethnicity, skin colour, body, " +
-  'gender, religion, age or disability, and never use a slur. If there are ' +
-  'people in the photo, describe what is HAPPENING, not who they are.';
+const CONTENT_RULE = 'Joke about the situation, not about who the people are.';
+
+/** The same three worked examples the worker sends. Three, not four: see plan rule 40. */
+const CAPTION_EXAMPLES =
+  '"Day four of the standoff. Neither of us will blink." ' +
+  '"He has no idea the vet is next." ' +
+  '"The exact second he realised he should have read the instructions."';
+
+/** Words a caption may run to. Matches CAPTION_MAX_WORDS in src/worker/bots.ts. */
+const CAPTION_MAX_WORDS = 12;
 
 /**
- * The retry prompt, used once when a first answer tripped the content guard.
- * It names the words that tripped: a retry that only says "you described the
- * people" leaves the model guessing, and a second trip means no caption at all.
+ * The correction after a guard trip. It names the words that tripped, calmly: a
+ * retry that only says "you described the people" leaves the model guessing.
  */
 function stricterRule(flagged) {
+  return `Your last try said "${flagged}", which is about who the people are. Go for what is happening instead.`;
+}
+
+/**
+ * `mode` is 'first', 'after-labelling' or 'lighter', exactly as in
+ * src/worker/bots.ts. The LIGHTER prompt is the retry after a REFUSAL: it drops
+ * the content rule, because the rule is what the model declined, and the guard
+ * still checks the answer either way.
+ */
+function buildCaptionPrompt(style, mode = 'first', flagged = null) {
+  const persona = style ? ` Write in this voice or persona: ${style}.` : '';
+  if (mode === 'lighter') {
+    return (
+      'Party game. Look at the photo and write one short, funny caption for it.' +
+      `${persona} Reply with the caption only: one line, at most ${CAPTION_MAX_WORDS} words, ` +
+      'no quotes, no explanation, no description of the photo.'
+    );
+  }
   return (
-    'Your last answer described the PEOPLE in the photo instead of what is going ' +
-    `on: it used "${flagged}", which labels who they are. Do not use those words ` +
-    'or anything like them. Write about the action, the objects, or the situation ' +
-    'only. Do not name or describe any person or group.'
+    'You are the funniest person at a party. Look at this photo and write ONE caption ' +
+    `that would make a friend laugh out loud.${persona} ${CONTENT_RULE} ` +
+    'A caption is the funny thought the photo gives you, not a summary of it. ' +
+    `Like these, for other photos: ${CAPTION_EXAMPLES}` +
+    `${mode === 'after-labelling' && flagged ? ` ${stricterRule(flagged)}` : ''} ` +
+    `Reply with the caption only: one line, at most ${CAPTION_MAX_WORDS} words and under ` +
+    `${CAPTION_MAX_CHARS} characters, no quotes, no explanation. Short beats clever.`
   );
 }
 
-function buildCaptionPrompt(style, flagged = null) {
+function buildBlindCaptionPrompt(style, mode = 'first', flagged = null) {
   const persona = style ? ` Write in this voice or persona: ${style}.` : '';
-  return (
-    'You are playing a party game called Caption Wars. You are shown a real photo. ' +
-    'Write ONE short, funny caption for it: plain text, no quotes, no hashtags, one line only, ' +
-    `under ${CAPTION_MAX_CHARS} characters.${persona} ${CONTENT_RULE}` +
-    `${flagged ? ` ${stricterRule(flagged)}` : ''} Reply with ONLY the caption text, nothing else.`
-  );
-}
-
-function buildBlindCaptionPrompt(style, flagged = null) {
-  const persona = style ? ` Write in this voice or persona: ${style}.` : '';
+  if (mode === 'lighter') {
+    return (
+      'Party game. You cannot see the photo. Write one short, funny, generic one-line caption ' +
+      `that could fit an awkward or funny photo.${persona} Reply with the caption only, ` +
+      `at most ${CAPTION_MAX_WORDS} words, no quotes.`
+    );
+  }
   return (
     'You are playing a party game called Caption Wars, but you cannot see this round\'s photo. ' +
     'Write ONE short, funny, generic one-line caption that could plausibly fit an awkward or funny ' +
-    `photo: plain text, no quotes, under ${CAPTION_MAX_CHARS} characters.${persona} ${CONTENT_RULE}` +
-    `${flagged ? ` ${stricterRule(flagged)}` : ''} Reply with ONLY the caption text.`
+    `photo.${persona} ${CONTENT_RULE}` +
+    `${mode === 'after-labelling' && flagged ? ` ${stricterRule(flagged)}` : ''} ` +
+    `Reply with the caption only: at most ${CAPTION_MAX_WORDS} words and under ` +
+    `${CAPTION_MAX_CHARS} characters, no quotes, no explanation.`
   );
 }
 
@@ -367,19 +403,24 @@ async function actOnCaptionPhase(ctx, state, memory) {
     imagePath = await downloadPhoto(ctx, state.round);
     log(`Round ${state.round}: photo saved to ${imagePath}. Asking brain "${ctx.brainName}"...`);
 
-    // Two attempts at most: one normal, and one stricter retry if the first
-    // answer read as a label on the people in the photo rather than a joke
-    // about the situation. Two strikes and this agent sits the round out: it
-    // marks the round done for itself (so the next poll does not run all of
-    // this again) and the room ends the round on its timer, or sooner if every
-    // other player has acted. This agent is a normal player to the server, so
-    // nothing there has to know it went quiet. See the note in agent/lib.mjs.
+    // Two attempts at most: one normal, and one retry when the first answer was
+    // not a caption. Two shapes count as "not a caption" and they get DIFFERENT
+    // retries (same rule as the worker, plan rules 38 and 39):
+    //   labelling  -> a calm correction naming the words that tripped the guard
+    //   refusal    -> a LIGHTER prompt with the content rule dropped, because
+    //                 the rule is what the model declined
+    // Two strikes and this agent sits the round out: it marks the round done for
+    // itself (so the next poll does not run all of this again) and the room ends
+    // the round on its timer, or sooner if every other player has acted. This
+    // agent is a normal player to the server, so nothing there has to know it
+    // went quiet.
     let caption = '';
+    let mode = 'first';
     let flagged = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       const prompt = brain.degraded
-        ? buildBlindCaptionPrompt(ctx.style, flagged)
-        : buildCaptionPrompt(ctx.style, flagged);
+        ? buildBlindCaptionPrompt(ctx.style, mode, flagged)
+        : buildCaptionPrompt(ctx.style, mode, flagged);
       const result = await brain.run({ kind: 'caption', prompt, imagePath, round: state.round });
       if (!result.ok) {
         // Sitting out is a DECISION, not a retry. Marking the round done here is
@@ -395,19 +436,31 @@ async function actOnCaptionPhase(ctx, state, memory) {
         log(`Round ${state.round}: brain answer sanitized to empty text. Sitting this round out.`);
         return;
       }
-      flagged = labellingMatch(candidate);
-      if (!flagged) {
+      const refused = refusalMatch(candidate);
+      if (refused) {
+        mode = 'lighter';
+        flagged = refused;
+        log(
+          `Round ${state.round}: the brain answered with a refusal or a description ` +
+            `("${refused}") rather than a caption (attempt ${attempt + 1} of 2).`
+        );
+        continue;
+      }
+      const labelled = labellingMatch(candidate);
+      if (!labelled) {
         caption = candidate;
         break;
       }
+      mode = 'after-labelling';
+      flagged = labelled;
       log(
-        `Round ${state.round}: caption tripped the content guard on "${flagged}" ` +
+        `Round ${state.round}: caption tripped the content guard on "${labelled}" ` +
           `(attempt ${attempt + 1} of 2).`
       );
     }
     if (!caption) {
       memory.captioned.add(state.round);
-      log(`Round ${state.round}: content guard tripped twice. Sitting this round out.`);
+      log(`Round ${state.round}: two answers in a row were not usable captions. Sitting this round out.`);
       return;
     }
     await submitCaption(ctx, caption);
@@ -478,11 +531,19 @@ function announceReveal(ctx, state, memory) {
   if (!result) {
     log(`Round ${state.round}: reveal (no round result recorded yet).`);
   } else if (!result.winnerCaptionIds || result.winnerCaptionIds.length === 0) {
-    log(
-      result.voidReason === 'bots-failed'
-        ? `Round ${result.round}: the AI players had nothing to say, no winner.`
-        : `Round ${result.round}: not enough captions this round, no winner.`
-    );
+    // Three different rounds end with no winner and they are not the same
+    // sentence. `winnerCaptionIds` is also empty when 2+ captions were in and
+    // NOBODY voted, which is not a void round at all: the browser branches on
+    // the caption count first (src/client/screens/reveal.ts) and this log used
+    // to call that "not enough captions".
+    const captionCount = Array.isArray(result.captions) ? result.captions.length : 0;
+    if (captionCount >= 2) {
+      log(`Round ${result.round}: nobody voted, no winner.`);
+    } else if (result.voidReason === 'bots-failed') {
+      log(`Round ${result.round}: the AI players had nothing to say, no winner.`);
+    } else {
+      log(`Round ${result.round}: not enough captions this round, no winner.`);
+    }
   } else {
     for (const id of result.winnerCaptionIds) {
       const caption = (result.captions || []).find((c) => c.id === id);

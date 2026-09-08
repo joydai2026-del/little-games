@@ -121,14 +121,24 @@ export function startPolling(options: PollOptions): () => void {
       options.onEnvelope(envelope);
       const delay = pollDelay(envelope.nextPollMs ?? envelope.state?.nextPollMs, hidden());
       if (delay === 0) {
-        stopped = true;
+        // `done`: stop for good, and take the visibility listener with us rather
+        // than leaving a dead one attached until the next route change.
+        stop();
         return;
       }
       schedule(delay);
     } catch (error) {
       if (stopped) return;
       failures += 1;
-      options.onError(error instanceof Error ? error : new Error('The room stopped answering.'));
+      // The callback is somebody else's code. A throw in here used to happen
+      // BEFORE schedule(), so one bad repaint killed the poll loop for the rest
+      // of the session and left an unhandled rejection behind. Reporting an
+      // error is never a reason to stop retrying.
+      try {
+        options.onError(error instanceof Error ? error : new Error('The room stopped answering.'));
+      } catch (callbackError) {
+        console.error('poll: onError threw', callbackError);
+      }
       schedule(errorPollDelay(failures, hidden()));
     } finally {
       inFlight = false;
@@ -150,11 +160,14 @@ export function startPolling(options: PollOptions): () => void {
   const canWatchVisibility = typeof document !== 'undefined';
   if (canWatchVisibility) document.addEventListener('visibilitychange', onVisibilityChange);
 
-  void run();
-
-  return () => {
+  /** Stops for good. Safe to call twice, and safe to call from inside `run`. */
+  function stop(): void {
     stopped = true;
     window.clearTimeout(timer);
     if (canWatchVisibility) document.removeEventListener('visibilitychange', onVisibilityChange);
-  };
+  }
+
+  void run();
+
+  return stop;
 }

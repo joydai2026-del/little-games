@@ -5,6 +5,7 @@
 import { photoUrl } from '../api';
 import type { RoomView } from '../contract';
 import { countdownSeconds } from '../poll';
+import { serverNow } from '../state';
 import { h } from '../ui';
 
 /**
@@ -54,6 +55,20 @@ export function isHost(view: RoomView, playerId: string): boolean {
 }
 
 /**
+ * Milliseconds until the server will try the photo host again, or 0 when
+ * nothing is backing off.
+ *
+ * Both image hosts being down at a rollover is answered with a 200 carrying the
+ * UNCHANGED state, so a host tapping Start or Next in that window saw their
+ * button come straight back and nothing happen. On the third failure the backoff
+ * is 60 seconds. This is what lets both buttons say so.
+ */
+export function photoWaitMs(view: RoomView | null): number {
+  if (!view || typeof view.photoRetryAt !== 'number') return 0;
+  return Math.max(0, view.photoRetryAt - serverNow());
+}
+
+/**
  * True when this player is watching a round they are not in: the roster was
  * frozen when the round started and they joined after it. Absent roster (an
  * older server) means everybody plays.
@@ -100,25 +115,48 @@ export function countdown(): { el: HTMLElement; set(msLeft: number): void } {
 }
 
 /**
+ * How long "The photo is on its way." may stay on screen before we say plainly
+ * that it is not coming. An <img> that hangs never fires `error`, so this is the
+ * one client request the API deadline could not cover: without it a stalled
+ * image request leaves that line up for the whole round.
+ */
+export const PHOTO_LOAD_TIMEOUT_MS = 15000;
+
+/**
  * The round photo. The bytes come from the worker, which fetched them once so
  * every player and every bot sees the same picture.
  */
 export function photoFrame(
   ctx: RoomCtx,
   size: 'big' | 'small'
-): { el: HTMLElement; set(view: RoomView): void } {
+): { el: HTMLElement; set(view: RoomView): void; destroy(): void } {
   const img = h('img', { class: 'photo-img', alt: 'The photo everyone is captioning' });
   const fallback = h('p', { class: 'photo-fallback', text: 'The photo is on its way.' });
   const el = h('figure', { class: `photo photo-${size}` }, [img, fallback]);
   let shown = '';
+  let hangTimer = 0;
+
+  const clearHangTimer = (): void => {
+    if (hangTimer) {
+      window.clearTimeout(hangTimer);
+      hangTimer = 0;
+    }
+  };
+
+  /** The same wording the `error` handler uses: to a player, hung and broken are one thing. */
+  const sayItDidNotLoad = (): void => {
+    el.classList.add('photo-broken');
+    fallback.textContent = 'The photo did not load. The captions still count.';
+  };
 
   img.addEventListener('load', () => {
+    clearHangTimer();
     fallback.textContent = '';
     el.classList.remove('photo-broken');
   });
   img.addEventListener('error', () => {
-    el.classList.add('photo-broken');
-    fallback.textContent = 'The photo did not load. The captions still count.';
+    clearHangTimer();
+    sayItDidNotLoad();
   });
 
   return {
@@ -131,6 +169,11 @@ export function photoFrame(
       fallback.textContent = 'The photo is on its way.';
       img.alt = `The photo for round ${round}`;
       img.src = src;
+      clearHangTimer();
+      hangTimer = window.setTimeout(sayItDidNotLoad, PHOTO_LOAD_TIMEOUT_MS);
+    },
+    destroy() {
+      clearHangTimer();
     },
   };
 }

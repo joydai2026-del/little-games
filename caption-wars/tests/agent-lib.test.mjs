@@ -1,6 +1,8 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  BLOCKED_TERMS,
   stripSurroundingQuotes,
   toOneLine,
   capLength,
@@ -8,6 +10,9 @@ import {
   parsePickedNumber,
   labellingMatch,
   looksLikeLabelling,
+  looksLikeRefusal,
+  refusalMatch,
+  stripCaptionPrefix,
 } from '../agent/lib.mjs';
 import { claudeArgs, codexArgs } from '../agent/brains.mjs';
 import { buildVotePrompt } from '../agent/play.mjs';
@@ -185,51 +190,98 @@ test('codex vote argv carries no image flag', () => {
   assert.equal(args[args.length - 1], 'VOTE PROMPT');
 });
 
-// --- bot content guard (the mjs twin of src/shared/caption-guard.ts) ---------
+// --- bot content guard + refusal detector (the mjs twin of caption-guard.ts) ---
+//
+// Same case table as tests/caption-guard.test.ts, read from the same file. The
+// two implementations must give IDENTICAL answers on every case: the terminal
+// agent is a player like any other, and a guard that disagreed with the worker's
+// would be a second, invisible policy.
 
-test('labellingMatch trips on the caption from the live game', () => {
+const cases = JSON.parse(
+  fs.readFileSync(new URL('./guard-cases.json', import.meta.url), 'utf8')
+);
+
+test('labellingMatch trips on every must-trip caption', () => {
+  for (const caption of cases.mustTrip) {
+    assert.notEqual(labellingMatch(caption), null, `must trip: ${caption}`);
+  }
+});
+
+test('labellingMatch trips on nothing in the must-not-trip list', () => {
+  for (const caption of cases.mustNotTrip) {
+    assert.equal(labellingMatch(caption), null, `must NOT trip: ${caption}`);
+  }
+});
+
+test('labellingMatch names the live incident exactly', () => {
   assert.equal(looksLikeLabelling('Black people just standing there.'), true);
   assert.equal(labellingMatch('Black people just standing there.'), 'black people');
 });
 
-test('labellingMatch lets ordinary captions through', () => {
-  assert.equal(looksLikeLabelling('When the coffee ran out an hour ago and nobody told you.'), false);
-  assert.equal(looksLikeLabelling('Nobody warned the goat it was a formal event.'), false);
-  assert.equal(looksLikeLabelling('This is what happens when the map says turn left.'), false);
-  assert.equal(looksLikeLabelling('The black cat has decided this is its chair now.'), false);
-});
-
-test('labellingMatch covers body, age and disability, not just race', () => {
-  // The agent and the worker read the SAME src/shared/blocked-terms.json, so
-  // these assertions are deliberately the twin of tests/caption-guard.test.ts:
-  // if only one side were updated, one of the two files would go red.
-  assert.equal(labellingMatch('Fat guy just standing there.'), 'fat guy');
-  assert.equal(labellingMatch('Old woman just standing there.'), 'old woman');
-  assert.equal(labellingMatch('Disabled people waiting in line.'), 'disabled people');
-  assert.equal(
-    labellingMatch('A group of people of color waiting for the bus.'),
-    'people of color'
-  );
-  assert.equal(looksLikeLabelling('A group of people of colour waiting for the bus.'), true);
-});
-
-test('labellingMatch does not fire on the ordinary captions a photo game is full of', () => {
-  for (const caption of [
-    'Black Friday crowd control, level: expert',
-    'the black cat lady strikes again',
-    'a black tie couple who peaked in 2009',
-    'black and white family photo energy',
-    'the white wine guy has opinions',
-    'his white dress lady is unimpressed',
-    'korean bbq family reunion, day three',
-    'the chinese food guy knows my order',
-  ]) {
-    assert.equal(labellingMatch(caption), null, caption);
+test('every label word trips next to a people-noun, and not without one', () => {
+  for (const word of BLOCKED_TERMS.labelWords) {
+    assert.notEqual(labellingMatch(`Three ${word} people waiting for the bus.`), null, word);
+    assert.equal(labellingMatch(`A ${word} umbrella in the rain.`), null, word);
   }
 });
 
-test('labellingMatch still catches colour-word labels on people', () => {
-  assert.equal(labellingMatch('black people just standing there'), 'black people');
-  assert.equal(labellingMatch('two white guys and a ladder'), 'white guys');
-  assert.equal(labellingMatch('brown folks at the market'), 'brown folks');
+test('every allowlisted compound is safe, and none disables the rest of the guard', () => {
+  for (const compound of BLOCKED_TERMS.nonPeopleCompounds ?? []) {
+    assert.equal(labellingMatch(`The ${compound} guy again.`), null, compound);
+    assert.notEqual(labellingMatch(`${compound}, and three black people.`), null, compound);
+  }
+});
+
+test('ordinary body and age adjectives are NOT blocked (principle d)', () => {
+  assert.equal(labellingMatch('Fat guy just standing there.'), null);
+  assert.equal(labellingMatch('Old woman just standing there.'), null);
+  assert.equal(labellingMatch('fat people at the buffet'), 'fat people');
+  for (const word of ['old', 'elderly', 'bald', 'fat', 'skinny', 'ugly']) {
+    assert.equal(BLOCKED_TERMS.labelWords.includes(word), false, word);
+    assert.equal(BLOCKED_TERMS.standaloneLabels.includes(word), false, word);
+  }
+});
+
+test('refusalMatch catches every refusal and prompt-echo in the shared table', () => {
+  for (const text of cases.refusals) {
+    assert.notEqual(refusalMatch(text), null, `must be a refusal: ${text}`);
+  }
+});
+
+test('refusalMatch lets real captions through', () => {
+  for (const text of cases.notRefusals) {
+    assert.equal(refusalMatch(text), null, `must NOT be a refusal: ${text}`);
+  }
+});
+
+test('refusalMatch catches the three refusals a live game shipped as captions', () => {
+  assert.equal(
+    looksLikeRefusal("I'm a large language model, I'm not capable of generating original content"),
+    true
+  );
+  assert.equal(
+    looksLikeRefusal(
+      'I cannot write a caption that makes a joke at the expense of a dog. Can I help you with something else?'
+    ),
+    true
+  );
+  assert.equal(
+    looksLikeRefusal(
+      "I'm happy to help with your request, but I must clarify that I'm a large language model"
+    ),
+    true
+  );
+  assert.equal(looksLikeRefusal('The party game photo shows a man wearing a suit and tie'), true);
+});
+
+test('a leading "Caption:" is stripped, not failed', () => {
+  assert.equal(stripCaptionPrefix('Caption: the goat has seen things.'), 'the goat has seen things.');
+  assert.equal(looksLikeRefusal('Caption: the goat has seen things.'), false);
+  assert.equal(sanitizeCaption('Caption: the goat has seen things.'), 'the goat has seen things.');
+});
+
+test('"I can\'t believe" is a caption, not a refusal', () => {
+  assert.equal(looksLikeRefusal("I can't believe he wore that to a wedding."), false);
+  assert.equal(looksLikeRefusal("I can't even with this dog today."), false);
+  assert.equal(looksLikeRefusal("I can't write a caption for this."), true);
 });

@@ -392,9 +392,17 @@ export function tally(
  * A solo game with two AI players and a model that is down produces a round
  * where the only human wrote a caption and nothing else arrived. "Not enough
  * captions" reads as an accusation; "the AI players had nothing to say" is what
- * actually happened. Any `failed` bot job this round is the tell.
+ * actually happened.
+ *
+ * Two conditions, not one (review round 4). A `failed` bot job is the tell, but
+ * it only blames the AI when a HUMAN actually wrote something: a round where
+ * everybody including the human went quiet is "nobody wrote anything", and
+ * telling that player the AI let them down would be inventing a culprit.
  */
 function voidReasonFor(state: RoomState): 'no-captions' | 'bots-failed' {
+  const botIds = new Set(state.players.filter((p) => p.isBot).map((p) => p.id));
+  const humanWrote = state.captions.some((c) => !botIds.has(c.playerId));
+  if (!humanWrote) return 'no-captions';
   const botsFailed = state.botJobs.some(
     (j) => j.round === state.round && j.phase === 'caption' && j.status === 'failed'
   );
@@ -692,10 +700,19 @@ export function publicView(
   now: number,
   revealMinMs: number = REVEAL_MIN_MS
 ): PublicRoomState {
-  const { botJobs: _botJobs, captions: _captions, votes: _votes, ...rest } = state;
+  const {
+    botJobs: _botJobs,
+    captions: _captions,
+    votes: _votes,
+    // Internal bookkeeping. The client is told the MOMENT (`photoRetryAt`
+    // below) so a button can count down; the attempt tally is ours.
+    photoRetry: _photoRetry,
+    ...rest
+  } = state;
   void _botJobs;
   void _captions;
   void _votes;
+  void _photoRetry;
 
   const ballotIsSecret = state.phase === 'caption' || state.phase === 'vote';
 
@@ -729,6 +746,7 @@ export function publicView(
     votes: ballotIsSecret ? {} : state.votes,
     yourVote: state.votes[viewerId] ?? null,
     revealMinMs,
+    photoRetryAt: state.photoRetry?.nextAttemptAt ?? null,
     serverTime: now,
   };
 }

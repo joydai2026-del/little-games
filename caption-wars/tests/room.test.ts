@@ -13,6 +13,7 @@ import {
   tally,
   touch,
 } from '../src/shared/room';
+import { trimToWordBoundary } from '../src/shared/text';
 import { normalizeOptions, REVEAL_MIN_MS } from '../src/shared/config';
 import { sanitizeCaption, sanitizeName, cleanModelCaption } from '../src/shared/text';
 import type { BotJob, PhotoMeta, Player, RoomState } from '../src/shared/types';
@@ -399,11 +400,48 @@ describe('void round', () => {
     expect(dead.history[0].voidReason).toBe('bots-failed');
   });
 
+  it('does not blame the AI players when the human said nothing either', () => {
+    // Review round 4, nit 5. A round where NOBODY captioned but a bot job also
+    // failed used to report `bots-failed`, telling a player who timed out that
+    // the AI let them down. `bots-failed` now needs a HUMAN caption to blame
+    // anyone for.
+    let silent = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    silent = {
+      ...silent,
+      botJobs: [
+        job('b1', silent.round, 'caption', 'failed'),
+        job('b2', silent.round, 'caption', 'failed'),
+      ],
+    };
+    silent = endCaptionPhase(silent, silent.phaseEndsAt!).state;
+    expect(silent.phase).toBe('reveal');
+    expect(silent.history[0].captions).toEqual([]);
+    expect(silent.history[0].voidReason).toBe('no-captions');
+  });
+
   it('leaves voidReason off a round that actually produced a winner', () => {
     let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
     state = playRoundHostWins(state, T0 + 1);
     expect(state.history[0].winnerCaptionIds).toEqual(['c-host-1']);
     expect(state.history[0].voidReason).toBeUndefined();
+  });
+});
+
+describe('publicView: the photo backoff moment', () => {
+  it('tells the client WHEN the next photo attempt is, so a button can count down', () => {
+    // Review round 4, should-fix 2. A host tapping Start or Next while the
+    // server is backing off a dead image host gets a 200 with the unchanged
+    // state, so their button went straight back to "Next round" and they tapped
+    // a live-looking button for up to a minute. The moment is all a screen needs;
+    // the attempt count stays server-side.
+    const state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    expect(publicView(state, 'host', T0).photoRetryAt).toBeNull();
+
+    const backingOff = { ...state, photoRetry: { attempts: 2, nextAttemptAt: T0 + 15_000 } };
+    const view = publicView(backingOff, 'host', T0);
+    expect(view.photoRetryAt).toBe(T0 + 15_000);
+    // and the attempt count is not in the payload at all
+    expect(JSON.stringify(view)).not.toContain('"attempts"');
   });
 });
 
@@ -676,5 +714,30 @@ describe('dead bots do not hold up the round', () => {
     s = submitCaption(s, 'host', 'the first caption', 'c-host-1', T0 + 5_000).state;
 
     expect(s.phase).toBe('caption');
+  });
+});
+
+describe('trimToWordBoundary', () => {
+  it('cuts a long model answer at a word, not through one', () => {
+    // The live shape from the p4 tuning run: a Chaos Chip answer that ran to
+    // exactly the 120-character cap and ended "...ownership of a t".
+    const rambling =
+      'A crucial moment as a dog and a snake engage in a game of rock-paper-scissors, with the winner claiming ownership of a towel';
+    const trimmed = trimToWordBoundary(rambling, 120);
+    expect(trimmed.length).toBeLessThanOrEqual(120);
+    expect(trimmed.endsWith('t')).toBe(false);
+    expect(rambling.startsWith(trimmed)).toBe(true);
+    expect(trimmed.split(' ').pop()).not.toBe('t');
+  });
+
+  it('prefers a sentence end when there is a usable one', () => {
+    const two = 'He forgot the fishing licence. The heron did not, and has filed the paperwork already.';
+    expect(trimToWordBoundary(two, 60)).toBe('He forgot the fishing licence.');
+  });
+
+  it('leaves anything already short enough exactly as it is', () => {
+    expect(trimToWordBoundary('He forgot the fishing licence.', 120)).toBe(
+      'He forgot the fishing licence.'
+    );
   });
 });

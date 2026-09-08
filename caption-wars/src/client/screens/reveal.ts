@@ -9,6 +9,7 @@ import { h } from '../ui';
 import {
   isHost,
   photoFrame,
+  photoWaitMs,
   playerName,
   scoreboard,
   type PhaseScreen,
@@ -25,11 +26,6 @@ function countVotes(view: RoomView): Record<string, number> {
   return counts;
 }
 
-/**
- * The winning caption ids for the round on screen. The server writes them
- * into `history` when the vote phase ends; the tally below is only a fallback
- * for a server that has not pushed the round yet.
- */
 /** The server's record of the round on screen, if it has pushed it yet. */
 function recordedRound(view: RoomView): RoomView['history'][number] | undefined {
   const found =
@@ -54,6 +50,11 @@ function voidBanner(view: RoomView): string {
   return `Round ${view.round}: not enough captions. No points.`;
 }
 
+/**
+ * The winning caption ids for the round on screen. The server writes them into
+ * `history` when the vote phase ends; the tally is only a fallback for a server
+ * that has not pushed the round yet.
+ */
 function winnerIds(view: RoomView, counts: Record<string, number>): string[] {
   const recorded = recordedRound(view);
   if (recorded) return recorded.winnerCaptionIds;
@@ -145,6 +146,15 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
       nextButton.textContent = label;
       return;
     }
+    // Both image hosts are down and the server is backing off. Tapping now gets
+    // a 200 with the unchanged state and nothing visible happens, so say what is
+    // actually going on rather than offering a button that does nothing.
+    const photoMs = photoWaitMs(current);
+    if (photoMs > 0) {
+      nextButton.disabled = true;
+      nextButton.textContent = `Waiting for a photo... ${Math.ceil(photoMs / 1000)}s`;
+      return;
+    }
     if (waitMs > 0) {
       nextButton.disabled = true;
       nextButton.textContent = `${label} in ${Math.ceil(waitMs / 1000)}s`;
@@ -204,7 +214,8 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
       waitLine.textContent = seconds > 0 ? `Next round in ${seconds}s` : 'Next round any moment.';
     },
     destroy() {
-      // no timers of its own
+      // the photo frame owns a hang timer; nothing else here has one
+      photo.destroy();
     },
   };
 }

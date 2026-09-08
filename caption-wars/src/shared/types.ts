@@ -145,7 +145,8 @@ export interface PublicCaption {
  * phase, and the server's clock included so the client can render an honest
  * countdown without trusting the device clock.
  */
-export interface PublicRoomState extends Omit<RoomState, 'captions' | 'botJobs'> {
+export interface PublicRoomState
+  extends Omit<RoomState, 'captions' | 'botJobs' | 'photoRetry'> {
   captions: PublicCaption[];
   /** Captions submitted so far this round (visible during `caption` so players see "N of M in"). */
   captionCount: number;
@@ -159,6 +160,17 @@ export interface PublicRoomState extends Omit<RoomState, 'captions' | 'botJobs'>
   yourVote: string | null;
   /** How long `reveal` must be on screen before the host may skip it. */
   revealMinMs: number;
+  /**
+   * When the next photo attempt is allowed, or null when nothing is backing off.
+   *
+   * A host tapping Start or Next during a photo backoff gets a 200 carrying the
+   * unchanged state, so their button used to go straight back to "Next round"
+   * and they tapped a live-looking button for up to a minute with nothing
+   * happening. With this the button can say "Waiting for a photo... 42s"
+   * instead. The attempt COUNT stays server-side; the moment is all a screen
+   * needs.
+   */
+  photoRetryAt: number | null;
   serverTime: number;
 }
 

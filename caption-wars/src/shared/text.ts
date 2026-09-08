@@ -74,5 +74,34 @@ export function cleanModelCaption(raw: string): string {
     }
   }
 
-  return sanitizeCaption(text);
+  return sanitizeCaption(trimToWordBoundary(text, CAPTION_MAX_CHARS));
+}
+
+/**
+ * Cuts an over-long model answer at a WORD boundary rather than mid-word.
+ *
+ * A live tuning run on 2026-09-07 produced "...with the winner claiming
+ * ownership of a t" at exactly the 120-character cap. A human writing 121
+ * characters is their own business, so the plain `sanitizeCaption` slice stays
+ * as it is; this runs only on the model path, where the cut is our doing and a
+ * severed word reads as a bug on somebody's phone. Prefers the last sentence
+ * end, then the last space, and only slices mid-word if the text has neither.
+ */
+export function trimToWordBoundary(raw: string, max: number): string {
+  const text = raw.trim();
+  if (text.length <= max) return text;
+  const window = text.slice(0, max);
+
+  const sentenceEnd = Math.max(
+    window.lastIndexOf('. '),
+    window.lastIndexOf('! '),
+    window.lastIndexOf('? ')
+  );
+  // Only honour a sentence break that leaves a caption worth reading: past 40%
+  // of the window, a whole first sentence beats a longer trailing fragment.
+  if (sentenceEnd >= max * 0.4) return window.slice(0, sentenceEnd + 1).trim();
+
+  const lastSpace = window.lastIndexOf(' ');
+  if (lastSpace > 0) return window.slice(0, lastSpace).trim();
+  return window.trim();
 }

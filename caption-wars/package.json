@@ -12,7 +12,8 @@
     "fixture": "node scripts/make-fixture.mjs",
     "deploy": "npm run build && wrangler deploy",
     "cf:dev": "npm run build && wrangler dev",
-    "ai:smoke": "node scripts/ai-smoke.mjs"
+    "ai:smoke": "node scripts/ai-smoke.mjs",
+    "ai:try": "node scripts/ai-try.mjs"
   },
   "devDependencies": {
     "vite": "^8.2.2",

@@ -24,7 +24,7 @@ import type { BotJob, RoomState } from '../shared/types';
 import type { Persona } from '../shared/personas';
 import type { StateStamp } from '../shared/room';
 import { cleanModelCaption } from '../shared/text';
-import { labellingMatch } from '../shared/caption-guard';
+import { labellingMatch, refusalMatch, stripCaptionPrefix } from '../shared/caption-guard';
 import { CAPTION_MAX_CHARS } from '../shared/config';
 
 /** The slice of the Workers AI binding this module uses. */
@@ -80,11 +80,20 @@ function sameRound(a: StateStamp, b: StateStamp): boolean {
   return a.phase === b.phase && a.round === b.round;
 }
 
-function timeoutSignal(ms: number): AbortSignal | undefined {
-  // AbortSignal.timeout exists in workerd and in Node 18+; guard anyway so a
-  // missing implementation degrades to "no timeout" instead of throwing.
+/**
+ * A deadline for one model call.
+ *
+ * `AbortSignal.timeout` exists in workerd and in Node 18+. The fallback used to
+ * return `undefined`, i.e. NO deadline at all, which is the unbounded state the
+ * deadline exists to prevent, reached silently. It now builds a real signal from
+ * AbortController plus a timer instead (same fix as src/worker/photo.ts).
+ */
+function timeoutSignal(ms: number): AbortSignal {
   const ctor = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
-  return typeof ctor.timeout === 'function' ? ctor.timeout(ms) : undefined;
+  if (typeof ctor.timeout === 'function') return ctor.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
 }
 
 /** Pulls the generated text out of whichever field a Workers AI model used. */
@@ -107,55 +116,168 @@ export function textFromModel(result: unknown): string | null {
 }
 
 /**
- * The content rule every bot caption prompt carries.
+ * The content rule every bot caption prompt carries. ONE sentence, calm,
+ * positively framed.
  *
- * A live game on 2026-09-07 produced the caption "Black people just standing
- * there." from a photo of a group of strangers. The photos are real pictures of
- * real people, so the model is told, every call, that the joke is about the
- * SITUATION. Output is checked as well (see the guard in runBotJob): a prompt
- * is a request, not a guarantee.
- *
- * What the OUTPUT CHECK covers, exactly: race, ethnicity, religion, skin colour,
- * body, age and disability. Gender is in the rule below because the model should
- * hear it, but it is deliberately not in the word list: the words that would
- * catch it (woman, women, girl, guy, men) are the very people-nouns the guard
- * uses, so listing them would flag almost every caption with a person in it.
- * The plan's rule 30 says the same thing.
+ * Why it is this short. Round 3 shipped a four-clause rule that named race,
+ * ethnicity, skin colour, body, gender, religion, age and disability and said
+ * "never use a slur". On the very next live run, two of three bots on a plain
+ * photo of a dog answered with a refusal instead of a caption ("I cannot write a
+ * caption that makes a joke at the expense of a dog. Can I help you with
+ * something else?"), and those refusals were shipped to players AS CAPTIONS. A
+ * long list of forbidden things reads to a safety-tuned model as a request it
+ * should decline. So the rule now says what to DO, once, and the guard in
+ * src/shared/caption-guard.ts is the backstop (principle (a) in its header).
  */
-const CONTENT_RULE =
-  'Joke about the situation in the photo, never about anyone in it. ' +
-  "Never mention or joke about a person's race, ethnicity, skin colour, body, " +
-  'gender, religion, age or disability, and never use a slur. If there are ' +
-  'people in the photo, describe what is HAPPENING, not who they are.';
+const CONTENT_RULE = 'Joke about the situation, not about who the people are.';
 
 /**
- * Added to the ONE retry a bot gets after its first answer tripped the guard.
- *
- * It names the exact words that tripped, because a retry that only says "you
- * described the people" leaves the model guessing which words were the problem,
- * and a second trip means the bot sits the round out.
+ * The caption prompt's version id, reported by POST /api/ai-try and recorded in
+ * the plan with the measured refusal / meta / labelling rates it produced. Bump
+ * it when the wording changes, and re-run `npm run ai:try` against the numbers
+ * in the plan's acceptance bar before shipping the change.
  */
-function stricterRule(flagged: string): string {
-  return (
-    'Your last answer described the PEOPLE in the photo instead of what is going on: ' +
-    `it used "${flagged}", which labels who they are. Do not use those words or ` +
-    'anything like them. Write about the action, the objects or the situation only. ' +
-    'Do not name or describe any person or group.'
-  );
-}
+export const CAPTION_PROMPT_VERSION = 'p7';
 
-/** `flagged` is the term the guard caught on the previous attempt, or null on the first. */
-export function captionPrompt(persona: Persona, flagged: string | null = null): string {
+/**
+ * The word budget in the prompt, and the token budget on the call.
+ *
+ * p4 asked only for "under 120 characters" and models answered with a paragraph
+ * that the cap then guillotined mid-word. A word count is something a model can
+ * actually hold, and 64 output tokens is roughly twice the longest caption we
+ * want, so a well-behaved answer is never cut and a rambling one is stopped.
+ */
+const CAPTION_MAX_WORDS = 12;
+const CAPTION_MAX_TOKENS = 64;
+
+/**
+ * Worked examples, in the prompt, of the SHAPE we want. THREE, not four: p6
+ * added "Nobody here is having the day they planned." and a model handed it
+ * straight back as "Nobody is having the snack they planned." Examples teach
+ * shape, and past three they start teaching wording.
+ *
+ *
+ * The failure they exist to fix is a model answering "The party game photo
+ * shows a man wearing a suit and tie." or "A globe is in a city." Telling a
+ * model not to describe the photo is a negative instruction it half-follows;
+ * showing it three captions that are jokes about a situation is not. All three
+ * are deliberately SHORT, because p4's measured failure was length: it produced
+ * "A crucial moment as a dog and a snake engage in a game of rock-paper-scissors,
+ * with the winner claiming ownership of a t", cut dead at the 120-character cap.
+ */
+const CAPTION_EXAMPLES = [
+  '"Day four of the standoff. Neither of us will blink."',
+  '"He has no idea the vet is next."',
+  '"The exact second he realised he should have read the instructions."',
+].join(' ');
+
+export type CaptionPromptMode = 'first' | 'after-labelling' | 'lighter';
+
+/**
+ * The prompt for one attempt.
+ *
+ *   first            the normal ask: persona, the one content rule, examples, format.
+ *   after-labelling  the same, plus a calm line naming the words that tripped the guard.
+ *   lighter          the retry after a REFUSAL: the content rule is dropped and the
+ *                    ask is as plain as possible, because the rule is what the model
+ *                    declined. The guard still checks the answer, so dropping the
+ *                    sentence loses no safety, only the thing that caused the refusal.
+ */
+export function captionPrompt(
+  persona: Persona,
+  mode: CaptionPromptMode = 'first',
+  flagged: string | null = null
+): string {
+  if (mode === 'lighter') {
+    return [
+      'Party game. Look at the photo and write one short, funny caption for it.',
+      persona.style,
+      `Reply with the caption only: one line, at most ${CAPTION_MAX_WORDS} words,`,
+      'no quotes, no explanation, no description of the photo.',
+    ].join(' ');
+  }
+
   return [
-    'You are playing a party game. Look at this photo and write ONE funny caption for it.',
+    'You are the funniest person at a party. Look at this photo and write ONE caption',
+    'that would make a friend laugh out loud.',
     persona.style,
     CONTENT_RULE,
-    flagged ? stricterRule(flagged) : '',
-    `Rules: one line, at most ${CAPTION_MAX_CHARS} characters, no quotation marks,`,
-    'no preamble, no explanation. Reply with the caption text and nothing else.',
+    // p5 measured 0 refusals and 0 guard trips but still leaked answers like
+    // "Cat is oblivious to the grass stuck to its face", which is a summary of
+    // the picture with a wry tone rather than a joke. Naming what a caption IS
+    // works better than another "do not describe".
+    'A caption is the funny thought the photo gives you, not a summary of it.',
+    `Like these, for other photos: ${CAPTION_EXAMPLES}`,
+    mode === 'after-labelling' && flagged
+      ? `Your last try said "${flagged}", which is about who the people are. Go for what is happening instead.`
+      : '',
+    `Reply with the caption only: one line, at most ${CAPTION_MAX_WORDS} words and`,
+    `under ${CAPTION_MAX_CHARS} characters, no quotes, no explanation. Short beats clever.`,
   ]
     .filter((part) => part.length > 0)
     .join(' ');
+}
+
+/** What one model answer turned out to be. Reported verbatim by POST /api/ai-try. */
+export type CaptionVerdict = 'ok' | 'refusal' | 'labelling' | 'empty';
+
+export interface CaptionAttempt {
+  model: string;
+  prompt_version: string;
+  mode: CaptionPromptMode;
+  /** Exactly what the model said, untouched, capped for transport. */
+  raw: string | null;
+  /** The cleaned candidate, or '' when there was nothing usable. */
+  text: string;
+  verdict: CaptionVerdict;
+  /** The guard term or refusal marker that decided a non-ok verdict. */
+  reason: string | null;
+}
+
+/**
+ * Turns one raw model answer into a verdict. The order matters: a leading
+ * "Caption:" is stripped first (cosmetic), then emptiness, then the refusal /
+ * meta shapes, then the labelling guard.
+ */
+export function judgeCaption(raw: string | null): {
+  verdict: CaptionVerdict;
+  text: string;
+  reason: string | null;
+} {
+  if (raw === null) return { verdict: 'empty', text: '', reason: 'no model answer' };
+  const candidate = cleanModelCaption(stripCaptionPrefix(raw));
+  if (candidate.length === 0) return { verdict: 'empty', text: '', reason: 'empty after cleanup' };
+
+  const refused = refusalMatch(candidate);
+  if (refused) return { verdict: 'refusal', text: candidate, reason: refused };
+
+  const flagged = labellingMatch(candidate);
+  if (flagged) return { verdict: 'labelling', text: candidate, reason: flagged };
+
+  return { verdict: 'ok', text: candidate, reason: null };
+}
+
+/** One model, one call. Returns the raw text, or null when the model errored or said nothing. */
+async function runVisionOnce(
+  models: BotModels,
+  model: string,
+  prompt: string,
+  image: number[]
+): Promise<string | null> {
+  try {
+    const raw = await models.ai.run(
+      model,
+      { prompt, image, max_tokens: CAPTION_MAX_TOKENS, temperature: 0.9 },
+      { signal: timeoutSignal(models.timeoutMs) }
+    );
+    const text = textFromModel(raw);
+    if (text && text.trim().length > 0) return text;
+    console.warn(`bots: ${model} returned no usable text`);
+    return null;
+  } catch (err) {
+    console.warn(`bots: ${model} failed`, err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 /**
@@ -168,35 +290,82 @@ export function captionPrompt(persona: Persona, flagged: string | null = null): 
  * resolves to) declares `image: number[]`. The byte-array form is therefore the
  * one shape both the primary and the fallback model accept.
  *
- * Returns the raw model text, or null when both models failed.
+ * Kept as the simple "give me one answer from whichever model responds" call,
+ * because that is what POST /api/ai-smoke wants: is the binding alive at all.
+ * The game itself goes through composeBotCaption below.
  */
 export async function generateBotCaption(
   models: BotModels,
   persona: Persona,
   bytes: Uint8Array,
-  flagged: string | null = null
+  mode: CaptionPromptMode = 'first'
 ): Promise<string | null> {
   const image = Array.from(bytes);
-  const input = {
-    prompt: captionPrompt(persona, flagged),
-    image,
-    max_tokens: 96,
-    temperature: 0.9,
-  };
-  const options = { signal: timeoutSignal(models.timeoutMs) };
-
+  const prompt = captionPrompt(persona, mode);
   for (const model of [models.visionModel, models.visionModelFallback]) {
     if (!model) continue;
-    try {
-      const raw = await models.ai.run(model, input, options);
-      const text = textFromModel(raw);
-      if (text && text.trim().length > 0) return text;
-      console.warn(`bots: ${model} returned no usable text`);
-    } catch (err) {
-      console.warn(`bots: ${model} failed`, err instanceof Error ? err.message : err);
-    }
+    const text = await runVisionOnce(models, model, prompt, image);
+    if (text !== null) return text;
   }
   return null;
+}
+
+/**
+ * The real caption pipeline: up to three attempts, and every one of them is
+ * recorded so POST /api/ai-try can show what the models actually said.
+ *
+ *   1. the primary vision model, normal prompt
+ *   2. the primary vision model again, with a LIGHTER prompt after a refusal or
+ *      a calm correction after a guard trip (this is the "one regeneration")
+ *   3. one attempt on VISION_MODEL_FALLBACK
+ *   then the bot sits the round out.
+ *
+ * A model that errors or says nothing (`raw === null`) skips step 2, because
+ * asking a dead model the same question twice just burns the caption timer.
+ */
+export async function composeBotCaption(
+  models: BotModels,
+  persona: Persona,
+  bytes: Uint8Array
+): Promise<{ attempts: CaptionAttempt[]; final: string | null }> {
+  const image = Array.from(bytes);
+  const attempts: CaptionAttempt[] = [];
+
+  const tryOnce = async (model: string, mode: CaptionPromptMode, flagged: string | null) => {
+    const raw = await runVisionOnce(models, model, captionPrompt(persona, mode, flagged), image);
+    const judged = judgeCaption(raw);
+    const attempt: CaptionAttempt = {
+      model,
+      prompt_version: CAPTION_PROMPT_VERSION,
+      mode,
+      raw: raw === null ? null : raw.slice(0, 500),
+      text: judged.text,
+      verdict: judged.verdict,
+      reason: judged.reason,
+    };
+    attempts.push(attempt);
+    return attempt;
+  };
+
+  const first = await tryOnce(models.visionModel, 'first', null);
+  if (first.verdict === 'ok') return { attempts, final: first.text };
+
+  let last = first;
+  // A model that answered NOTHING is not going to answer differently to a
+  // reworded prompt; go straight to the other model.
+  if (first.verdict !== 'empty') {
+    const mode: CaptionPromptMode = first.verdict === 'labelling' ? 'after-labelling' : 'lighter';
+    last = await tryOnce(models.visionModel, mode, first.reason);
+    if (last.verdict === 'ok') return { attempts, final: last.text };
+  }
+
+  if (models.visionModelFallback && models.visionModelFallback !== models.visionModel) {
+    const mode: CaptionPromptMode = last.verdict === 'labelling' ? 'after-labelling' : 'lighter';
+    const third = await tryOnce(models.visionModelFallback, mode, last.reason);
+    if (third.verdict === 'ok') return { attempts, final: third.text };
+  }
+
+  return { attempts, final: null };
 }
 
 const VOTE_SCHEMA = {
@@ -298,36 +467,31 @@ export async function runBotJob(
         return 'failed';
       }
 
-      // Two attempts at most: one normal, then one stricter retry if the first
-      // answer read as a label on the people in the photo instead of a joke
-      // about what is happening. The retry names the words that tripped, so the
-      // model is not guessing. Two strikes and the bot sits the round out, which
-      // is already a first-class outcome everywhere else: the round ends on its
-      // timer, or as soon as everyone still playing has acted (a `failed` job
-      // counts as having acted, plan amendment 29).
-      let text = '';
-      let flagged: string | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await generateBotCaption(models, persona, bytes, flagged);
-        if (raw === null) return 'failed';
-
-        const candidate = cleanModelCaption(raw);
-        if (candidate.length === 0) return 'failed';
-
-        flagged = labellingMatch(candidate);
-        if (!flagged) {
-          text = candidate;
-          break;
+      // Up to three attempts (composeBotCaption): the primary model, one
+      // regeneration with a lighter or corrected prompt, then one attempt on the
+      // fallback vision model. A refusal ("I cannot write a caption...") and a
+      // description of the photo are treated exactly like a guard trip, because
+      // all three are the same thing to a player: not a caption. After that the
+      // bot sits the round out, which is already a first-class outcome
+      // everywhere else: the round ends on its timer, or as soon as everyone
+      // still playing has acted (a `failed` job counts as having acted, plan
+      // amendment 29).
+      const { attempts, final } = await composeBotCaption(models, persona, bytes);
+      for (const a of attempts) {
+        if (a.verdict !== 'ok') {
+          console.warn(
+            `bots: round ${job.round} ${a.model} answered ${a.verdict} (${a.reason ?? 'no reason'})`
+          );
         }
-        console.warn(
-          `bots: caption tripped the content guard on "${flagged}" ` +
-            `(attempt ${attempt + 1} of 2, round ${job.round})`
-        );
       }
-      if (text.length === 0) {
-        console.warn(`bots: content guard tripped twice in round ${job.round}; bot skips the round`);
+      if (final === null) {
+        console.warn(
+          `bots: no usable caption after ${attempts.length} attempts in round ${job.round}; ` +
+            'bot skips the round'
+        );
         return 'failed';
       }
+      const text = final;
 
       const after = host.stamp();
       if (!sameRound(before, after)) return 'failed';

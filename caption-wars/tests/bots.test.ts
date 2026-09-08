@@ -125,7 +125,7 @@ describe('the bytes handed to the vision model', () => {
     await generateBotCaption(models(ai), PERSONAS[0], fixturePhoto());
     expect(calls[0].model).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
     expect(typeof calls[0].input.prompt).toBe('string');
-    expect(calls[0].input.max_tokens).toBe(96);
+    expect(calls[0].input.max_tokens).toBe(64);
   });
 
   it('fall back to the second vision model once, then give up', async () => {
@@ -365,12 +365,19 @@ describe('buildBotJobs', () => {
   });
 });
 
-describe('the bot content guard', () => {
-  // The live failure this exists for: on 2026-09-07 a bot looked at a photo of
-  // a group of people and captioned it "Black people just standing there."
+describe('the bot content guard and the refusal detector', () => {
+  // The live failures these exist for, all on 2026-09-07 on the deployed build:
+  //   a photo of a group of people captioned "Black people just standing there."
+  //   a plain dog photo answered with "I cannot write a caption that makes a
+  //     joke at the expense of a dog. Can I help you with something else?"
+  //   a photo answered with "The party game photo shows a man wearing a suit..."
+  // All three reached players AS CAPTIONS.
   const LIVE_BAD_CAPTION = 'Black people just standing there.';
+  const LIVE_REFUSAL =
+    'I cannot write a caption that makes a joke at the expense of a dog. Can I help you with something else?';
+  const LIVE_ECHO = 'The party game photo shows a man wearing a suit and tie.';
 
-  it('tells the model, on every call, what the joke may not be about', async () => {
+  it('carries ONE short content rule, and shows the model what a caption looks like', async () => {
     const prompts: string[] = [];
     const ai: AiLike = {
       async run(_model, input) {
@@ -381,11 +388,17 @@ describe('the bot content guard', () => {
 
     expect(await runBotJob(job(), models(ai), fakeHost(captionRoom()).host)).toBe('done');
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toMatch(/never about anyone in it/i);
-    expect(prompts[0]).toMatch(/race, ethnicity, skin colour/i);
+    // The rule is one calm sentence. The round-3 rule listed eight forbidden
+    // categories and the next live run answered with refusals instead of
+    // captions on a photo of a dog.
+    expect(prompts[0]).toMatch(/Joke about the situation, not about who the people are\./);
+    expect(prompts[0]).not.toMatch(/never use a slur/i);
+    // And it shows rather than tells: worked captions beat "do not describe".
+    expect(prompts[0]).toMatch(/Like these, for other photos/);
+    expect(prompts[0]).toMatch(/not a summary of it/);
   });
 
-  it('regenerates ONCE with a stricter instruction, and submits the clean retry', async () => {
+  it('regenerates ONCE with a calm correction that names the words, then submits the retry', async () => {
     const prompts: string[] = [];
     const answers = [LIVE_BAD_CAPTION, 'Everyone waiting for a bus that is never coming.'];
     const ai: AiLike = {
@@ -398,18 +411,81 @@ describe('the bot content guard', () => {
 
     expect(await runBotJob(job(), models(ai), host)).toBe('done');
     expect(prompts).toHaveLength(2);
-    expect(prompts[0]).not.toMatch(/Your last answer described the PEOPLE/);
-    expect(prompts[1]).toMatch(/Your last answer described the PEOPLE/);
-    // The retry NAMES the words that tripped. Without that the model is
-    // guessing which part of its answer was the problem, and a second trip
-    // means no caption at all this round.
+    expect(prompts[0]).not.toMatch(/Your last try said/);
+    // The retry NAMES the words that tripped, so the model is not guessing
+    // which part of its answer was the problem.
     expect(prompts[1]).toContain('"black people"');
     expect(applied).toEqual([
       { kind: 'caption', botId: 'b1', value: 'Everyone waiting for a bus that is never coming.' },
     ]);
   });
 
-  it('skips the round when the retry trips it too, and writes nothing', async () => {
+  it('gives a refusal a LIGHTER prompt, not a sterner one', async () => {
+    const prompts: string[] = [];
+    const answers = [LIVE_REFUSAL, 'Day four of the standoff.'];
+    const ai: AiLike = {
+      async run(_model, input) {
+        prompts.push((input as { prompt: string }).prompt);
+        return { response: answers[prompts.length - 1] };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('done');
+    expect(prompts).toHaveLength(2);
+    // The content rule is what the model declined, so the retry drops it.
+    expect(prompts[0]).toMatch(/Joke about the situation/);
+    expect(prompts[1]).not.toMatch(/Joke about the situation/);
+    expect(prompts[1]).toMatch(/^Party game\./);
+    expect(applied).toEqual([
+      { kind: 'caption', botId: 'b1', value: 'Day four of the standoff.' },
+    ]);
+  });
+
+  it('treats a description of the photo as a non-answer too', async () => {
+    const answers = [LIVE_ECHO, 'He has no idea the vet is next.'];
+    let i = 0;
+    const ai: AiLike = {
+      async run() {
+        return { response: answers[Math.min(i++, answers.length - 1)] };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('done');
+    expect(applied).toEqual([
+      { kind: 'caption', botId: 'b1', value: 'He has no idea the vet is next.' },
+    ]);
+  });
+
+  it('falls back to the second vision model before giving up', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        return {
+          response:
+            model === '@cf/llava-hf/llava-1.5-7b-hf'
+              ? 'The dog has filed a complaint.'
+              : LIVE_REFUSAL,
+        };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('done');
+    // primary, primary again with the lighter prompt, then the fallback model
+    expect(seen).toEqual([
+      '@cf/meta/llama-3.2-11b-vision-instruct',
+      '@cf/meta/llama-3.2-11b-vision-instruct',
+      '@cf/llava-hf/llava-1.5-7b-hf',
+    ]);
+    expect(applied).toEqual([
+      { kind: 'caption', botId: 'b1', value: 'The dog has filed a complaint.' },
+    ]);
+  });
+
+  it('sits the round out after three bad answers, and writes nothing', async () => {
     let calls = 0;
     const ai: AiLike = {
       async run() {
@@ -420,7 +496,41 @@ describe('the bot content guard', () => {
     const { host, applied } = fakeHost(captionRoom());
 
     expect(await runBotJob(job(), models(ai), host)).toBe('failed');
-    expect(calls).toBe(2); // one attempt, one stricter retry, then it sits the round out
+    expect(calls).toBe(3); // primary, primary corrected, fallback model
     expect(applied).toEqual([]);
+  });
+
+  it('does not ask a silent model the same question twice', async () => {
+    // A model that answers NOTHING will not answer differently to a reworded
+    // prompt: skip straight to the other model rather than burning the caption
+    // timer on a dead one.
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run(model) {
+        seen.push(model);
+        return { response: '' };
+      },
+    };
+    const { host } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('failed');
+    expect(seen).toEqual([
+      '@cf/meta/llama-3.2-11b-vision-instruct',
+      '@cf/llava-hf/llava-1.5-7b-hf',
+    ]);
+  });
+
+  it('strips a leading "Caption:" rather than failing it', async () => {
+    const ai: AiLike = {
+      async run() {
+        return { response: 'Caption: the goat has seen things.' };
+      },
+    };
+    const { host, applied } = fakeHost(captionRoom());
+
+    expect(await runBotJob(job(), models(ai), host)).toBe('done');
+    expect(applied).toEqual([
+      { kind: 'caption', botId: 'b1', value: 'the goat has seen things.' },
+    ]);
   });
 });

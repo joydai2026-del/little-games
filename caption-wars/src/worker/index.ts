@@ -12,6 +12,7 @@
 //   GET  /api/rooms/:code?v=N          -> { state, serverTime } or { unchanged, nextPollMs, serverTime }
 //   GET  /api/rooms/:code/photo/:round -> the round's image bytes
 //   POST /api/ai-smoke                 deploy gate, guarded by the SMOKE_TOKEN secret
+//   POST /api/ai-try                   prompt tuning rig, guarded by the same secret
 //
 // Every mutating route and the state poll carry `x-player-id` and
 // `x-player-secret`; create is the exception (it hands them out) and so is the
@@ -20,6 +21,7 @@
 
 import { newRoomCode } from '../shared/ids';
 import { handleAiSmoke } from './smoke';
+import { handleAiTry } from './ai-try';
 import type { Env } from './env';
 
 export { RoomDO } from './room-do';
@@ -153,6 +155,11 @@ export default {
     if (path === '/api/ai-smoke') {
       if (request.method !== 'POST') return json({ error: 'use POST' }, 405);
       return handleAiSmoke(request, env);
+    }
+
+    if (path === '/api/ai-try') {
+      if (request.method !== 'POST') return json({ error: 'use POST' }, 405);
+      return handleAiTry(request, env);
     }
 
     if (path === '/api/rooms') {

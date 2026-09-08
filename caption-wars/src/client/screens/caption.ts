@@ -128,7 +128,8 @@ export function createCaptionScreen(ctx: RoomCtx): PhaseScreen {
       clock.set(msLeft);
     },
     destroy() {
-      // no timers of its own
+      // the photo frame owns a hang timer; nothing else here has one
+      photo.destroy();
     },
   };
 }

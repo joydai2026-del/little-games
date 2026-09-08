@@ -3,7 +3,7 @@
 
 import type { RoomView } from '../contract';
 import { absoluteUrl, copyButton, h } from '../ui';
-import { isHost, playerList, type PhaseScreen, type RoomCtx } from './common';
+import { isHost, photoWaitMs, playerList, type PhaseScreen, type RoomCtx } from './common';
 
 export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
   const codeBox = h('div', { class: 'code-big', text: ctx.code });
@@ -16,7 +16,22 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
     type: 'button',
     text: 'Start the game',
   });
+  let current: RoomView | null = null;
+
+  /**
+   * The button's whole state in one place. It is disabled with a live countdown
+   * while the server is backing off a dead photo host: on the third failure that
+   * backoff is 60 seconds, and a host who taps a normal-looking "Start the game"
+   * for a full minute with nothing happening has no way to tell whether the
+   * button, the network or the game is broken.
+   */
   const paintStartButton = (): void => {
+    const photoMs = photoWaitMs(current);
+    if (photoMs > 0) {
+      startButton.disabled = true;
+      startButton.textContent = `Waiting for a photo... ${Math.ceil(photoMs / 1000)}s`;
+      return;
+    }
     startButton.disabled = false;
     startButton.textContent = 'Start the game';
   };
@@ -68,6 +83,7 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
   return {
     el,
     update(view: RoomView) {
+      current = view;
       peopleList.replaceChildren(playerList(view, ctx.playerId));
       const host = isHost(view, ctx.playerId);
       startButton.hidden = !host;
@@ -83,7 +99,10 @@ export function createLobbyScreen(ctx: RoomCtx): PhaseScreen {
       settingsLine.textContent = parts.join(' - ');
     },
     tick() {
-      // the lobby has no clock
+      // The lobby has no phase clock, but it does count down a photo backoff:
+      // the state does not change while the server waits, so nothing else would
+      // repaint the button.
+      if (!sending && !startButton.hidden) paintStartButton();
     },
     destroy() {
       // no timers of its own

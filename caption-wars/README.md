@@ -22,6 +22,7 @@ npm run check:xss  # fails on any unsafe DOM sink in src/client (innerHTML, docu
 npm run build      # vite build -> dist/client
 npm run deploy     # build + wrangler deploy
 npm run ai:smoke   # hit the deployed /api/ai-smoke and fail loudly if a model is dead
+npm run ai:try     # run real photos through the real bot pipeline and print what they wrote
 npm run fixture    # regenerate src/shared/fixture-photo.ts from tests/fixtures/photo.jpg
 ```
 
@@ -41,6 +42,7 @@ Responses carry `serverTime` so a phone can render an honest countdown without t
 | `GET /api/rooms/:code?v=N` | player | `{ state, serverTime }`, or `{ unchanged: true, nextPollMs, serverTime }` when `v` matches |
 | `GET /api/rooms/:code/photo/:round` | anyone with the code | the round's image bytes, `Cache-Control: private, max-age=3600` |
 | `POST /api/ai-smoke` | header `x-smoke-token` | the deploy gate, see below |
+| `POST /api/ai-try` | header `x-smoke-token` | the prompt tuning rig, see below |
 
 **Credentials.** Create and join hand back `{ playerId, playerSecret }`. Every other route (including
 the state poll) must send them as `x-player-id` and `x-player-secret`; a mismatch is 403. Secrets live
@@ -84,37 +86,63 @@ in `src/shared/config.ts` if the var is missing.
 | `TEXT_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | casts bot votes, in JSON mode |
 | `BOT_TIMEOUT_MS` | `20000` | hard stop on one bot's model call |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
-| `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke`. Unset means the endpoint is off. |
+| `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke` and `POST /api/ai-try`. Unset means both are off. |
 
 Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
 (60), `voteSeconds` 10-120 (30), `revealSeconds` 3-60 (10), `botCount` 0-4 (2).
 
 ### What the AI players may joke about
 
-The photos are real pictures of real strangers. In a live game on 2026-09-07 a bot captioned a group
-photo "Black people just standing there." That is not a joke about the situation, it is a label on
-the people in the frame, so there are now two defences:
+The photos are real pictures of real strangers. Two live failures on 2026-09-07 shaped what is here:
+a bot captioned a group photo "Black people just standing there.", and then, right after the content
+rule was made longer and sterner, two of three bots answered a plain photo of a dog with "I cannot
+write a caption that makes a joke at the expense of a dog. Can I help you with something else?" and
+shipped that to players as a caption.
 
-1. **Every** bot caption prompt says it in as many words: joke about the situation, never about
-   anyone's race, ethnicity, skin colour, body, gender, religion, age or disability; no slurs; if
-   there are people in the photo, describe what is happening, not who they are.
-2. The bot's answer is checked (`src/shared/caption-guard.ts`, term list in
-   `src/shared/blocked-terms.json`). A caption that reads as a label on the people gets **one**
-   regeneration with a stricter instruction that names the words that tripped; if that trips too, the
-   bot sits the round out (its job is recorded `failed`, the reason is logged, and the round carries
-   on without it).
+So there are three defences, in this order of importance:
 
-The check covers race, ethnicity, religion, skin colour, body, age and disability. Gender is in the
-prompt but deliberately not in the word list: the words that would catch it (woman, women, girl, guy,
-men) are the very people-nouns the guard matches against, so listing them would flag almost every
-caption with a person in it.
+1. **The prompt.** Every bot caption prompt carries ONE calm sentence: *"Joke about the situation, not
+   about who the people are."* Short and positive on purpose. A long list of forbidden categories
+   reads to a safety-tuned model as a request to decline, which is what produced the refusals.
+2. **The content guard** (`src/shared/caption-guard.ts`, term list in `src/shared/blocked-terms.json`).
+   It is a BACKSTOP, not a classifier. It blocks one shape: a race / ethnicity / religion / nationality
+   word landing on a word meaning "a person", with up to two words in between, minus an explicit
+   allowlist of object compounds (`black cat`, `black tie`, `Black Friday`, `white wine`, `korean bbq`).
+   Standalone slurs and clinical labels (`obese`, `crippled`, `retarded`, `midget`, `dwarf`) trip on
+   their own. Ordinary body and age adjectives (`old`, `bald`, `fat`, `skinny`, `ugly`) are
+   deliberately NOT blocked: "Old man yells at cloud" is the median caption for a photo of a person,
+   and a guard that fires on ordinary play just silences the bots, which in a solo game voids the
+   round. The full written principle is the header comment of `caption-guard.ts` and rule 38 of the
+   plan; change them together or not at all.
+3. **The refusal detector** (`looksLikeRefusal`, same file). A model that refuses, talks about itself,
+   or describes the photo back has not written a caption. A leading "Caption:" is stripped rather than
+   failed.
 
-Edit `blocked-terms.json` to tune it: it is short on purpose, since a guard that fires on ordinary
-captions just makes the bots go quiet, and two quiet bots in a solo game void the round. Colour words
-(black / white / brown) live there as explicit two-word phrases rather than bare descriptors, because
-as adjectives they belong to objects ("black cat", "white wine", "black tie", "Black Friday") far more
-often than to people. **Humans are never filtered.** Their captions are their own, and the game does
-not moderate players.
+A caption that fails the guard or the refusal check gets **one** regeneration (a calm correction naming
+the flagged words after a guard trip, a LIGHTER prompt after a refusal) and then **one** attempt on
+`VISION_MODEL_FALLBACK`. After that the bot sits the round out: its job is recorded `failed`, the
+reason is logged, and the round carries on without it.
+
+`agent/lib.mjs` carries the same two checks for the terminal agent and reads the SAME
+`blocked-terms.json`, and `tests/guard-cases.json` is one case table asserted against both, so the two
+can never disagree. **Humans are never filtered.** Their captions are their own, and the game does not
+moderate players.
+
+### Tuning the caption prompt against real photos
+
+`POST /api/ai-try` (same `SMOKE_TOKEN` guard as `ai-smoke`) runs real photos through the real
+`fetchPhoto` and the real bot caption pipeline for every persona, and reports each attempt verbatim
+with its verdict (`ok` / `refusal` / `labelling` / `empty`).
+
+```bash
+CAPTION_WARS_URL=https://caption-wars.<subdomain>.workers.dev \
+SMOKE_TOKEN=<the wrangler secret> \
+npm run ai:try -- --samples 24 --photos-per-call 3
+```
+
+It prints the captions and the rates, and exits non-zero above 10% first-attempt refusal/meta or on any
+labelling trip. **Run it after any change to the caption prompt, the personas, the content rule or the
+models.** The numbers the shipped prompt produced are recorded in the plan (rule 40) as the bar.
 
 ## Deploy and smoke test
 
@@ -148,7 +176,7 @@ src/shared/   pure game logic (types, config, personas, rng, ids, room reducer) 
 src/client/   the browser app (vanilla TS, no framework)
 src/worker/   the Cloudflare Worker: index (router), room-do (one DO per room), photo, bots, smoke
 agent/        agent-native path: a terminal script that joins a room over the same HTTP API
-scripts/      node helpers with no dependencies: ai-smoke.mjs, make-fixture.mjs
+scripts/      node helpers with no dependencies: ai-smoke.mjs, ai-try.mjs, make-fixture.mjs
 tests/        vitest specs (room, photo, bots, scheduler) + the bundled goat fixture
 ```
 

@@ -23,7 +23,11 @@ export interface PhotoSettings {
   photoWidth: number;
   photoHeight: number;
   photoMaxBytes: number;
-  /** Hard deadline on ONE attempt. See PHOTO_TIMEOUT_MS in src/shared/config.ts. */
+  /**
+   * Hard deadline on the WHOLE CALL, every attempt included. See
+   * PHOTO_TIMEOUT_MS in src/shared/config.ts, and the note on the budget in
+   * fetchPhoto below.
+   */
   photoTimeoutMs: number;
 }
 
@@ -48,18 +52,32 @@ export type FetchLike = (
 const BANNED_CONTENT_TYPES = ['image/svg+xml', 'image/svg'];
 
 /**
- * A deadline for one attempt. AbortSignal.timeout exists in workerd and Node
- * 18+; guard anyway so a missing implementation degrades to "no timeout"
- * instead of throwing (same guard as src/worker/bots.ts).
+ * A deadline for one attempt.
+ *
+ * `AbortSignal.timeout` exists in workerd and in Node 18+. The fallback used to
+ * return `undefined`, which fetched with NO SIGNAL AT ALL: the exact unbounded
+ * state the deadline exists to prevent, reached silently. Now the fallback is a
+ * real one, built from AbortController plus a timer, so the promise below can
+ * always be raced and the socket is always released.
+ *
+ * Returns the signal and a `cancel` that clears the timer, so a fast success
+ * does not leave a pending timeout behind.
  */
-function timeoutSignal(ms: number): AbortSignal | undefined {
+function attemptDeadline(ms: number): { signal: AbortSignal; cancel: () => void } {
   const ctor = AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal };
-  return typeof ctor.timeout === 'function' ? ctor.timeout(ms) : undefined;
+  if (typeof ctor.timeout === 'function') {
+    return { signal: ctor.timeout(ms), cancel: () => {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
 }
 
 export interface PhotoDeps {
   fetchImpl?: FetchLike;
   random?: () => number;
+  /** Injected clock, so the whole-call budget can be tested without waiting. */
+  now?: () => number;
 }
 
 export class PhotoError extends Error {}
@@ -123,35 +141,44 @@ async function attempt(
   fetchImpl: FetchLike,
   rejectDefaultImage: boolean
 ): Promise<{ bytes: Uint8Array; contentType: string }> {
+  if (timeoutMs <= 0) throw new PhotoError('photo budget spent');
   // The deadline covers the whole attempt, body included: an abort throws, which
   // is the failure path that already backs the room off instead of parking every
   // player's poll inside a download that never finishes.
-  const response = await fetchImpl(url, {
-    redirect: 'follow',
-    signal: timeoutSignal(timeoutMs),
-  });
-
-  if (response.status !== 200) throw new PhotoError(`photo host answered ${response.status}`);
-
-  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-  if (!contentType.startsWith('image/')) {
-    throw new PhotoError(`photo host answered with ${contentType || 'no content type'}`);
-  }
-  if (BANNED_CONTENT_TYPES.some((banned) => contentType.startsWith(banned))) {
-    throw new PhotoError(`photo host answered with ${contentType}, which can carry script`);
+  const { signal, cancel } = attemptDeadline(timeoutMs);
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { redirect: 'follow', signal });
+  } catch (err) {
+    cancel();
+    throw err;
   }
 
-  // loremflickr's "no photo matched that tag" placeholder is a perfectly valid
-  // 200 image, so the only way to catch it is the resolved URL.
-  const finalUrl = response.url || url;
-  if (rejectDefaultImage && finalUrl.includes('defaultImage')) {
-    throw new PhotoError('photo host had no match for that tag');
+  try {
+    if (response.status !== 200) throw new PhotoError(`photo host answered ${response.status}`);
+
+    const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+    if (!contentType.startsWith('image/')) {
+      throw new PhotoError(`photo host answered with ${contentType || 'no content type'}`);
+    }
+    if (BANNED_CONTENT_TYPES.some((banned) => contentType.startsWith(banned))) {
+      throw new PhotoError(`photo host answered with ${contentType}, which can carry script`);
+    }
+
+    // loremflickr's "no photo matched that tag" placeholder is a perfectly valid
+    // 200 image, so the only way to catch it is the resolved URL.
+    const finalUrl = response.url || url;
+    if (rejectDefaultImage && finalUrl.includes('defaultImage')) {
+      throw new PhotoError('photo host had no match for that tag');
+    }
+
+    const bytes = await readCapped(response, maxBytes);
+    if (bytes.byteLength === 0) throw new PhotoError('photo host sent 0 bytes');
+
+    return { bytes, contentType: contentType.split(';')[0] };
+  } finally {
+    cancel();
   }
-
-  const bytes = await readCapped(response, maxBytes);
-  if (bytes.byteLength === 0) throw new PhotoError('photo host sent 0 bytes');
-
-  return { bytes, contentType: contentType.split(';')[0] };
 }
 
 export function loremflickrUrl(width: number, height: number, tag: string): string {
@@ -167,6 +194,19 @@ export function picsumUrl(width: number, height: number, code: string, round: nu
  * tag, then picsum seeded by `<code>-<round>` so a re-fetch of the same round
  * gets the same picture.
  *
+ * ONE BUDGET FOR THE WHOLE CALL (review round 4). The three attempts run in
+ * sequence, and each used to get its own `photoTimeoutMs`, so the legal worst
+ * case for this function was 3 x PHOTO_TIMEOUT_MS = 24s while the browser gives
+ * up on POST /start and POST /next after ACTION_TIMEOUT_MS = 20s. On a slow
+ * night (both image hosts alive but crawling, the normal shape of a
+ * rate-limited free API) the host's button re-enabled itself WHILE the first
+ * start was still running inside the Durable Object, and the second tap got
+ * "This game already started." at the moment the game started: verbatim the
+ * failure plan rule 33 exists to prevent. So `photoTimeoutMs` is now a deadline
+ * for the whole call and each attempt gets `min(perAttempt, remaining)`.
+ * `tests/photo.test.ts` also asserts ACTION_TIMEOUT_MS >= PHOTO_TIMEOUT_MS +
+ * 5000, so the two constants cannot drift apart again.
+ *
  * `credit` is the source site, not a person. loremflickr burns the
  * photographer's name into the image itself and exposes no machine-readable
  * attribution, so naming one here would be inventing it.
@@ -179,7 +219,9 @@ export async function fetchPhoto(
 ): Promise<FetchedPhoto> {
   const fetchImpl = deps.fetchImpl ?? ((url, init) => fetch(url, init as RequestInit));
   const random = deps.random ?? Math.random;
-  const { photoWidth: w, photoHeight: h, photoMaxBytes: cap, photoTimeoutMs: deadline } = settings;
+  const now = deps.now ?? Date.now;
+  const { photoWidth: w, photoHeight: h, photoMaxBytes: cap, photoTimeoutMs: budget } = settings;
+  const deadlineAt = now() + budget;
 
   const firstTag = pickTag(settings.photoTags, random);
   const secondTag = pickTag(settings.photoTags, random, firstTag);
@@ -191,9 +233,21 @@ export async function fetchPhoto(
   ];
 
   const failures: string[] = [];
-  for (const t of tries) {
+  for (let i = 0; i < tries.length; i++) {
+    const t = tries[i];
+    const remaining = deadlineAt - now();
+    if (remaining <= 0) {
+      failures.push(`${t.url}: photo budget of ${budget}ms spent before this attempt`);
+      continue;
+    }
+    // Half of what is left, except for the last attempt, which gets all of it.
+    // So a stalling first host cannot eat the time the fallbacks need, a host
+    // that fails FAST hands its unused milliseconds on, and the sum of the three
+    // attempts can never exceed the budget.
+    const attemptsLeft = tries.length - i;
+    const slice = attemptsLeft === 1 ? remaining : Math.max(1, Math.floor(remaining / 2));
     try {
-      const { bytes, contentType } = await attempt(t.url, cap, deadline, fetchImpl, t.guardDefault);
+      const { bytes, contentType } = await attempt(t.url, cap, slice, fetchImpl, t.guardDefault);
       return {
         bytes,
         contentType,

@@ -8,9 +8,15 @@
 // yet) so a client running against a not-quite-current worker degrades instead
 // of crashing a screen.
 
-import type { Phase, RoomOptions } from '../shared/types';
+import type { Phase, RoomOptions, RoundResult } from '../shared/types';
 
 export type { Phase, RoomOptions };
+
+/**
+ * The exact union the server sends. Typed as `string` before, which let
+ * `reveal.ts` compare against a literal that typechecks even when it is a typo.
+ */
+export type VoidReason = NonNullable<RoundResult['voidReason']>;
 
 export interface PlayerView {
   id: string;
@@ -59,7 +65,7 @@ export interface RoundResultView {
    * 'bots-failed' (the AI players' jobs failed, so there was nothing to vote
    * on). Optional, so an older worker that does not send it still renders.
    */
-  voidReason?: string;
+  voidReason?: VoidReason;
 }
 
 /** What `publicView(state, viewerId, now)` returns, minus anything private. */
@@ -85,6 +91,12 @@ export interface RoomView {
   yourVote?: string | null;
   /** How long `reveal` must be on screen before the host may skip it. */
   revealMinMs?: number;
+  /**
+   * When the server will next try to fetch a photo, or null/absent when nothing
+   * is backing off. The host's Start and Next buttons count down to it instead
+   * of pretending they are tappable.
+   */
+  photoRetryAt?: number | null;
   /** Why the game ended, when it did not end by playing out every round. */
   endedReason?: string;
   phaseEndsAt?: number;

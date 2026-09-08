@@ -191,3 +191,174 @@ describe('identity in sessionStorage', () => {
     expect(() => writeIdentity('ABCD', { playerId: 'p', playerSecret: 's' }, null)).not.toThrow();
   });
 });
+
+// --- startPolling: the loop itself, on a hand-rolled fake DOM ---------------
+//
+// Round 4 should-fixes. The poll chain is a bug class of its own (a doubled
+// chain, a dead chain, a listener that outlives its loop) and until now nothing
+// drove `startPolling`: the round-4 reviewer proved it with probes that were
+// then deleted. About forty lines of fakes are enough to keep it.
+
+interface FakeTimer {
+  id: number;
+  fn: () => void;
+  at: number;
+}
+
+/** window.setTimeout / clearTimeout plus a document with a listener list. */
+function fakeDom(): {
+  install(): void;
+  restore(): void;
+  runNext(): boolean;
+  pending(): number;
+  fire(type: string): void;
+  listeners(type: string): number;
+} {
+  const timers: FakeTimer[] = [];
+  const listeners = new Map<string, Array<() => void>>();
+  let nextId = 1;
+  let clock = 0;
+  const saved: Record<string, unknown> = {};
+  const g = globalThis as Record<string, unknown>;
+
+  return {
+    install() {
+      for (const key of ['window', 'document']) saved[key] = g[key];
+      g.window = {
+        setTimeout: (fn: () => void, ms: number) => {
+          const id = nextId++;
+          timers.push({ id, fn, at: clock + ms });
+          return id;
+        },
+        clearTimeout: (id: number) => {
+          const i = timers.findIndex((t) => t.id === id);
+          if (i >= 0) timers.splice(i, 1);
+        },
+      };
+      g.document = {
+        hidden: false,
+        addEventListener: (type: string, fn: () => void) => {
+          listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+        },
+        removeEventListener: (type: string, fn: () => void) => {
+          listeners.set(type, (listeners.get(type) ?? []).filter((f) => f !== fn));
+        },
+      };
+    },
+    restore() {
+      for (const key of ['window', 'document']) g[key] = saved[key];
+    },
+    runNext() {
+      const next = timers.shift();
+      if (!next) return false;
+      clock = next.at;
+      next.fn();
+      return true;
+    },
+    pending: () => timers.length,
+    fire(type: string) {
+      for (const fn of [...(listeners.get(type) ?? [])]) fn();
+    },
+    listeners: (type: string) => (listeners.get(type) ?? []).length,
+  };
+}
+
+describe('startPolling', () => {
+  it('keeps retrying when onError throws, instead of dying silently', async () => {
+    const dom = fakeDom();
+    dom.install();
+    try {
+      const { startPolling } = await import('../src/client/poll');
+      let fetches = 0;
+      const stop = startPolling({
+        getVersion: () => 1,
+        fetchOnce: async () => {
+          fetches += 1;
+          throw new Error('the room stopped answering');
+        },
+        onEnvelope: () => {},
+        onError: () => {
+          throw new Error('a repaint blew up');
+        },
+        isHidden: () => false,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fetches).toBe(1);
+      // The retry was scheduled even though the callback threw. Before the fix
+      // onError ran BEFORE schedule(), so one bad repaint killed the loop for
+      // the rest of the session.
+      expect(dom.pending()).toBe(1);
+      dom.runNext();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fetches).toBe(2);
+      stop();
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it('drops its visibility listener when the loop stops itself at done', async () => {
+    const dom = fakeDom();
+    dom.install();
+    try {
+      const { startPolling } = await import('../src/client/poll');
+      startPolling({
+        getVersion: () => 1,
+        // nextPollMs 0 is the server saying "the game is over, stop asking"
+        fetchOnce: async () => ({ nextPollMs: 0 }),
+        onEnvelope: () => {},
+        onError: () => {},
+        isHidden: () => false,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(dom.pending()).toBe(0);
+      expect(dom.listeners('visibilitychange')).toBe(0);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  it('a visibility change while a poll is in flight cannot double the poll chain', async () => {
+    const dom = fakeDom();
+    dom.install();
+    try {
+      const { startPolling } = await import('../src/client/poll');
+      let fetches = 0;
+      let release: undefined | (() => void);
+      const stop = startPolling({
+        getVersion: () => 1,
+        fetchOnce: async () => {
+          fetches += 1;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return { nextPollMs: 2000 };
+        },
+        onEnvelope: () => {},
+        onError: () => {},
+        isHidden: () => false,
+      });
+
+      await Promise.resolve();
+      expect(fetches).toBe(1);
+      dom.fire('visibilitychange');
+      dom.fire('visibilitychange');
+      expect(fetches).toBe(1); // the in-flight guard held
+
+      (release as undefined | (() => void))?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(dom.pending()).toBe(1); // exactly one chain, not three
+      stop();
+      expect(dom.listeners('visibilitychange')).toBe(0);
+    } finally {
+      dom.restore();
+    }
+  });
+});

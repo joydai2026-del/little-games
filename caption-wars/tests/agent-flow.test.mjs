@@ -369,6 +369,7 @@ test('a vote the server already recorded (yourVote) is never cast again', async 
 function stuckCaptionPhaseFetch() {
   let room = baseRoom({ phase: 'caption', round: 1, roundPlayerIds: ['p1', 'npc1'] });
   const calls = { photo: 0, caption: 0 };
+  const submitted = [];
   let polls = 0;
 
   const fetchImpl = async (input, init) => {
@@ -398,13 +399,14 @@ function stuckCaptionPhaseFetch() {
 
     if (method === 'POST' && parts.length === 4 && parts[3] === 'caption') {
       calls.caption++;
+      submitted.push(JSON.parse(init.body).text);
       return jsonResponse({ state: room, serverTime: Date.now() });
     }
 
     return jsonResponse({ error: 'not found' }, 404);
   };
 
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, submitted };
 }
 
 /** A brain table whose caption answer is under the test's control. */
@@ -451,9 +453,9 @@ test('a caption the content guard trips twice is also remembered as a skip', asy
     brains: brain.brains,
   });
 
-  // Two attempts (one normal, one stricter retry) for the round, and then the
+  // Two attempts (one normal, one corrected retry) for the round, and then the
   // agent sits it out instead of trying again on every poll.
-  assert.equal(brain.calls.caption, 2, 'one attempt plus one stricter retry, for the whole round');
+  assert.equal(brain.calls.caption, 2, 'one attempt plus one corrected retry, for the whole round');
   assert.equal(fake.calls.photo, 1, 'the photo must be downloaded once per round');
   assert.equal(fake.calls.caption, 0, 'a caption that trips the guard is never submitted');
 });
@@ -533,4 +535,101 @@ test('a caption the server already has is never written twice', async () => {
   assert.equal(fake.calls.caption, 0, 'the server already has our caption');
   assert.equal(fake.calls.photo, 0, 'and there is nothing to download or think about');
   assert.equal(brain.calls.caption, 0);
+});
+
+// --- the deadline covers the BODY, not just the headers ----------------------
+//
+// Review round 4, must-fix 4. `fetchWithTimeout` used to race only the fetch
+// call, which settles when the HEADERS land; `.finally` then cleared the timer,
+// so every body read after it ran unbounded. A server that answered with headers
+// and then stalled its body parked the agent for ever, and MAX_POLL_FAILURES
+// never fired because there was no failure, only silence. Measured before the
+// fix with this exact harness: still hung at 3001ms against a 300ms deadline.
+
+/** A Response whose headers are here now and whose body never finishes. */
+function stalledBodyResponse() {
+  const body = new ReadableStream({
+    start() {
+      // never enqueue, never close: the body is open for ever
+    },
+  });
+  return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+test('a response whose body never finishes fails on the deadline instead of hanging', async () => {
+  const previous = process.env.CAPTION_WARS_FETCH_TIMEOUT_MS;
+  process.env.CAPTION_WARS_FETCH_TIMEOUT_MS = '300';
+  try {
+    // play.mjs reads the env var at import time, so drive the wrapper the way the
+    // agent does: a fresh module instance with the short deadline in place.
+    const { runAgent: freshRunAgent } = await import(
+      `../agent/play.mjs?stalled-body-${Date.now()}`
+    );
+
+    const started = Date.now();
+    // Raced against a watchdog on purpose: with the pre-fix code the agent does
+    // not fail, it simply never returns, and a test that only awaited would hang
+    // the whole suite instead of going red.
+    let watchdog;
+    const hung = new Promise((resolve) => {
+      watchdog = setTimeout(() => resolve('STILL HUNG'), 3000);
+    });
+    const outcome = await Promise.race([
+      freshRunAgent(
+        ['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'],
+        { fetchImpl: async () => stalledBodyResponse() }
+      ).then(
+        () => 'RESOLVED',
+        (err) => err
+      ),
+      hung,
+    ]);
+    clearTimeout(watchdog);
+    assert.notEqual(outcome, 'STILL HUNG', 'the agent hung on a body that never finishes');
+    assert.notEqual(outcome, 'RESOLVED', 'a stalled body is a failure, not a successful join');
+    assert.match(String(outcome && outcome.message), /timed out after 300ms/i);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 3000, `should fail near the deadline, took ${elapsed}ms`);
+  } finally {
+    if (previous === undefined) delete process.env.CAPTION_WARS_FETCH_TIMEOUT_MS;
+    else process.env.CAPTION_WARS_FETCH_TIMEOUT_MS = previous;
+  }
+});
+
+// --- a refusal from the brain gets a lighter retry, not a sterner one --------
+//
+// Review round 4, must-fix 2, agent side. The terminal agent only checked the
+// labelling guard, so "I cannot write a caption that makes a joke at the expense
+// of a dog." would have been submitted as this player's caption.
+
+test('a brain that refuses is retried with a lighter prompt, and its answer is used', async () => {
+  const prompts = [];
+  const answers = [
+    'I cannot write a caption that makes a joke at the expense of a dog. Can I help you with something else?',
+    'He has no idea the vet is next.',
+  ];
+  const brains = {
+    echo: {
+      degraded: false,
+      describe: () => 'scripted',
+      run: async ({ kind, prompt }) => {
+        if (kind !== 'caption') return { ok: true, text: '1', error: null };
+        prompts.push(prompt);
+        return { ok: true, text: answers[prompts.length - 1], error: null };
+      },
+    },
+  };
+
+  const fake = stuckCaptionPhaseFetch();
+  await runAgent(
+    ['--url', 'http://room.test', '--room', 'test', '--name', 'TestBot', '--brain', 'echo'],
+    { fetchImpl: fake.fetchImpl, brains }
+  );
+
+  assert.equal(prompts.length, 2, 'one normal attempt, one retry');
+  assert.match(prompts[0], /Joke about the situation/);
+  // The content rule is what the model declined, so the retry drops it.
+  assert.doesNotMatch(prompts[1], /Joke about the situation/);
+  assert.match(prompts[1], /^Party game\./);
+  assert.deepEqual(fake.submitted, ['He has no idea the vet is next.']);
 });
