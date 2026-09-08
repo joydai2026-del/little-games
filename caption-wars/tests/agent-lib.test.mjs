@@ -275,6 +275,10 @@ test('refusalMatch is honest about the captions the fast path DOES fail', () => 
   for (const text of cases.acceptedFalseRefusals) {
     assert.notEqual(refusalMatch(text), null, `accepted false positive: ${text}`);
   }
+  // Codex round 7, should-fix 2: the COUNT, not just the contents, so the list
+  // cannot grow by one without somebody deciding to. The same number is asserted
+  // in tests/caption-guard.test.ts and named in the plan's round-7 block.
+  assert.equal(cases.acceptedFalseRefusals.length, 7);
 });
 
 test('refusalMatch lets real captions through', () => {

@@ -76,7 +76,7 @@ in `src/shared/config.ts` if the var is missing.
 
 | Var | Default | What it does |
 |---|---|---|
-| `PHOTO_TAGS` | `dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue` | the tag pool loremflickr draws from. **This is the game's content policy** (see below) |
+| `PHOTO_TAGS` | `dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake` | the tag pool loremflickr draws from. **This is the game's content policy** (see below) |
 | `PHOTO_WIDTH` / `PHOTO_HEIGHT` | `800` / `600` | requested photo size |
 | `PHOTO_MAX_BYTES` | `2000000` | hard byte cap, enforced while the image streams in |
 | `PHOTO_TIMEOUT_MS` | `8000` | deadline on one outbound photo request. The download happens inside the request every player polls, so a stalled image host without this parks the whole room |
@@ -85,6 +85,7 @@ in `src/shared/config.ts` if the var is missing.
 | `VISION_MODEL_FALLBACK` | `@cf/llava-hf/llava-1.5-7b-hf` | tried once if the primary fails |
 | `TEXT_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | casts bot votes, in JSON mode |
 | `BOT_TIMEOUT_MS` | `20000` | the budget for one bot's WHOLE caption ladder (up to three model calls), which is also the deadline the job is reaped at |
+| `CAPTION_JUDGE_TIMEOUT_MS` | `10000` | budget for ONE caption-judge call, clamped again by what is left of the job deadline. 6000 measured too tight |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
 | `AI_TRY_MAX_SAMPLES` | `24` | cost ceiling on one `POST /api/ai-try` call: photos x personas |
 | `AI_TRY_MAX_MODEL_CALLS` | `160` | HARD ceiling on model calls in one `ai-try` request (captions, caption judges, photo descriptions, relevance judges). Reserved before every call, so a cap below one photo batch really does stop the batch |
@@ -166,6 +167,13 @@ times and none of the three is people-focused. On 2026-09-07 that audit accepted
 `squirrel`, `cake` and `statue`, and rejected `tractor` (toys and a picsum fallback, no tractor),
 `penguin` (1 of 3) and `llama` (three photos of people and no llama).
 
+Review round 7 then drew four MORE `statue` photos and the seventh was a museum bronze of a nude male
+figure, full frontal, in a gallery. Not pornographic, and also not nothing on a phone being passed
+around a table. That is precisely the judgement the rule above reserves for JJ, so `statue` is out as
+the safe default rather than as a verdict. **JJ may put it back**: add `statue` to `PHOTO_TAGS` in
+`wrangler.jsonc` and to `DEFAULT_TAGS` in `src/worker/env.ts`, and nothing else changes. It is also the
+caveat round 6 wrote down landing: three photos is enough to reject a tag and not enough to certify one.
+
 ### Tuning the caption prompt against real photos
 
 `POST /api/ai-try` (same `SMOKE_TOKEN` guard as `ai-smoke`) runs real photos through the real
@@ -180,10 +188,66 @@ SMOKE_TOKEN=<the wrangler secret> \
 npm run ai:try -- --samples 24 --photos-per-call 3
 ```
 
-It prints the captions grouped under their photo's description, the rates, and the per-attempt latency
-(which is what `BOT_TIMEOUT_MS` has to cover). It exits non-zero above 10% first-attempt refusal/meta,
-on any labelling trip, or below an 80% on-photo rate. **Run it after any change to the caption prompt, the personas, the content rule or the
-models.** The numbers the shipped prompt produced are recorded in the plan (rule 40) as the bar.
+It prints the captions grouped under their photo's description, the rates, the model spend, and the
+per-attempt latency (which is what `BOT_TIMEOUT_MS` has to cover). **Run it after any change to the
+caption prompt, the personas, the content rule or the models.**
+
+**What it FAILS on (review round 7 rewrote this).** The bar is now a set of ZERO-EVENT checks on what a
+player would actually see, because a rate bar is not resolvable at 24 samples: the old "under 10%
+first-attempt refusal" threshold was literally three events, the same build measured 4.2%, 4.2% and
+12.5% on three runs, and round 6's gate run failed at 12.5% while delivering 24 captions out of 24 with
+zero bots sitting out. A gate that fails a perfect run is noise, and the rational response to a
+coin-flip gate is to re-roll it, which is the one behaviour a tuning rig exists to prevent.
+
+| Fails the run | Why |
+|---|---|
+| any caption DELIVERED without a judge verdict | rule 39 and rule 50's whole reason for existing: only `caption` ships |
+| any bot that sat the round out | a silent bot is what rule 38(a) protects against |
+| any labelling trip | unchanged since round 4 |
+| any request that hit `AI_TRY_MAX_MODEL_CALLS` | a saturated run stops judging its later samples, so it is a truncated measurement, not a pass |
+| on-photo below 80% | unchanged since round 5 (a rate bar, and the plan's round-7 block says so) |
+
+| Printed, never fails the run | Why |
+|---|---|
+| first-attempt regex refusal rate (soft bar 10%) | a diagnostic for whoever is editing the prompt, and it MOVES when `caption-guard.ts` moves, so it cannot gate the prompt |
+| first-attempt judge-rejection rate (soft bar 35%) | a diagnostic for the judge prompt |
+| per-attempt latency | feeds `BOT_TIMEOUT_MS`, not a pass/fail |
+
+### The daily AI allowance, and why the order of the deploy gate matters
+
+Workers AI on the free plan gives the account **10,000 neurons per day**, reset at 00:00 UTC, and the
+game and this tuning rig spend the SAME allowance. It is not "free and always on": on 2026-09-07 a day
+of prompt tuning spent it, and every round of every game after that voided with `4006: you have used up
+your daily free allocation` from both the primary and the fallback vision model.
+
+Rough arithmetic from Cloudflare's published pricing (fetched 2026-09-08): the vision model
+(`llama-3.2-11b-vision-instruct`) costs 4,410 neurons per million input tokens and 61,493 per million
+output; the text model (`llama-3.3-70b-instruct-fp8-fast`) costs 26,668 per million input and 204,805
+per million output. An image is the expensive half of a vision call. In practice:
+
+| | rough cost |
+|---|---|
+| one 24-sample `ai:try` run | 24 vision captions + about 30 judge calls + 3-8 photo descriptions + 24 relevance judges, ~100 model calls |
+| one 5-round game, 1 human + 2 bots | 10 vision captions + about 10 judge calls + 10 votes, ~30 model calls |
+| the free allowance | 10,000 neurons per day, shared by both |
+| past it | $0.011 per 1,000 neurons on the Workers Paid plan |
+
+Neurons per call depend on the image and the answer length, so treat the table as an ordering, not a
+budget: **the rig is several times a game, and a few tuning runs is a day's allowance.** Whether to move
+to the paid plan is JJ's call, because it is money.
+
+**The deploy gate order is therefore: tune, STOP, then play.**
+
+1. `npm run ai:try -- --samples 24` (and any tag audits) while nobody is playing.
+2. STOP. Do not run it again "just to confirm".
+3. Hand out the link.
+
+Do not hand JJ a link on a day the rig has been run, and if the game must be played today, do not run
+the rig. If the allowance does run out mid-game, the game says so plainly rather than voiding rounds:
+the AI players are dropped from the roster, every screen carries one sentence explaining it, and a solo
+host's game ends instead of playing out empty rounds (plan rule 55).
+
+The numbers the shipped prompt produced are recorded in the plan (rule 40) as the bar.
 
 ## Deploy and smoke test
 

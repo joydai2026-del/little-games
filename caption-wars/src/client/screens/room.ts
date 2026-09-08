@@ -18,7 +18,7 @@ import {
 } from '../state';
 import { h, notice, page, toast } from '../ui';
 import { createCaptionScreen } from './caption';
-import type { PhaseScreen, RoomCtx } from './common';
+import { AI_OFFLINE_LINE, type PhaseScreen, type RoomCtx } from './common';
 import { shouldRebuildScreen } from './lifecycle';
 import { createDoneScreen } from './done';
 import { createLobbyScreen } from './lobby';
@@ -45,8 +45,15 @@ function build(phase: Phase, ctx: RoomCtx): PhaseScreen {
 export function renderRoom(root: HTMLElement, code: string): () => void {
   const { root: shell, body } = page(`Room ${code}`, { back: '#/' });
   const problem = h('div');
+  // ONE banner for the whole room, above whichever phase screen is on stage
+  // (review round 7, must-fix 1). It lives in the shell rather than in each
+  // screen because the requirement is "every phase screen and the lobby", and
+  // five copies of a banner is five places for it to go missing. It is a
+  // separate node from `problem` on purpose: `showProblem(null)` runs on every
+  // successful poll, and a banner that clears itself once a second is not one.
+  const aiBanner = h('div');
   const stage = h('div');
-  body.append(problem, stage);
+  body.append(problem, aiBanner, stage);
   root.replaceChildren(shell);
 
   let identity: Identity | null = readIdentity(code);
@@ -83,6 +90,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
     stopEverything();
     screen = null;
     shown = null;
+    aiBanner.replaceChildren();
 
     const nameInput = h('input', {
       type: 'text',
@@ -152,8 +160,21 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
 
   // ---------- state in, screen out ----------
 
+  const paintAiBanner = (): void => {
+    const offline = view?.aiOffline === true;
+    if (!offline) {
+      if (aiBanner.firstChild) aiBanner.replaceChildren();
+      return;
+    }
+    // Repainting an identical banner every poll would restart its screen-reader
+    // announcement, so it is only built when it is not already there.
+    if (aiBanner.firstChild) return;
+    aiBanner.replaceChildren(notice(AI_OFFLINE_LINE, 'warn'));
+  };
+
   const paint = (): void => {
     if (!view) return;
+    paintAiBanner();
     // The game is over: polling has already stopped, so the once-a-second tick
     // has nothing left to count down.
     if (view.phase === 'done' && ticker !== 0) {

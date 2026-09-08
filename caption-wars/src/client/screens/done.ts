@@ -3,7 +3,7 @@
 
 import type { RoomView } from '../contract';
 import { h } from '../ui';
-import { playerName, scoreboard, type PhaseScreen, type RoomCtx } from './common';
+import { AI_OFFLINE_LINE, playerName, scoreboard, type PhaseScreen, type RoomCtx } from './common';
 
 export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
   const banner = h('h2', { class: 'banner banner-champion', text: '' });
@@ -59,6 +59,13 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
       if (view.endedReason === 'photo-unavailable') {
         banner.textContent = 'Game over';
         line.textContent = 'We could not fetch a photo. Game over.';
+      } else if (view.endedReason === 'ai-unavailable') {
+        // Round 7, must-fix 1. The AI players hit the daily allowance and there
+        // were not two players left without them, so the game stopped here
+        // rather than walking one person through five unplayable rounds. The
+        // scores everyone earned up to this point are still shown below.
+        banner.textContent = 'Game over';
+        line.textContent = `${AI_OFFLINE_LINE} Add a friend to play.`;
       } else if (champions.length === 0) {
         banner.textContent = 'Game over';
         line.textContent = 'No champion this time.';

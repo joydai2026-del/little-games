@@ -319,7 +319,13 @@ export function looksLikeLabelling(text: string, terms: BlockedTerms = BLOCKED_T
  *     after a live build shipped "I'm just a neutral AI, I don't have feelings."
  */
 const SELF_REFERENCE_RE =
-  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai|artificial intelligence)\b/;
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai(?!-)|artificial intelligence)\b/;
+// ROUND 7 added the `(?!-)` after `ai`. `\b` treats a hyphen as a word boundary,
+// so "I'm an AI-generated mess and proud of it." matched: an ordinary caption
+// where "AI-generated" is an adjective on a NOUN, not the model announcing what
+// it is. Every real self-reference in the table ends the word there ("I'm an AI
+// and I don't write captions."), so the lookahead costs nothing and buys the
+// whole "AI-<something>" adjective family back.
 
 /**
  * Markers of a model talking about itself or about the request, matched ANYWHERE
@@ -368,8 +374,13 @@ const REFUSAL_MARKERS = [
   "i'm not capable",
   'i am not capable',
   'neutral ai',
-  "don't have feelings",
-  'do not have feelings',
+  // ROUND 7 put the subject back on the feelings markers. Bare
+  // "don't have feelings" failed "Goats don't have feelings, only opinions.",
+  // which is a caption of exactly the deadpan shape two personas are built to
+  // write. The live refusal it exists for says "I'm just a neutral AI, I DON'T
+  // HAVE FEELINGS." and is still caught here twice over, by `neutral ai` as well.
+  "i don't have feelings",
+  'i do not have feelings',
 ];
 
 /**
@@ -418,8 +429,49 @@ const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
  * verb, which would re-open the hole that shipped "I'm afraid I can't fulfill
  * this request." to a player in round 5. The cost is one regeneration.
  */
-const REFUSAL_OPENER_RE =
-  /(?:^|[,.;:]\s+(?:so\s+|but\s+|and\s+|then\s+)?)(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+|try\s+to\s+|attempt\s+to\s+)*(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\s+(?:you|with))\b/;
+const REFUSAL_VERB_CORE =
+  "(?:(?:i'm\\s+|i\\s+am\\s+)?(?:sorry|afraid)[,.!\\s]+|unfortunately[,.!\\s]+){0,2}(?:but\\s+)?" +
+  "i(?:'m|\\s+am)?\\s*(?:cannot|can\\s?not|can't|won't|will\\s+not|not\\s+able|unable|do\\s+not|don't)" +
+  "\\s+(?:to\\s+|really\\s+|actually\\s+|try\\s+to\\s+|attempt\\s+to\\s+)*" +
+  '(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\\s+(?:you|with))\\b';
+
+/** At the START of the answer, that shape is a refusal on its own. */
+const REFUSAL_OPENER_RE = new RegExp(`^${REFUSAL_VERB_CORE}`);
+
+/**
+ * MID-SENTENCE, the same shape has to NAME THE TASK as well (review round 7,
+ * Claude should-fix 1).
+ *
+ * Round 6 moved the anchor from the answer's start to any clause start, because
+ * a live build described the photo and then refused in its SECOND clause. That
+ * was the right fix and it bought four false positives, all of them ordinary
+ * narrative continuations, all confirmed on both implementations:
+ *   "He blinked first, so I won't write home about it."
+ *   "The vet is next, and I cannot provide comfort."
+ *   "Day four, but I can't continue like this."
+ *   "She left, so I will not comply with brunch."
+ * Rule 38(a) says a false positive is the expensive direction, and round 6 made
+ * it more expensive by putting the judge behind the regex: a first attempt now
+ * has two independent ways to be thrown away.
+ *
+ * The separator is what the task object gives us. Every refusal that arrives in
+ * a later clause names what it is refusing ("...so I won't try to write A
+ * CAPTION for it.", "That said, I cannot write A CAPTION for this.", "Honestly,
+ * I can't generate A CAPTION here."), because by then the model has already
+ * described the photo and is explaining itself. An ordinary continuation never
+ * does. So mid-clause the verb must be followed, within a short window and
+ * without crossing a sentence end, by the thing being refused.
+ *
+ * Note this deliberately keeps `so` / `and` / `then` / `but` as lead-ins rather
+ * than dropping three of them: dropping `so` alone would have lost the round-6
+ * incident string, which is in tests/guard-cases.json as a refusal and would
+ * have gone straight back out to a player.
+ */
+const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt|photo|image|picture|joke|humou?r)';
+const REFUSAL_MID_CLAUSE_RE = new RegExp(
+  `[,.;:]\\s+(?:so\\s+|but\\s+|and\\s+|then\\s+)?${REFUSAL_VERB_CORE}[^.!?]{0,40}?\\b${REFUSAL_TASK_OBJECT}\\b`
+);
+
 // Round 5 removed two verbs from that list, because both failed captions the
 // tuning rig produced: bare `help` failed "I can't help laughing at this dog"
 // (so `help` now needs "you" or "with" after it, which is the refusal shape),
@@ -485,6 +537,32 @@ const META_MARKERS = [
   "here's a caption",
   'here is a caption',
   'here are some captions',
+];
+
+/**
+ * The `<determiner> <noun> of` half of the description grid, which needs one
+ * more condition than the rest (review round 7, Claude should-fix 1).
+ *
+ * Round 6 added these six because live builds opened with them ("A photo of a
+ * goat eating hay.", "The photo of a raccoon shows it to be cute..."). Matched
+ * as bare openings they also fail seven ordinary captions, one of them a fixed
+ * English idiom and the rest the deadpan-noun-phrase shape two of the four
+ * personas are built to produce:
+ *   "The picture of health."  "A picture of restraint."  "A photo of pure regret."
+ *   "A picture of my last brain cell leaving."
+ * A description NAMES A COUNTABLE THING, so it is followed by a determiner or a
+ * number ("a photo of A goat", "an image of TWO people"); the caption shape puts
+ * an abstract noun or a possessive there instead. Possessives are deliberately
+ * NOT on the list: a model describing a photo it was handed does not say "my".
+ *
+ * ACCEPTED FALSE POSITIVES that survive this narrowing, in writing (they are in
+ * tests/guard-cases.json -> `acceptedFalseRefusals`): "An image of a man who
+ * peaked in 2009.", "The photo of the year, and nobody asked." and "The image of
+ * a man betrayed by his own dog." all put a real determiner after `of`, which is
+ * the description shape exactly. Separating them needs to read the sentence, not
+ * the opening, and that is the judge's job (rule 50). Each costs ONE regeneration.
+ */
+const META_OF_MARKERS = [
   'a photo of',
   'an image of',
   'a picture of',
@@ -492,6 +570,10 @@ const META_MARKERS = [
   'the image of',
   'the picture of',
 ];
+
+/** What a description puts after `of`. No possessives: see META_OF_MARKERS. */
+const DESCRIPTION_DETERMINER =
+  '(?:a|an|the|this|that|these|those|one|two|three|four|five|six|several|some|many|both)';
 
 /**
  * Compiles a marker into a word-boundary regex. `anchored` pins it to the start
@@ -507,6 +589,9 @@ function markerRe(marker: string, anchored: boolean): RegExp {
 
 const REFUSAL_RES = REFUSAL_MARKERS.map((m) => markerRe(m, false));
 const META_RES = META_MARKERS.map((m) => markerRe(m, true));
+const META_OF_RES = META_OF_MARKERS.map(
+  (m) => new RegExp(`^${m.replace(/\s+/g, '\\s+')}\\s+${DESCRIPTION_DETERMINER}\\b`)
+);
 
 /**
  * A leading label a model likes to put in front of the answer. Stripped, never
@@ -543,7 +628,10 @@ export function refusalMatch(text: string): string | null {
   for (let i = 0; i < META_MARKERS.length; i++) {
     if (META_RES[i].test(flat)) return META_MARKERS[i];
   }
-  const opener = flat.match(REFUSAL_OPENER_RE);
+  for (let i = 0; i < META_OF_MARKERS.length; i++) {
+    if (META_OF_RES[i].test(flat)) return META_OF_MARKERS[i];
+  }
+  const opener = flat.match(REFUSAL_OPENER_RE) ?? flat.match(REFUSAL_MID_CLAUSE_RE);
   if (opener) return opener[0];
   return null;
 }

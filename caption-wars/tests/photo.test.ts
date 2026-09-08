@@ -167,12 +167,26 @@ describe('fetchPhoto', () => {
     // connection and then says nothing used to park every player's poll in the
     // same never-resolving fetch. The fake honours the signal the way a real
     // fetch does, and never resolves otherwise.
+    //
+    // THE CLOCK IS FROZEN, and that is review round 7, must-fix 5. This test used
+    // to drive the REAL clock with `photoTimeoutMs: 40`, and it failed roughly 1
+    // run in 6 on a loaded machine with "expected [...] to have a length of 3 but
+    // got 2". The PRODUCT was right and the test was racing: fetchPhoto gives
+    // attempt 1 half the remaining budget and attempt 2 half of what is left, so
+    // once 40ms of wall clock has gone by, attempt 3 hits `remaining <= 0` and is
+    // correctly skipped with its reason recorded. 40ms is nothing on a machine
+    // that is also transforming modules. Freezing `now` (the same injection point
+    // the sibling budget test uses) makes the three slices deterministic and
+    // takes the abort timers, which are what this test is actually about, from
+    // the real clock as before. `npm test` is a stated deploy gate in Done test
+    // 5, so a suite that fails 1 run in 6 makes the gate a coin flip.
     const signals: Array<AbortSignal | undefined> = [];
     const started = Date.now();
 
     await expect(
       fetchPhoto({ ...SETTINGS, photoTimeoutMs: 40 }, 'ABCD', 1, {
         random: fixedRandom([0, 0]),
+        now: () => 1_700_000_000_000,
         fetchImpl: (_url, init) =>
           new Promise<Response>((_resolve, reject) => {
             signals.push(init?.signal);
@@ -186,6 +200,37 @@ describe('fetchPhoto', () => {
     expect(signals).toHaveLength(3);
     expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
     expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  it('SKIPS an attempt whose budget is already spent, and records why', async () => {
+    // The other half of the flake fix above (review round 7, must-fix 5). The
+    // test above freezes the clock so the three slices are deterministic; this
+    // one advances it deliberately, so the behaviour that USED to arrive as a
+    // random failure is now an assertion. A machine that stalls 25ms into a 40ms
+    // budget genuinely has no time for a third attempt, and the right thing to
+    // do is skip it and say so in the error rather than start a fetch that
+    // cannot finish.
+    const signals: Array<AbortSignal | undefined> = [];
+    let clock = 1_700_000_000_000;
+    const steps = [0, 5, 25];
+    let step = 0;
+
+    await expect(
+      fetchPhoto({ ...SETTINGS, photoTimeoutMs: 40 }, 'ABCD', 1, {
+        random: fixedRandom([0, 0]),
+        now: () => {
+          clock += steps[Math.min(step++, steps.length - 1)];
+          return clock;
+        },
+        fetchImpl: (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            signals.push(init?.signal);
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          }),
+      })
+    ).rejects.toThrow(/budget of 40ms spent before this attempt/);
+
+    expect(signals).toHaveLength(2);
   });
 
   it('spends ONE budget across all three attempts, not one each', async () => {

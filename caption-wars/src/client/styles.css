@@ -452,6 +452,14 @@ label {
   color: var(--fg);
 }
 
+/* The AI players when the daily allowance is spent (round 7). Deliberately the
+   quietest badge on the row: they are still on the scoreboard, they are just not
+   playing any more. */
+.badge-offline {
+  color: var(--muted);
+  border-style: dashed;
+}
+
 .badge-win {
   color: var(--gold-ink);
   background: var(--gold);

@@ -120,15 +120,28 @@ if (args.auditTags) {
 const all = [];
 const photoErrors = [];
 let promptVersion = 'unknown';
+// THE SPEND, per request (review round 7, must-fix 1b / Claude should-fix 3).
+// The worker has always computed these and this script threw them away, so a run
+// that saturated AI_TRY_MAX_MODEL_CALLS silently stopped judging and stopped
+// scoring relevance on its later samples and printed a BETTER-looking table for
+// it. A saturated run is a truncated measurement, not a passing one.
+const calls = [];
 
 while (all.length < args.samples) {
   const body = await callOnce(args.photosPerCall);
   promptVersion = body.prompt_version;
   all.push(...body.samples);
   photoErrors.push(...(body.photoErrors ?? []));
+  if (body.summary) {
+    calls.push({ used: body.summary.model_calls ?? 0, cap: body.summary.model_call_cap ?? 0 });
+  }
   process.stderr.write(`  ...${all.length}/${args.samples} samples\n`);
   if (body.samples.length === 0) die('the worker returned no samples at all');
 }
+
+const modelCalls = calls.reduce((sum, c) => sum + c.used, 0);
+const perRequestCap = calls.length > 0 ? Math.max(...calls.map((c) => c.cap)) : 0;
+const saturated = calls.filter((c) => c.cap > 0 && c.used >= c.cap).length;
 
 if (args.json) {
   console.log(JSON.stringify({ prompt_version: promptVersion, samples: all }, null, 2));
@@ -219,27 +232,97 @@ if (attemptTimes.length > 0) {
   console.log('\nPER-ATTEMPT LATENCY (what BOT_TIMEOUT_MS has to cover)');
   console.log(`  attempts ${sorted.length}  mean ${mean}ms  p50 ${sorted[Math.floor(sorted.length * 0.5)]}ms  p95 ${sorted[Math.floor(sorted.length * 0.95)]}ms  max ${sorted[sorted.length - 1]}ms`);
 }
+console.log('\nMODEL SPEND (this is a finite daily allowance, see the README)');
+console.log(`  requests   ${calls.length}`);
+console.log(`  model calls ${modelCalls} total, cap ${perRequestCap} per request`);
+console.log(
+  `  saturated  ${saturated} of ${calls.length} request(s) hit the cap` +
+    (saturated > 0 ? '  <- the later samples in those requests were NOT judged' : '')
+);
 if (photoErrors.length > 0) console.log(`\nphoto errors: ${photoErrors.length}`);
 
-// The acceptance bar from the plan (rule 40). Refusals and echoes are counted as
-// the same thing on purpose: to a player they are both "that is not a caption".
-// Round 5 added the on-photo bar, because the other three numbers can all be
-// perfect while the captions are about a different photo entirely.
-const refusalPct = (byRegex / all.length) * 100;
-const judgePct = (byJudge / all.length) * 100;
+// THE ACCEPTANCE BAR (rule 40, rewritten in review round 7).
+//
+// What changed and why. Rule 40 has always gated on the FIRST-ATTEMPT regex
+// refusal rate, under 10%. Round 6's gate run measured 12.5% while delivering 24
+// captions out of 24 with zero bots sitting out: a perfect player-facing outcome
+// failing its own gate. Three things are wrong with that bar and all three point
+// the same way:
+//   1. It gates on an INTERMEDIATE. A first-attempt refusal costs one
+//      regeneration out of a three-rung ladder. A player is only harmed when a
+//      non-caption is DELIVERED or a bot sits the round out.
+//   2. A 10% bar is not resolvable at n = 24. The threshold is literally three
+//      events (2/24 = 8.3% passes, 3/24 = 12.5% fails), and the same build
+//      measured 4.2%, 4.2% and 12.5% on three runs. The rational response to a
+//      coin-flip gate is to re-roll it, which is exactly the behaviour a tuning
+//      rig exists to make impossible.
+//   3. Since round 6 the number is CONFOUNDED BY THE GUARD. The regex is the
+//      fast path (rule 50) and is allowed to miss; edit caption-guard.ts and the
+//      refusal rate moves with the prompt untouched. A prompt gate must not move
+//      when the guard moves.
+// A zero-event bar IS honest at n = 24 (one occurrence is unambiguous), and the
+// free daily allowance cannot buy the hundreds of samples a rate bar would need.
+// So: GATE ON ZEROES, REPORT THE RATES.
 const bad = [];
-if (refusalPct >= 10) bad.push(`regex refusal/meta first-attempt rate ${refusalPct.toFixed(1)}% (bar: under 10%)`);
-// Rule 50's bar on the new instrument: the judge may reject up to a third of
-// first attempts before the prompt itself is the problem. It is set where the
-// measurement landed once the judge existed (round 6: 25-29% on 24 samples,
-// every rejection re-checked by hand and correct), not at a number nobody has
-// ever measured. What the PLAYER sees is bounded by the two lines under it:
-// zero non-captions delivered and zero bots sitting out is the real bar.
-if (judgePct >= 35) bad.push(`judge-rejected first-attempt rate ${judgePct.toFixed(1)}% (bar: under 35%)`);
+
+// HARD 1: non-captions DELIVERED. A caption ships only when the regex passed it
+// AND the judge said `caption`; anything delivered on a judge that failed open
+// (`unknown`) or never ran (`null`) reached the table with no authority having
+// approved it, and that is the one thing rule 39 and rule 50 both exist to stop.
+// In a healthy run this is 0, because the judge answers.
+const deliveredUnjudged = all.filter((s) => {
+  if (s.final === null) return false;
+  const shipped = s.attempts[s.attempts.length - 1];
+  return !shipped || shipped.judge !== 'caption';
+});
+console.log('\nDELIVERED, AND WHAT APPROVED IT (this is rule 40\'s bar)');
+console.log(`  delivered            ${all.length - failed}/${all.length}`);
+console.log(`  approved by the judge ${all.length - failed - deliveredUnjudged.length}`);
+console.log(`  UNJUDGED on delivery  ${deliveredUnjudged.length} (bar: 0)`);
+for (const s of deliveredUnjudged.slice(0, 5)) {
+  console.log(`    ${cell(s.persona, 16)} ${s.final}`);
+}
+if (deliveredUnjudged.length > 0) {
+  bad.push(`${deliveredUnjudged.length} caption(s) delivered without a judge verdict (bar: 0)`);
+}
+
+// HARD 2: a silent bot is what rule 38(a) protects against.
+if (failed > 0) bad.push(`${failed} bot(s) sat the round out (bar: 0)`);
+
+// HARD 3: unchanged since round 4.
 if (labelling > 0) bad.push(`${labelling} labelling trip(s) (bar: 0)`);
+
+// HARD 4: a saturated run is a truncated measurement (round 7, must-fix 1b).
+if (saturated > 0) {
+  bad.push(
+    `${saturated} request(s) hit the ${perRequestCap}-model-call cap, so their later samples were ` +
+      'not judged and the rates below are measured on a truncated run'
+  );
+}
+
+// HARD 5: relevance, unchanged since round 5. It is a rate bar and it has the
+// same resolution problem as the old refusal bar, which is written down in the
+// plan's round-7 block as a known weakness rather than silently moved.
 if (delivered.length > 0 && onPhotoPct < 80) {
   bad.push(`on-photo rate ${onPhotoPct.toFixed(1)}% (bar: at least 80%)`);
 }
+
+// SOFT: diagnostics for whoever is editing the prompt or the judge prompt. They
+// print a warning and they do NOT fail the run, because neither is resolvable at
+// this sample size and the regex one moves when the guard moves.
+const refusalPct = (byRegex / all.length) * 100;
+const judgePct = (byJudge / all.length) * 100;
+const soft = [];
+if (refusalPct >= 10) {
+  soft.push(`regex first-attempt refusal rate ${refusalPct.toFixed(1)}% (soft bar: under 10%)`);
+}
+if (judgePct >= 35) {
+  soft.push(`judge-rejected first-attempt rate ${judgePct.toFixed(1)}% (soft bar: under 35%)`);
+}
+if (soft.length > 0) {
+  console.log(`\nai:try DIAGNOSTICS (not a failure) - ${soft.join('; ')}`);
+}
+
 if (bad.length > 0) {
   console.log(`\nai:try BELOW THE BAR - ${bad.join('; ')}`);
   process.exit(1);

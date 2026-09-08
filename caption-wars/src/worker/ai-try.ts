@@ -234,7 +234,11 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     }> = [];
     for (const text of texts) {
       const regex = refusalMatch(text);
-      const judge = await judgeIsCaption(models, text, set.botTimeoutMs, judgeBudget);
+      // The JUDGE's timeout, not the bot job's (Codex round 7, should-fix 3).
+      // The audit was waiting up to BOT_TIMEOUT_MS (20s) per string while the
+      // game gives one judge call CAPTION_JUDGE_TIMEOUT_MS (10s), so the audit
+      // was measuring a judge the game never runs.
+      const judge = await judgeIsCaption(models, text, set.captionJudgeTimeoutMs, judgeBudget);
       verdicts.push({ text, regex, judge, ships: regex === null && judge === 'caption' });
     }
     return json({

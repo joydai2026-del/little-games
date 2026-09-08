@@ -77,8 +77,10 @@ function str(raw: string | undefined, fallback: string): string {
 /** Defaults that only exist as wrangler vars (there is no game logic that needs them elsewhere). */
 // Must stay the same list as PHOTO_TAGS in wrangler.jsonc, where the content
 // policy behind it is written down (review round 6: `party` and `costume` were
-// dropped for returning sexualised photos, every replacement was audited live).
-const DEFAULT_TAGS = 'dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue';
+// dropped for returning sexualised photos, every replacement was audited live;
+// review round 7 dropped `statue` after a 7th draw returned a full-frontal
+// museum nude, as the safe default pending JJ's call).
+const DEFAULT_TAGS = 'dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake';
 const DEFAULT_VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 const DEFAULT_VISION_MODEL_FALLBACK = '@cf/llava-hf/llava-1.5-7b-hf';
 const DEFAULT_TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';

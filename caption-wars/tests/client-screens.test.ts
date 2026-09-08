@@ -115,9 +115,14 @@ interface FakeEl {
   };
   listeners: Map<string, Array<() => void>>;
   addEventListener(type: string, fn: () => void): void;
-  append(child: FakeEl | string): void;
+  append(...children: Array<FakeEl | string>): void;
+  replaceChildren(...children: Array<FakeEl | string>): void;
   setAttribute(key: string, value: string): void;
   fire(type: string): void;
+  /** Every text node under this element, joined. What a player would read. */
+  text(): string;
+  disabled?: boolean;
+  hidden?: boolean;
 }
 
 function fakeElement(tag: string): FakeEl {
@@ -139,9 +144,16 @@ function fakeElement(tag: string): FakeEl {
     addEventListener: (type, fn) => {
       listeners.set(type, [...(listeners.get(type) ?? []), fn]);
     },
-    append: (child) => {
-      if (typeof child !== 'string') el.children.push(child);
+    append: (...children) => {
+      for (const child of children) {
+        if (typeof child !== 'string') el.children.push(child);
+      }
     },
+    replaceChildren: (...children) => {
+      el.children.length = 0;
+      el.append(...children);
+    },
+    text: () => [el.textContent, ...el.children.map((c) => c.text())].join(' ').trim(),
     setAttribute: () => {},
     fire: (type) => {
       for (const fn of [...(listeners.get(type) ?? [])]) fn();
@@ -260,6 +272,117 @@ describe('photoFrame: an <img> that never answers', () => {
       expect(dom.timers).toHaveLength(0);
     } finally {
       dom.restore();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CHAMPION SCREEN (review round 7, must-fixes 1 and 2)
+//
+// `done.ts` had no test until now, which is how both of this round's must-fixes
+// reached a live game: the "No champion this time." branch had been written
+// since round 2 and was UNREACHABLE, and three live games in a row crowned two
+// silent bots as joint champions on 0 points. These read the strings a player
+// actually sees off a rendered screen rather than off the source.
+// ---------------------------------------------------------------------------
+
+describe('the done screen says what actually happened', () => {
+  const ctx = {
+    code: 'ABCD',
+    playerId: 'p1',
+    ownCaptionId: () => null,
+    actions: { playAgain: () => Promise.resolve(true) } as never,
+  };
+
+  const baseView = {
+    code: 'ABCD',
+    phase: 'done',
+    round: 2,
+    options: { rounds: 2, captionSeconds: 60, voteSeconds: 30, revealSeconds: 10, botCount: 2 },
+    hostId: 'p1',
+    players: [
+      { id: 'p1', name: 'JJ', isBot: false, score: 0 },
+      { id: 'b1', name: 'Daisy Deadpan', isBot: true, score: 0 },
+      { id: 'b2', name: 'Chaos Chip', isBot: true, score: 0 },
+    ],
+    captions: [],
+    votes: {},
+    history: [],
+    nextPollMs: 0,
+  } as unknown as RoomView;
+
+  async function render(view: RoomView): Promise<{ text: string; restore: () => void }> {
+    const dom = installFakeDom();
+    const { createDoneScreen } = await import('../src/client/screens/done');
+    const screen = createDoneScreen(ctx as never);
+    screen.update(view);
+    return { text: (screen.el as unknown as FakeEl).text(), restore: dom.restore };
+  }
+
+  it('names NOBODY when every score is 0, instead of crowning everyone', async () => {
+    // Must-fix 2. Before the zero guard in computeChampionIds this screen read
+    // "Joint champions: JJ and Daisy Deadpan and Chaos Chip / 0 points over 2
+    // rounds." on a live game where the two bots never wrote a word.
+    const { text, restore } = await render({ ...baseView, championIds: [] });
+    try {
+      expect(text).toContain('Game over');
+      expect(text).toContain('No champion this time.');
+      expect(text).not.toContain('champions:');
+    } finally {
+      restore();
+    }
+  });
+
+  it('still crowns a real winner', async () => {
+    const view = {
+      ...baseView,
+      players: [{ id: 'p1', name: 'JJ', isBot: false, score: 3 }, ...baseView.players.slice(1)],
+      championIds: ['p1'],
+    } as unknown as RoomView;
+    const { text, restore } = await render(view);
+    try {
+      expect(text).toContain('Champion: JJ');
+      expect(text).toContain('3 points over 2 rounds.');
+    } finally {
+      restore();
+    }
+  });
+
+  it('explains the AI allowance in plain words, and says what to do about it', async () => {
+    // Must-fix 1, the solo-host end of it: the bots met the daily free allowance
+    // and there were not two players left without them.
+    const view = { ...baseView, championIds: [], endedReason: 'ai-unavailable' } as RoomView;
+    const { text, restore } = await render(view);
+    try {
+      expect(text).toContain('The AI players are offline today');
+      expect(text).toContain('daily free AI allowance is used up');
+      expect(text).toContain('back after midnight UTC');
+      expect(text).toContain('Add a friend to play.');
+      // No neurons, no error code, no plan tier: grandma reads this screen.
+      expect(text).not.toContain('4006');
+      expect(text).not.toContain('neuron');
+    } finally {
+      restore();
+    }
+  });
+
+  it('marks the AI players offline on the final scoreboard instead of hiding them', async () => {
+    const view = { ...baseView, aiOffline: true, championIds: [] } as unknown as RoomView;
+    const { text, restore } = await render(view);
+    try {
+      expect(text).toContain('Daisy Deadpan');
+      expect(text).toContain('offline');
+    } finally {
+      restore();
+    }
+  });
+
+  it('says nothing about the AI while it is working', async () => {
+    const { text, restore } = await render({ ...baseView, championIds: [] });
+    try {
+      expect(text).not.toContain('offline');
+    } finally {
+      restore();
     }
   });
 });

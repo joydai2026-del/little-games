@@ -38,7 +38,16 @@
     // Re-run the audit before adding one:
     //   npm run ai:try -- --audit-tags <tag>,<tag> --per-tag 3
     // ANYTHING WITH PEOPLE IN IT IS JJ'S CALL, not an agent's.
-    "PHOTO_TAGS": "dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue",
+    //
+    // ROUND 7 dropped `statue` as the SAFE DEFAULT, not as a verdict. Round 6's
+    // 3-photo audit passed it (carved face, marble torso, golden eagle); round
+    // 7 drew four more and the seventh was a museum bronze of a nude male
+    // figure, full frontal, in a gallery. That is a statue in the Louvre and it
+    // is also a phone being passed around a table, and rule 51 says which of
+    // those two readings an agent is allowed to pick: neither. So the tag is out
+    // until JJ looks at the picture and says. SHE MAY PUT IT BACK: add `statue`
+    // here and to DEFAULT_TAGS in src/worker/env.ts, nothing else changes.
+    "PHOTO_TAGS": "dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake",
     "PHOTO_WIDTH": "800",
     "PHOTO_HEIGHT": "600",
     "PHOTO_MAX_BYTES": "2000000",

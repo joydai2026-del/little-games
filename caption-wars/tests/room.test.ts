@@ -3,6 +3,7 @@ import {
   advance,
   advanceIfDue,
   createRoom,
+  noteAiOffline,
   endCaptionPhase,
   endVotePhase,
   join,
@@ -739,5 +740,135 @@ describe('trimToWordBoundary', () => {
     expect(trimToWordBoundary('He forgot the fishing licence.', 120)).toBe(
       'He forgot the fishing licence.'
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE WALL: Workers AI out of its daily free allocation (review round 7,
+// must-fix 1; plan rule 55).
+//
+// Three live games on the deployed worker played five rounds between them and
+// produced ZERO bot captions: every round voided and the champion screen then
+// named both silent bots as joint champions on 0 points. The room had no way to
+// tell "this model call hiccupped" from "this account is out until midnight".
+// ---------------------------------------------------------------------------
+
+describe('noteAiOffline', () => {
+  /** A started room: host + 2 bots, round 1 caption phase, both bot jobs open. */
+  function startedWithJobs(extraHumans: Player[] = []): RoomState {
+    const options = normalizeOptions({ rounds: 3, captionSeconds: 60, voteSeconds: 30, revealSeconds: 10, botCount: 2 });
+    const lobby = createRoom('ABCD', { id: 'host', name: 'JJ' }, options, [bot('b1', 'Daisy'), bot('b2', 'Chip')], T0);
+    let state = lobby;
+    for (const human of extraHumans) {
+      state = join(state, { id: human.id, name: human.name }, T0).state;
+    }
+    state = start(state, 'host', PHOTO, T0).state;
+    return {
+      ...state,
+      botJobs: [job('b1', 1, 'caption', 'running'), job('b2', 1, 'caption', 'running')],
+    };
+  }
+
+  it('with two humans left: flags the room, fails this round’s bot jobs, keeps playing', () => {
+    const state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    const after = noteAiOffline(state, T0 + 5_000).state;
+
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('caption'); // the humans are still mid-round
+    expect(after.version).toBe(state.version + 1);
+    // Marked failed WITH THE REASON, so the round ends now instead of running
+    // the full caption timer down on two bots that will never answer.
+    expect(after.botJobs.map((j) => j.status)).toEqual(['failed', 'failed']);
+    expect(after.botJobs.map((j) => j.failReason)).toEqual(['ai-offline', 'ai-offline']);
+    // And the bots are still on the scoreboard.
+    expect(after.players.map((p) => p.id)).toEqual(['host', 'b1', 'b2', 'p2']);
+  });
+
+  it('drops the bots from the roster of the NEXT round, not this one', () => {
+    const state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    const offline = noteAiOffline(state, T0 + 5_000).state;
+    // This round keeps its frozen roster: its jobs are accounted for against it.
+    expect(offline.roundPlayerIds).toEqual(['host', 'b1', 'b2', 'p2']);
+
+    // Play the round out and roll over.
+    let next = submitCaption(offline, 'host', 'a caption', 'c-h1', T0 + 6_000).state;
+    next = submitCaption(next, 'p2', 'another caption', 'c-p1', T0 + 6_100).state;
+    expect(next.phase).toBe('vote');
+    next = submitVote(next, 'host', 'c-p1', T0 + 7_000).state;
+    next = submitVote(next, 'p2', 'c-h1', T0 + 7_100).state;
+    expect(next.phase).toBe('reveal');
+    next = advance(next, 'timer', T0 + 60_000, PHOTO_2).state;
+
+    expect(next.round).toBe(2);
+    expect(next.roundPlayerIds).toEqual(['host', 'p2']);
+    // Nothing is waiting on a bot any more, and they keep their rows.
+    expect(next.players.map((p) => p.id)).toEqual(['host', 'b1', 'b2', 'p2']);
+  });
+
+  it('with a solo host: ends the game rather than walk one person through empty rounds', () => {
+    const state = startedWithJobs();
+    const after = noteAiOffline(state, T0 + 5_000).state;
+
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('done');
+    expect(after.endedReason).toBe('ai-unavailable');
+    // Nobody scored, so nobody is champion (must-fix 2 is what makes this true).
+    expect(after.championIds).toEqual([]);
+  });
+
+  it('is idempotent: four bots hitting the same wall is one version bump', () => {
+    const state = startedWithJobs([{ id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }]);
+    const once = noteAiOffline(state, T0 + 5_000).state;
+    const twice = noteAiOffline(once, T0 + 5_001).state;
+    expect(twice).toBe(once);
+  });
+
+  it('a lobby only takes the flag: nothing has been dealt out to end', () => {
+    const options = normalizeOptions({ rounds: 3, botCount: 2 });
+    const lobby = createRoom('ABCD', { id: 'host', name: 'JJ' }, options, [bot('b1', 'Daisy')], T0);
+    const after = noteAiOffline(lobby, T0 + 1).state;
+    expect(after.phase).toBe('lobby');
+    expect(after.aiOffline).toBe(true);
+    expect(after.endedReason).toBeUndefined();
+  });
+
+  it('the flag reaches the client through publicView', () => {
+    const state = startedWithJobs();
+    const after = noteAiOffline(state, T0 + 5_000).state;
+    expect(publicView(after, 'host', T0 + 5_001).aiOffline).toBe(true);
+  });
+});
+
+describe('computeChampionIds (through advance)', () => {
+  it('crowns NOBODY when every score is 0', () => {
+    // Review round 7, must-fix 2. Reachable in a perfectly healthy game: three
+    // friends caption every round and nobody taps a vote. Before the guard this
+    // named all three with "0 points over N rounds".
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    for (const round of [1, 2]) {
+      state = submitCaption(state, 'host', 'h', `c-h-${round}`, T0 + 1_000).state;
+      state = submitCaption(state, 'b1', 'a', `c-a-${round}`, T0 + 1_100).state;
+      state = submitCaption(state, 'b2', 'b', `c-b-${round}`, T0 + 1_200).state;
+      // Nobody votes: the vote phase times out.
+      state = advanceIfDue(state, T0 + 200_000 * round).state;
+      if (state.phase === 'reveal' && round === 1) {
+        state = advance(state, 'timer', T0 + 200_000 * round + 20_000, PHOTO_2).state;
+      }
+    }
+    state = advance(state, 'timer', T0 + 900_000, undefined).state;
+
+    expect(state.phase).toBe('done');
+    expect(state.players.every((p) => p.score === 0)).toBe(true);
+    expect(state.championIds).toEqual([]);
+  });
+
+  it('still crowns joint champions when they actually scored', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = playRoundHostWins(state, T0 + 1_000);
+    state = advance(state, 'timer', T0 + 20_000, PHOTO_2).state;
+    state = playRoundHostWins(state, T0 + 30_000);
+    state = advance(state, 'timer', T0 + 60_000).state;
+    expect(state.phase).toBe('done');
+    expect(state.championIds).toEqual(['host']);
   });
 });

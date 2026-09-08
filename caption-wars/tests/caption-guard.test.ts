@@ -21,6 +21,14 @@ import {
 } from '../src/shared/caption-guard';
 import { cleanModelCaption } from '../src/shared/text';
 
+/**
+ * How many captions the fast-path regex is allowed to fail on purpose. Every one
+ * is named, with its reason, in the plan's round-6 and round-7 amendment blocks
+ * (docs/plans/2026-09-07-mvp-plan.md). Raising this number is a decision, not a
+ * fix: see `_comment_acceptedFalseRefusals` in tests/guard-cases.json.
+ */
+const ACCEPTED_FALSE_REFUSALS = 7;
+
 describe('labellingMatch: the shared case table', () => {
   it('trips on every must-trip caption', () => {
     for (const caption of cases.mustTrip) {
@@ -212,6 +220,16 @@ describe('looksLikeRefusal', () => {
     for (const text of cases.acceptedFalseRefusals) {
       expect(refusalMatch(text), `accepted false positive: ${text}`).not.toBeNull();
     }
+  });
+
+  it('COUNTS the accepted false positives, so the list cannot grow quietly', () => {
+    // Codex review round 7, should-fix 2. Round 6 documented three entries in
+    // the plan and shipped four in this file, and nothing noticed, because the
+    // test only asserted that each listed string trips. A count is what turns
+    // "we accept these four" into a decision somebody has to make on purpose:
+    // adding a fifth now fails here and sends the author to the plan's round-7
+    // block, which names every entry and the reason it is kept.
+    expect(cases.acceptedFalseRefusals).toHaveLength(ACCEPTED_FALSE_REFUSALS);
   });
 
   it('catches the three refusals a NEW live build shipped after round 5', () => {

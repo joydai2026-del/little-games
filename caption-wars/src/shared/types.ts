@@ -67,6 +67,13 @@ export interface BotJob {
   /** Set when the job flips to `running`; absent while it is still `pending`. */
   startedAt?: number;
   status: 'pending' | 'running' | 'done' | 'failed';
+  /**
+   * Why a `failed` job failed, when the reason is one the room acts on.
+   * `ai-offline` means Workers AI answered an ACCOUNT-level error (the daily
+   * free allocation is spent), which is not this job hiccupping: no bot job in
+   * this room will succeed again today. See rule 55 in the plan.
+   */
+  failReason?: 'ai-offline';
 }
 
 /** What a caption looks like during `vote`: no author, ever. */
@@ -119,8 +126,15 @@ export interface RoomState {
    * round opens. It is what stops a dead image host from spinning the alarm.
    */
   photoRetry?: { attempts: number; nextAttemptAt: number };
+  /**
+   * Set once Workers AI has answered an account-level error (rule 55). The bots
+   * stay on the scoreboard and are dropped from `roundPlayerIds` from the next
+   * round on, and every screen carries a plain banner saying so. It is sticky
+   * for the life of the room: the allowance resets at 00:00 UTC, not mid-game.
+   */
+  aiOffline?: boolean;
   /** Why the game ended, when it did not end by playing out all the rounds. */
-  endedReason?: 'photo-unavailable';
+  endedReason?: 'photo-unavailable' | 'ai-unavailable';
   nextPollMs: number;
 }
 

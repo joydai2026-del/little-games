@@ -102,8 +102,17 @@ export interface RoomView {
    * UNION, not `string` (round 6, Claude nit 2): round 4 gave the sibling
    * `voidReason` its union so a typo in a comparison stops typechecking, and
    * done.ts compares this one to a string literal in exactly the same way.
+   * `ai-unavailable` is round 7: the Workers AI daily free allowance ran out and
+   * dropping the bots left fewer than two players.
    */
-  endedReason?: 'photo-unavailable';
+  endedReason?: 'photo-unavailable' | 'ai-unavailable';
+  /**
+   * The AI players have met the Workers AI daily free allowance and are out for
+   * the rest of the UTC day (round 7). Every screen says so in one plain
+   * sentence. Optional, so a client running against an older worker simply never
+   * shows the banner.
+   */
+  aiOffline?: boolean;
   phaseEndsAt?: number;
   phaseStartedAt?: number;
   history: RoundResultView[];

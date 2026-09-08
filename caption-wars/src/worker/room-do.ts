@@ -46,6 +46,7 @@ import {
   dueBotJobs,
   enqueueBotJobs,
   markJobsRunning,
+  noteAiOffline,
   notePhotoFailure,
   orderedCaptions,
   photoRetryBlocked,
@@ -344,9 +345,10 @@ export class RoomDO implements DurableObject {
     await this.save();
   }
 
-  private botModels(): BotModels {
+  private botModels(onAiOffline?: (message: string) => void): BotModels {
     return {
       ai: this.env.AI as unknown as BotModels['ai'],
+      ...(onAiOffline ? { onAiOffline } : {}),
       visionModel: this.set.visionModel,
       visionModelFallback: this.set.visionModelFallback,
       textModel: this.set.textModel,
@@ -428,7 +430,15 @@ export class RoomDO implements DurableObject {
     this.room = markJobsRunning(room, due.map((job) => job.jobId), now);
     await this.save();
 
-    const models = this.botModels();
+    // THE WALL, not a hiccup (review round 7, must-fix 1; plan rule 55). Every
+    // model call in this batch reports an account-level Workers AI error through
+    // this one flag, and the room reacts ONCE, after the batch, through the
+    // reducer. Four bots meeting the same wall in the same second is the normal
+    // case, and `noteAiOffline` is idempotent so that costs one version bump.
+    let sawAiOffline = false;
+    const models = this.botModels(() => {
+      sawAiOffline = true;
+    });
     const host = this.botHost();
     const outcomes = await Promise.all(
       due.map(async (job: BotJob) => ({ job, outcome: await runBotJob(job, models, host) }))
@@ -438,6 +448,14 @@ export class RoomDO implements DurableObject {
     let next = this.room;
     for (const { job, outcome } of outcomes) next = setJobStatus(next, job.jobId, outcome);
     this.room = next;
+    await this.save();
+
+    if (!sawAiOffline || !this.room) return;
+    // After the statuses, so the reason lands on jobs this batch has already
+    // closed out rather than racing them.
+    const noted = noteAiOffline(this.room, Date.now());
+    if (noted.state === this.room) return;
+    this.room = noted.state;
     await this.save();
   }
 

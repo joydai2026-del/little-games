@@ -128,6 +128,12 @@ function hasVotableCaption(state: RoomState, playerId: string): boolean {
 function botGaveUp(state: RoomState, playerId: string, phase: 'caption' | 'vote'): boolean {
   const player = state.players.find((p) => p.id === playerId);
   if (!player || !player.isBot) return false;
+  // ROUND 7: an offline AI player has given up on EVERY phase, not only the one
+  // whose job met the wall. `noteAiOffline` fires during a caption phase, and
+  // without this the vote phase that follows would sit the humans in front of a
+  // 30-second countdown waiting on two bots that no longer exist. The next round
+  // does not have this problem, because they are off the roster by then.
+  if (state.aiOffline === true) return true;
   return state.botJobs.some(
     (j) =>
       j.botId === playerId &&
@@ -258,7 +264,12 @@ function openRound(state: RoomState, round: number, photo: PhotoMeta, now: numbe
     state,
     {
       round,
-      roundPlayerIds: state.players.map((p) => p.id),
+      // The AI players are dropped from the roster from the round AFTER the one
+      // that met the wall (rule 55). They stay in `players`, so they keep their
+      // scoreboard row; they simply stop being someone the round waits for.
+      roundPlayerIds: state.players
+        .filter((p) => !(p.isBot && state.aiOffline === true))
+        .map((p) => p.id),
       photo,
       captions: [],
       votes: {},
@@ -459,9 +470,21 @@ export function endVotePhase(state: RoomState, now: number): RoomResult {
   };
 }
 
+/**
+ * Who won overall, or NOBODY.
+ *
+ * The zero guard is review round 7, must-fix 2. Without it every player is a
+ * champion whenever every score is 0, and three live games in a row crowned two
+ * bots that had never written a word as "joint champions" on 0 points. It is
+ * also reachable in a perfectly healthy game: three friends caption every round
+ * and nobody taps a vote, so every score stays 0. `done.ts` has had the right
+ * branch for this since round 2 ("No champion this time.") and it was
+ * unreachable, because the array was never empty while the room had players.
+ */
 function computeChampionIds(players: Player[]): string[] {
   if (players.length === 0) return [];
   const maxScore = Math.max(...players.map((p) => p.score));
+  if (maxScore <= 0) return [];
   return players.filter((p) => p.score === maxScore).map((p) => p.id);
 }
 
@@ -586,6 +609,65 @@ export function notePhotoFailure(
       version: state.version + 1,
     },
   };
+}
+
+/**
+ * Workers AI has answered an ACCOUNT-level error, so no bot in this room will
+ * write anything again today (review round 7, must-fix 1; plan rule 55).
+ *
+ * This is deliberately a DIFFERENT thing from a bot job failing. A failed job is
+ * one model call hiccupping and the ladder retries it; this is the daily free
+ * allocation being spent, which the retry ladder, the fallback vision model, the
+ * judge and the guard are all powerless against, because there is no model on
+ * the other end. Round 6's build treated the two as identical, so a solo game
+ * voided every round in turn and then crowned the silent bots.
+ *
+ * What it does, once, and never again for this room:
+ *   - sets `aiOffline`, which every screen renders as one plain sentence;
+ *   - fails THIS round's still-open bot jobs with `failReason: 'ai-offline'`, so
+ *     the round ends now rather than on the full caption timer;
+ *   - and, if dropping the bots would leave fewer than two players in the next
+ *     round's roster, ends the game with `endedReason: 'ai-unavailable'` instead
+ *     of walking a lone human through N unplayable rounds.
+ * The drop itself happens in `openRound`, which is what makes it "from the NEXT
+ * round on": the current round keeps its roster so its jobs stay accounted for.
+ *
+ * Idempotent: a second call on an already-offline room changes nothing and does
+ * not bump the version, because four bot jobs hit the same wall in the same
+ * second and four version bumps would be four repaints of the same banner.
+ */
+export function noteAiOffline(state: RoomState, now: number): RoomResult {
+  if (state.aiOffline === true) return { state };
+
+  const botJobs = state.botJobs.map((job) =>
+    job.round === state.round && job.status !== 'done'
+      ? { ...job, status: 'failed' as const, failReason: 'ai-offline' as const }
+      : job
+  );
+
+  // A lobby has not dealt anyone in yet and a finished game has nothing left to
+  // end, so both only take the flag (and the banner that comes with it).
+  if (state.phase === 'lobby' || state.phase === 'done') {
+    return { state: { ...state, aiOffline: true, botJobs, version: state.version + 1 } };
+  }
+
+  const rosterAfterDrop = state.players.filter((p) => !p.isBot);
+  if (rosterAfterDrop.length < 2) {
+    return {
+      state: bump(
+        { ...state, aiOffline: true, botJobs },
+        {
+          championIds: computeChampionIds(state.players),
+          endedReason: 'ai-unavailable',
+          photoRetry: undefined,
+        },
+        'done',
+        now
+      ),
+    };
+  }
+
+  return { state: { ...state, aiOffline: true, botJobs, version: state.version + 1 } };
 }
 
 /** True while a failed photo fetch is still serving out its backoff. */

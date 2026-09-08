@@ -12,6 +12,7 @@ import {
   composeBotCaption,
   generateBotCaption,
   generateBotVote,
+  isAiOfflineError,
   makeCallBudget,
   parseJudgeVerdict,
   parseVoteAnswer,
@@ -878,5 +879,134 @@ describe('the model-call budget (Codex round 6, must-fix 1)', () => {
     );
     expect(calls).toBe(3);
     expect(budget.used()).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE WALL vs A HICCUP (review round 7, must-fix 1)
+//
+// The live string, from `wrangler tail` on 2026-09-07, from BOTH the primary and
+// the fallback vision model:
+//   4006: you have used up your daily free allocation of 10,000 neurons, please
+//   upgrade to Cloudflare's Workers Paid plan if you would like to continue usage.
+// Round 6's build could not tell that apart from one call going wrong, so it
+// retried, failed the job, voided the round, and did it again next round.
+// ---------------------------------------------------------------------------
+
+describe('isAiOfflineError', () => {
+  it('recognises the live account-level error, on either marker', () => {
+    expect(
+      isAiOfflineError(
+        new Error(
+          "4006: you have used up your daily free allocation of 10,000 neurons, please " +
+            "upgrade to Cloudflare's Workers Paid plan if you would like to continue usage."
+        )
+      )
+    ).toBe(true);
+    expect(isAiOfflineError(new Error('Error 4006'))).toBe(true);
+    expect(isAiOfflineError('daily free allocation exhausted')).toBe(true);
+    expect(isAiOfflineError({ message: 'DAILY FREE ALLOCATION' })).toBe(true);
+  });
+
+  it('leaves every ordinary failure alone: a hiccup is not a wall', () => {
+    // This is the important direction. A wall misread as a hiccup costs one
+    // voided round; a hiccup misread as a wall drops the bots for the rest of
+    // the game, so this list is what keeps the classifier narrow.
+    for (const message of [
+      'The operation was aborted due to timeout',
+      'Network connection lost',
+      'Internal Server Error',
+      '5xx from the inference backend',
+      'JSON Mode couldn\'t be met',
+      'InferenceUpstreamError: 3040',
+      'capacity temporarily exceeded, please retry',
+      '',
+    ]) {
+      expect(isAiOfflineError(new Error(message)), message).toBe(false);
+    }
+    expect(isAiOfflineError(null)).toBe(false);
+    expect(isAiOfflineError(undefined)).toBe(false);
+  });
+});
+
+describe('a bot job that meets the wall', () => {
+  const quotaError = () => {
+    throw new Error(
+      '4006: you have used up your daily free allocation of 10,000 neurons, please upgrade'
+    );
+  };
+
+  it('reports it exactly once per call site, and still fails the job cleanly', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = { async run() { return quotaError(); } };
+    const outcome = await runBotJob(
+      job(),
+      models(ai, { onAiOffline: (message) => seen.push(message) }),
+      fakeHost(captionRoom()).host
+    );
+
+    // The job still FAILS, which is what keeps humans from waiting on it. What
+    // is new is that the room is told why.
+    expect(outcome).toBe('failed');
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toContain('4006');
+  });
+
+  it('does NOT report a transient failure, so a bad minute never drops the bots', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = {
+      async run() {
+        throw new Error('The operation was aborted due to timeout');
+      },
+    };
+    const outcome = await runBotJob(
+      job(),
+      models(ai, { onAiOffline: (message) => seen.push(message) }),
+      fakeHost(captionRoom()).host
+    );
+    expect(outcome).toBe('failed');
+    expect(seen).toEqual([]);
+  });
+
+  it('reports it from the VOTE path too, not only from the caption ladder', async () => {
+    const seen: string[] = [];
+    const ai: AiLike = { async run() { return quotaError(); } };
+    let room = captionRoom();
+    room = submitCaption(room, 'host', 'a human caption', 'c-h', T0 + 1).state;
+    room = submitCaption(room, 'b1', 'a bot caption', 'c-b1', T0 + 2).state;
+    room = submitCaption(room, 'b2', 'another bot caption', 'c-b2', T0 + 3).state;
+    expect(room.phase).toBe('vote'); // the last caption ends the phase
+    const voted = await runBotJob(
+      job({ phase: 'vote' }),
+      models(ai, { onAiOffline: (message) => seen.push(message) }),
+      fakeHost(room).host
+    );
+    expect(voted).toBe('failed');
+    expect(seen).toHaveLength(1);
+  });
+
+  it('builds no jobs at all once the room knows (so no more calls are spent)', () => {
+    const offline: RoomState = { ...captionRoom(), aiOffline: true };
+    expect(buildBotJobs(offline, 'caption', T0, 20_000, () => 'j')).toEqual([]);
+    // ...and still builds them for a healthy room.
+    expect(buildBotJobs(captionRoom(), 'caption', T0, 20_000, () => 'j')).toHaveLength(2);
+  });
+});
+
+describe('parseJudgeVerdict on a malformed answer', () => {
+  it('reads "not a caption" as unknown, not as an acceptance', () => {
+    // Codex review round 7, should-fix 1. The substring scan used to read this
+    // as `caption`, which reports a judge FAILURE as an acceptance and hides it
+    // in the metrics. `unknown` is the judge failing open, which is what an
+    // unparseable answer already means here.
+    expect(parseJudgeVerdict('this is not a caption')).toBe('unknown');
+    expect(parseJudgeVerdict('The text is not a caption.')).toBe('unknown');
+    expect(parseJudgeVerdict({ response: 'not caption' })).toBe('unknown');
+  });
+
+  it('still reads a plain verdict word, and prefers refusal over the others', () => {
+    expect(parseJudgeVerdict('caption')).toBe('caption');
+    expect(parseJudgeVerdict('I would call this a refusal, not a caption')).toBe('refusal');
+    expect(parseJudgeVerdict({ verdict: 'caption' })).toBe('caption');
   });
 });

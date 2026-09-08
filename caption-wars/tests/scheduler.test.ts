@@ -252,8 +252,13 @@ describe('photo failure backoff', () => {
     expect(state.phase).toBe('done');
     expect(state.endedReason).toBe('photo-unavailable');
     expect(state.photoRetry).toBeUndefined();
-    // The scores everyone earned still stand, and a champion is still named.
-    expect(state.championIds?.length).toBeGreaterThan(0);
+    // The scores everyone earned still stand. `championIds` is EMPTY here, and
+    // that is round 7's must-fix 2 landing rather than a regression: nobody in
+    // this room ever voted, so every score is 0 and there is no champion to
+    // name. Until round 7 this line asserted "a champion is still named", which
+    // is how a live game came to crown two bots that never wrote a word.
+    expect(state.players.every((p) => p.score === 0)).toBe(true);
+    expect(state.championIds).toEqual([]);
     // And the alarm now falls back to the room expiry, not to "right now".
     expect(nextAlarmAt(state, at + 20_000)).toBe(state.expiresAt);
   });

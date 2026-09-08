@@ -178,6 +178,19 @@ export function photoFrame(
   };
 }
 
+/**
+ * The one sentence the whole app uses when Workers AI has spent its daily free
+ * allowance (round 7, must-fix 1). Written once, here, because it appears on the
+ * lobby, on every phase screen and on the champion screen, and three copies of a
+ * sentence is three chances for them to disagree.
+ *
+ * It says what happened, in words a player can act on, and does not mention
+ * neurons, a binding, an error code or a plan tier.
+ */
+export const AI_OFFLINE_LINE =
+  'The AI players are offline today (the daily free AI allowance is used up). ' +
+  'They will be back after midnight UTC.';
+
 /** The lobby / in-game player list, with a badge on the AI players. */
 export function playerList(view: RoomView, viewerId: string): HTMLElement {
   const list = h('ul', { class: 'players' });
@@ -185,6 +198,11 @@ export function playerList(view: RoomView, viewerId: string): HTMLElement {
     const row = h('li', { class: 'player' }, [
       h('span', { class: 'player-name', text: player.name }),
       player.isBot ? h('span', { class: 'badge badge-ai', text: 'AI' }) : null,
+      // The AI players keep their row when the allowance runs out; they are
+      // marked, not removed, because their scores up to that point are real.
+      player.isBot && view.aiOffline === true
+        ? h('span', { class: 'badge badge-offline', text: 'offline' })
+        : null,
       player.id === viewerId ? h('span', { class: 'badge badge-you', text: 'you' }) : null,
       player.id === view.hostId ? h('span', { class: 'badge badge-host', text: 'host' }) : null,
     ]);
@@ -202,6 +220,9 @@ export function scoreboard(view: RoomView, viewerId: string, title = 'Scores'): 
       h('li', { class: player.id === viewerId ? 'score-row score-you' : 'score-row' }, [
         h('span', { class: 'score-name', text: player.name }),
         player.isBot ? h('span', { class: 'badge badge-ai', text: 'AI' }) : null,
+        player.isBot && view.aiOffline === true
+          ? h('span', { class: 'badge badge-offline', text: 'offline' })
+          : null,
         h('span', {
           class: 'score-points',
           text: player.score === 1 ? '1 point' : `${player.score} points`,

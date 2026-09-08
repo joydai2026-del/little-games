@@ -77,11 +77,31 @@ export function sanitizeCaption(raw, max = 120) {
   // and rather than letting the refusal detector fail an otherwise good answer.
   // Same move as cleanModelCaption in src/shared/text.ts.
   s = stripCaptionPrefix(s);
+  s = stripCaptionPreamble(s);
   s = stripSurroundingQuotes(s);
   s = toOneLine(s); // stripping quotes can reveal new leading/trailing junk
   s = stripCaptionPrefix(s); // a quoted "Caption: ..." reveals the label after unwrapping
+  s = stripCaptionPreamble(s);
   s = capLength(s, max);
   return s;
+}
+
+/**
+ * The WIDER preamble strip, twin of the one inside cleanModelCaption in
+ * src/shared/text.ts (Codex review round 7, nit 1).
+ *
+ * `stripCaptionPrefix` only removes a bare "Caption:" label. The round-6 live
+ * game shipped a whole sentence in front of the answer, verbatim:
+ *   This is the caption I wrote for the photo: "The moment you don't want to
+ *   discuss in the break room."
+ * The worker's bots were fixed then and the terminal agent was not, so a CLI
+ * brain could still submit that. Both halves stay bounded to 40 characters, so
+ * this can only ever eat a short preamble and never a sentence.
+ */
+export function stripCaptionPreamble(text) {
+  return String(text ?? '')
+    .replace(/^[^:]{0,40}\bcaption\b[^:]{0,40}:\s*/i, '')
+    .trim();
 }
 
 /**
@@ -219,7 +239,7 @@ export function looksLikeLabelling(text, terms = BLOCKED_TERMS) {
 // tests/guard-cases.json enforces.
 
 const SELF_REFERENCE_RE =
-  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai|artificial intelligence)\b/;
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai(?!-)|artificial intelligence)\b/;
 
 const REFUSAL_MARKERS = [
   "i'm not designed to",
@@ -234,8 +254,10 @@ const REFUSAL_MARKERS = [
   "i'm not capable",
   'i am not capable',
   'neutral ai',
-  "don't have feelings",
-  'do not have feelings',
+  // ROUND 7: the subject is back on the feelings markers (bare
+  // "don't have feelings" failed "Goats don't have feelings, only opinions.").
+  "i don't have feelings",
+  'i do not have feelings',
 ];
 
 /** Twin of CONTENT_POLICY_RE in src/shared/caption-guard.ts. */
@@ -249,8 +271,23 @@ const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
 // caption-guard.ts, including round 6's clause-start anchor (a live build
 // refused in its SECOND clause), the try-to / attempt-to adverbs, and the
 // removal of make / do / answer from the verb list.
-const REFUSAL_OPENER_RE =
-  /(?:^|[,.;:]\s+(?:so\s+|but\s+|and\s+|then\s+)?)(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+|try\s+to\s+|attempt\s+to\s+)*(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\s+(?:you|with))\b/;
+const REFUSAL_VERB_CORE =
+  "(?:(?:i'm\\s+|i\\s+am\\s+)?(?:sorry|afraid)[,.!\\s]+|unfortunately[,.!\\s]+){0,2}(?:but\\s+)?" +
+  "i(?:'m|\\s+am)?\\s*(?:cannot|can\\s?not|can't|won't|will\\s+not|not\\s+able|unable|do\\s+not|don't)" +
+  "\\s+(?:to\\s+|really\\s+|actually\\s+|try\\s+to\\s+|attempt\\s+to\\s+)*" +
+  '(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\\s+(?:you|with))\\b';
+
+const REFUSAL_OPENER_RE = new RegExp(`^${REFUSAL_VERB_CORE}`);
+
+// ROUND 7 (Claude should-fix 1): mid-sentence the same shape must NAME THE TASK.
+// Round 6's clause-start anchor bought four false positives that are ordinary
+// narrative continuations ("He blinked first, so I won't write home about it.").
+// Every real second-clause refusal names what it refuses. Twin of
+// REFUSAL_MID_CLAUSE_RE in src/shared/caption-guard.ts, where the reasoning is.
+const REFUSAL_TASK_OBJECT = '(?:caption|request|prompt|photo|image|picture|joke|humou?r)';
+const REFUSAL_MID_CLAUSE_RE = new RegExp(
+  `[,.;:]\\s+(?:so\\s+|but\\s+|and\\s+|then\\s+)?${REFUSAL_VERB_CORE}[^.!?]{0,40}?\\b${REFUSAL_TASK_OBJECT}\\b`
+);
 
 const META_MARKERS = [
   'the party game photo shows',
@@ -271,6 +308,12 @@ const META_MARKERS = [
   "here's a caption",
   'here is a caption',
   'here are some captions',
+];
+
+// ROUND 7: the `<determiner> <noun> of` openings only count when a determiner
+// follows, which is what a DESCRIPTION does ("a photo of A goat"). Twin of
+// META_OF_MARKERS in src/shared/caption-guard.ts, where the reasoning is.
+const META_OF_MARKERS = [
   'a photo of',
   'an image of',
   'a picture of',
@@ -278,6 +321,9 @@ const META_MARKERS = [
   'the image of',
   'the picture of',
 ];
+
+const DESCRIPTION_DETERMINER =
+  '(?:a|an|the|this|that|these|those|one|two|three|four|five|six|several|some|many|both)';
 
 /** Twin of markerRe in src/shared/caption-guard.ts. */
 function markerRe(marker, anchored) {
@@ -289,6 +335,9 @@ function markerRe(marker, anchored) {
 
 const REFUSAL_RES = REFUSAL_MARKERS.map((m) => markerRe(m, false));
 const META_RES = META_MARKERS.map((m) => markerRe(m, true));
+const META_OF_RES = META_OF_MARKERS.map(
+  (m) => new RegExp(`^${m.replace(/\s+/g, '\\s+')}\\s+${DESCRIPTION_DETERMINER}\\b`)
+);
 
 const CAPTION_PREFIX_RE = /^\s*(?:the\s+)?caption(?:\s+is)?\s*[:\-–—]\s*/i;
 
@@ -314,7 +363,10 @@ export function refusalMatch(text) {
   for (let i = 0; i < META_MARKERS.length; i++) {
     if (META_RES[i].test(flat)) return META_MARKERS[i];
   }
-  const opener = flat.match(REFUSAL_OPENER_RE);
+  for (let i = 0; i < META_OF_MARKERS.length; i++) {
+    if (META_OF_RES[i].test(flat)) return META_OF_MARKERS[i];
+  }
+  const opener = flat.match(REFUSAL_OPENER_RE) ?? flat.match(REFUSAL_MID_CLAUSE_RE);
   if (opener) return opener[0];
   return null;
 }

@@ -754,3 +754,119 @@ describe('RoomDO orphan photo bytes', () => {
     expect(storage.map.has('photo:2')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE WALL, end to end through the Durable Object (review round 7, must-fix 1).
+//
+// The reducer tests in room.test.ts prove what noteAiOffline DOES. This proves
+// the DO actually calls it: a real bot job, a real AI binding that answers the
+// live 4006 string, and the state that lands in storage afterwards.
+// ---------------------------------------------------------------------------
+
+/** An AI binding that is out of allocation, exactly the way the live one is. */
+function quotaAi(): Env {
+  return {
+    AI: {
+      run: async () => {
+        throw new Error(
+          "4006: you have used up your daily free allocation of 10,000 neurons, please " +
+            "upgrade to Cloudflare's Workers Paid plan if you would like to continue usage."
+        );
+      },
+    },
+  } as unknown as Env;
+}
+
+/** An AI binding that is merely having a bad minute. */
+function flakyAi(): Env {
+  return {
+    AI: {
+      run: async () => {
+        throw new Error('The operation was aborted due to timeout');
+      },
+    },
+  } as unknown as Env;
+}
+
+async function buildWith(room: RoomState, env: Env): Promise<{ room: RoomDO; storage: FakeStorage }> {
+  const storage = new FakeStorage();
+  storage.map.set('state', room);
+  storage.map.set('secrets', { host: SECRET, b1: 'bot-secret', b2: 'bot-secret-2' });
+  storage.map.set('personas', { b1: 'daisy-deadpan', b2: 'chaos-chip' });
+  storage.map.set('photo:1', { bytes: new ArrayBuffer(4), contentType: 'image/jpeg' });
+  const ctx = new FakeState(storage);
+  const doRoom = new RoomDO(ctx as unknown as DurableObjectState, env);
+  await ctx.loaded();
+  return { room: doRoom, storage };
+}
+
+/** A room with two bot caption jobs due right now. */
+function roomWithDueBotJobs(over: Partial<RoomState> = {}): RoomState {
+  const now = Date.now();
+  return seededRoom({
+    phaseEndsAt: now + 60_000,
+    botJobs: [
+      { jobId: 'j1', botId: 'b1', round: 1, phase: 'caption', dueAt: now - 1, deadline: now + 20_000, status: 'pending' },
+      { jobId: 'j2', botId: 'b2', round: 1, phase: 'caption', dueAt: now - 1, deadline: now + 20_000, status: 'pending' },
+    ],
+    ...over,
+  });
+}
+
+describe('RoomDO when Workers AI is out of its daily allocation', () => {
+  it('ends a solo host’s game once, instead of voiding every round in turn', async () => {
+    // The exact live shape: one human, two bots, and no model on the other end.
+    // Round 6's build played this out as N void rounds and then crowned the two
+    // silent bots joint champions on 0 points.
+    const { room, storage } = await buildWith(roomWithDueBotJobs(), quotaAi());
+    await room.alarm();
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('done');
+    expect(after.endedReason).toBe('ai-unavailable');
+    expect(after.championIds).toEqual([]);
+    // The bots keep their scoreboard rows, and their jobs say why they stopped.
+    expect(after.players.map((p) => p.id)).toEqual(['host', 'b1', 'b2']);
+    expect(after.botJobs.every((j) => j.status === 'failed')).toBe(true);
+    expect(after.botJobs.every((j) => j.failReason === 'ai-offline')).toBe(true);
+  });
+
+  it('keeps a two-human game running, with the bots off the next roster', async () => {
+    const withFriend = roomWithDueBotJobs();
+    const seeded: RoomState = {
+      ...withFriend,
+      players: [...withFriend.players, { id: 'p2', name: 'Friend', isBot: false, score: 0, lastSeenAt: T0 }],
+      roundPlayerIds: [...withFriend.roundPlayerIds, 'p2'],
+    };
+    const { room, storage } = await buildWith(seeded, quotaAi());
+    await room.alarm();
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.aiOffline).toBe(true);
+    expect(after.phase).toBe('caption'); // the two humans are still writing
+    expect(after.endedReason).toBeUndefined();
+  });
+
+  it('does NOT flag the room on an ordinary timeout', async () => {
+    // The whole point of the classifier: a bad minute must not cost the game its
+    // AI players for the rest of the day.
+    const { room, storage } = await buildWith(roomWithDueBotJobs(), flakyAi());
+    await room.alarm();
+
+    const after = storage.map.get('state') as RoomState;
+    expect(after.aiOffline).toBeUndefined();
+    expect(after.phase).toBe('caption');
+    expect(after.botJobs.every((j) => j.status === 'failed')).toBe(true);
+    expect(after.botJobs.every((j) => j.failReason === undefined)).toBe(true);
+  });
+
+  it('tells the player, in one plain sentence, through the state a screen reads', async () => {
+    const { room } = await buildWith(roomWithDueBotJobs(), quotaAi());
+    await room.alarm();
+    const res = await room.fetch(get('state', { 'x-player-id': 'host', 'x-player-secret': SECRET }));
+    const body = (await res.json()) as { state: { aiOffline?: boolean; endedReason?: string } };
+    expect(body.state.aiOffline).toBe(true);
+    expect(body.state.endedReason).toBe('ai-unavailable');
+  });
+});
