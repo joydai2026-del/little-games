@@ -62,6 +62,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
     visionModelFallback: set.visionModelFallback,
     textModel: set.textModel,
     timeoutMs: set.botTimeoutMs,
+    visionMaxBytes: set.visionMaxBytes,
   };
 
   await acceptMetaLicence(models.ai, models.visionModel);

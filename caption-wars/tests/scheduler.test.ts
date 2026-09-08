@@ -6,11 +6,16 @@
 import { describe, it, expect } from 'vitest';
 import { nextAlarmAt } from '../src/worker/schedule';
 import {
+  advance,
   advanceIfDue,
   createRoom,
   dueBotJobs,
   enqueueBotJobs,
+  markJobsRunning,
   nextBotJobDueAt,
+  notePhotoFailure,
+  photoRetryBlocked,
+  reapBotJobs,
   setJobStatus,
   start,
   submitCaption,
@@ -20,6 +25,7 @@ import type { BotJob, PhotoMeta, Player, RoomState } from '../src/shared/types';
 
 const T0 = 1_700_000_000_000;
 const PHOTO: PhotoMeta = { round: 1, source: 'picsum', sha256: 'c'.repeat(64), bytes: 100 };
+const PHOTO_2: PhotoMeta = { ...PHOTO, round: 2, sha256: 'e'.repeat(64) };
 
 function bot(id: string): Player {
   return { id, name: id, isBot: true, score: 0, lastSeenAt: T0 };
@@ -99,12 +105,14 @@ describe('nextAlarmAt', () => {
 describe('bot job selection', () => {
   it('returns only pending, due, in-round, in-phase jobs', () => {
     const base = start(lobby(), 'host', PHOTO, T0).state;
+    // Distinct botIds: one bot never gets two jobs for the same round + phase,
+    // and dueBotJobs now enforces that (see the dedupe test below).
     const state = enqueueBotJobs(base, [
-      jobAt(T0, { jobId: 'ready' }),
-      jobAt(T0 + 5_000, { jobId: 'later' }),
-      jobAt(T0, { jobId: 'done-already', status: 'done' }),
-      jobAt(T0, { jobId: 'wrong-round', round: 9 }),
-      jobAt(T0, { jobId: 'wrong-phase', phase: 'vote' }),
+      jobAt(T0, { jobId: 'ready', botId: 'b1' }),
+      jobAt(T0 + 5_000, { jobId: 'later', botId: 'b2' }),
+      jobAt(T0, { jobId: 'done-already', botId: 'b3', status: 'done' }),
+      jobAt(T0, { jobId: 'wrong-round', botId: 'b4', round: 9 }),
+      jobAt(T0, { jobId: 'wrong-phase', botId: 'b5', phase: 'vote' }),
     ]);
     expect(dueBotJobs(state, T0).map((j) => j.jobId)).toEqual(['ready']);
     // Later on, both are due: 'ready' is still pending and still inside its deadline.
@@ -155,10 +163,22 @@ describe('advanceIfDue', () => {
 
   it('opens a real vote window when there is something to vote on', () => {
     let state = start(lobby(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'a', 'c1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'b', 'c2', T0 + 2).state;
+    // Two captions from a two-player roster: the phase ends because everyone
+    // captioned, and there is a real ballot to run.
+    expect(state.phase).toBe('vote');
+    expect(state.phaseEndsAt).toBe(T0 + 2 + 30_000);
+  });
+
+  it('skips the vote window when the round is already void', () => {
+    let state = start(lobby(), 'host', PHOTO, T0).state;
     state = submitCaption(state, 'host', 'only mine', 'c1', T0 + 1).state;
     const at = advanceIfDue(state, state.phaseEndsAt!).state;
-    // One caption from the host: b1 can still vote for it, so the ballot stands.
-    expect(at.phase).toBe('vote');
+    // One caption cannot produce a winner, so there is nothing to vote on and
+    // the round lands straight on reveal instead of burning a 30s timer.
+    expect(at.phase).toBe('reveal');
+    expect(at.history[0].winnerCaptionIds).toEqual([]);
   });
 
   it('carries an overdue room forward one deadline at a time', () => {
@@ -178,5 +198,114 @@ describe('advanceIfDue', () => {
   it('leaves a done room alone forever', () => {
     const done = { ...lobby(), phase: 'done' as const };
     expect(advanceIfDue(done, T0 + 10 ** 9).state).toBe(done);
+  });
+});
+
+// --- a dead photo host must not spin the alarm --------------------------------
+//
+// The failure this covers: `settle()` needs the next round's photo, both image
+// hosts are unreachable, the room stays in `reveal` with `phaseEndsAt` already
+// in the past, and nextAlarmAt() returns `now`. The alarm fires instantly, tries
+// again, and re-arms to `now` again: a hot loop of outbound fetches until the
+// room expires two hours later, with every player staring at a frozen reveal.
+
+describe('photo failure backoff', () => {
+  /** A room sitting in reveal with its timer already expired, i.e. mid-rollover. */
+  function stuckAtRollover(): RoomState {
+    let state = start(lobby(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'a', 'c1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'b', 'c2', T0 + 2).state;
+    state = advanceIfDue(state, state.phaseEndsAt!).state; // vote -> reveal
+    expect(state.phase).toBe('reveal');
+    return state;
+  }
+
+  it('backs the alarm off instead of re-arming to now', () => {
+    const stuck = stuckAtRollover();
+    const overdue = stuck.phaseEndsAt! + 1;
+
+    // Before the fix this was the bug: the dead phase deadline is in the past,
+    // so the alarm asks to fire immediately, forever.
+    expect(nextAlarmAt(stuck, overdue)).toBe(overdue);
+
+    const first = notePhotoFailure(stuck, overdue).state;
+    expect(first.phase).toBe('reveal');
+    expect(first.photoRetry).toEqual({ attempts: 1, nextAttemptAt: overdue + 5_000 });
+    expect(nextAlarmAt(first, overdue)).toBe(overdue + 5_000);
+    expect(photoRetryBlocked(first, overdue + 4_999)).toBe(true);
+    expect(photoRetryBlocked(first, overdue + 5_000)).toBe(false);
+
+    const second = notePhotoFailure(first, overdue + 5_000).state;
+    expect(second.photoRetry).toEqual({ attempts: 2, nextAttemptAt: overdue + 20_000 });
+    expect(nextAlarmAt(second, overdue + 5_000)).toBe(overdue + 20_000);
+  });
+
+  it('ends the game honestly after the last attempt, rather than spinning', () => {
+    let state = stuckAtRollover();
+    const at = state.phaseEndsAt! + 1;
+    state = notePhotoFailure(state, at).state;
+    state = notePhotoFailure(state, at + 5_000).state;
+    expect(state.phase).toBe('reveal');
+
+    state = notePhotoFailure(state, at + 20_000).state;
+    expect(state.phase).toBe('done');
+    expect(state.endedReason).toBe('photo-unavailable');
+    expect(state.photoRetry).toBeUndefined();
+    // The scores everyone earned still stand, and a champion is still named.
+    expect(state.championIds?.length).toBeGreaterThan(0);
+    // And the alarm now falls back to the room expiry, not to "right now".
+    expect(nextAlarmAt(state, at + 20_000)).toBe(state.expiresAt);
+  });
+
+  it('forgets the failure once a round actually opens', () => {
+    let state = stuckAtRollover();
+    state = notePhotoFailure(state, state.phaseEndsAt! + 1).state;
+    expect(state.photoRetry).toBeDefined();
+
+    const opened = advance(state, 'timer', state.phaseEndsAt! + 6_000, PHOTO_2).state;
+    expect(opened.phase).toBe('caption');
+    expect(opened.photoRetry).toBeUndefined();
+  });
+});
+
+describe('bot job reaping', () => {
+  it('fails a job abandoned in `running`, and leaves a live one alone', () => {
+    const base = start(lobby(), 'host', PHOTO, T0).state;
+    const state = enqueueBotJobs(base, [
+      jobAt(T0, { jobId: 'abandoned', botId: 'b1', status: 'running' }),
+      jobAt(T0, { jobId: 'live', botId: 'b2', status: 'running' }),
+      jobAt(T0, { jobId: 'never-ran', botId: 'b3' }),
+      jobAt(T0, { jobId: 'finished', botId: 'b4', status: 'done' }),
+    ]);
+
+    // Nothing is past its 20s deadline yet.
+    expect(reapBotJobs(state, T0 + 1_000)).toBe(state);
+
+    const reaped = reapBotJobs(state, T0 + 20_001);
+    const status = (id: string) => reaped.botJobs.find((j) => j.jobId === id)!.status;
+    expect(status('abandoned')).toBe('failed'); // the DO died mid model call
+    expect(status('never-ran')).toBe('failed'); // expired before it was ever due
+    expect(status('finished')).toBe('done'); // terminal statuses are never touched
+  });
+
+  it('does not hand out a second attempt while one is running or done', () => {
+    const base = start(lobby(), 'host', PHOTO, T0).state;
+    const running = enqueueBotJobs(base, [
+      jobAt(T0, { jobId: 'first', botId: 'b1', status: 'running' }),
+      jobAt(T0, { jobId: 'second', botId: 'b1' }),
+    ]);
+    expect(dueBotJobs(running, T0)).toEqual([]);
+
+    // Once the first attempt is recorded failed, a retry is allowed again.
+    const failed = setJobStatus(running, 'first', 'failed');
+    expect(dueBotJobs(failed, T0).map((j) => j.jobId)).toEqual(['second']);
+  });
+
+  it('takes a lease with a startedAt stamp when a job starts running', () => {
+    const base = start(lobby(), 'host', PHOTO, T0).state;
+    const state = enqueueBotJobs(base, [jobAt(T0, { jobId: 'j1' })]);
+    const leased = markJobsRunning(state, ['j1'], T0 + 5);
+    expect(leased.botJobs[0]).toMatchObject({ status: 'running', startedAt: T0 + 5 });
+    expect(markJobsRunning(leased, [], T0 + 6)).toBe(leased);
   });
 });

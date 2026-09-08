@@ -34,7 +34,12 @@ export function createDoneScreen(ctx: RoomCtx): PhaseScreen {
     el,
     update(view: RoomView) {
       const champions = view.championIds ?? [];
-      if (champions.length === 0) {
+      // The game can also end because the photo host went away mid-game. Say so
+      // plainly, and still show the scores everyone earned up to that point.
+      if (view.endedReason === 'photo-unavailable') {
+        banner.textContent = 'Game over';
+        line.textContent = 'We could not fetch a photo. Game over.';
+      } else if (champions.length === 0) {
         banner.textContent = 'Game over';
         line.textContent = 'No champion this time.';
       } else {

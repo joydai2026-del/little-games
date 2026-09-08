@@ -40,6 +40,7 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
   let signature = '';
   let chosenId: string | null = null;
   let sending = false;
+  let watching = false;
 
   function ownId(captions: CaptionView[]): string | null {
     const flagged = captions.find((c) => c.isOwn === true || c.playerId === ctx.playerId);
@@ -52,10 +53,12 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
       const button = buttons.get(caption.id);
       if (!button) continue;
       const isOwn = caption.id === own;
-      const votable = !isOwn && caption.canVote !== false && chosenId === null;
+      const votable = !isOwn && caption.canVote !== false && chosenId === null && !watching;
       button.classList.toggle('vote-own', isOwn);
       button.classList.toggle('vote-chosen', chosenId === caption.id);
-      button.disabled = isOwn || sending || chosenId !== null;
+      // A spectator joined after the roster froze: the server would answer their
+      // tap with a 409, so the cards are dead rather than lying about being live.
+      button.disabled = isOwn || sending || chosenId !== null || watching;
       const tag = button.querySelector('.vote-tag');
       if (tag) {
         tag.textContent = isOwn ? 'yours' : chosenId === caption.id ? 'your vote' : '';
@@ -77,7 +80,7 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
         tag,
       ]);
       button.addEventListener('click', () => {
-        if (sending || chosenId !== null) return;
+        if (sending || chosenId !== null || watching) return;
         sending = true;
         paintStates(captions);
         void ctx.actions.sendVote(caption.id).then((ok) => {
@@ -98,7 +101,7 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
       roundLine.textContent = `Round ${view.round} of ${view.options.rounds}`;
       photo.set(view);
 
-      const watching = isSpectator(view, ctx.playerId);
+      watching = isSpectator(view, ctx.playerId);
       spectator.hidden = !watching;
 
       const captions = view.captions;
@@ -108,14 +111,17 @@ export function createVoteScreen(ctx: RoomCtx): PhaseScreen {
         rebuild(captions);
       }
 
-      // A vote the server already recorded (e.g. after a reload) wins over
-      // the local flag.
-      const recorded = view.votes?.[ctx.playerId];
+      // A vote the server already recorded (e.g. after a reload) wins over the
+      // local flag. It arrives as `yourVote`, not in `votes`: the live ballot is
+      // secret during this phase, so `votes` is empty until the reveal.
+      const recorded = view.yourVote;
       if (typeof recorded === 'string' && recorded) chosenId = recorded;
       paintStates(captions);
 
       if (captions.length === 0) {
         prompt.textContent = 'No captions this round';
+      } else if (watching) {
+        prompt.textContent = 'The others are voting';
       }
     },
     tick(msLeft: number) {

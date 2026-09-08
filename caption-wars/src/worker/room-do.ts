@@ -18,15 +18,28 @@
 //   4. Player secrets live in their own storage key and are never part of
 //      RoomState, so they cannot leak through a state response.
 //   5. Time is checked on every request (settle()), the alarm is only a backup.
+//
+// Two rules the first review round added:
+//
+//   6. Photo bytes are fetched BEFORE anything is written, through one shared
+//      in-flight promise per round, and the bytes land in storage only in the
+//      same step that commits the state pointing at them. Two concurrent
+//      settles can never leave state naming photo A while storage holds B.
+//   7. Every path out of fetch() re-arms the alarm exactly once, at the end.
+//      A plain GET can advance the room, so a GET must re-arm too.
 
-import type { BotJob, Player, RoomState } from '../shared/types';
+import type { BotJob, PhotoMeta, Player, RoomOptions, RoomState } from '../shared/types';
 import {
   advance,
   advanceIfDue,
   dueBotJobs,
   enqueueBotJobs,
+  markJobsRunning,
+  notePhotoFailure,
   orderedCaptions,
+  photoRetryBlocked,
   publicView,
+  reapBotJobs,
   setJobStatus,
   roundMatches,
   stampMatches,
@@ -39,6 +52,7 @@ import {
   start,
   type StateStamp,
 } from '../shared/room';
+import { normalizeOptions } from '../shared/config';
 import { newCaptionId, newPlayerId } from '../shared/ids';
 import { pickPersonas, PERSONAS, type Persona } from '../shared/personas';
 import { settings, type Env, type Settings } from './env';
@@ -59,6 +73,16 @@ interface StoredPhoto {
   contentType: string;
 }
 
+/** A photo that has been fetched but not yet written anywhere. */
+interface PendingPhoto {
+  meta: PhotoMeta;
+  bytes: ArrayBuffer;
+  contentType: string;
+}
+
+/** The body both photo 404s use, so the route cannot be used to probe room codes. */
+const ROOM_GONE = 'that room is not around any more';
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -72,6 +96,8 @@ export class RoomDO implements DurableObject {
   /** botId -> persona, so a bot's voice survives a DO restart. */
   private personas: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
+  /** One in-flight photo fetch per round, so concurrent settles share one download. */
+  private readonly photoFetches = new Map<number, Promise<PendingPhoto | null>>();
   private readonly set: Settings;
 
   constructor(
@@ -121,6 +147,8 @@ export class RoomDO implements DurableObject {
    * round needs one. Called at the top of every request and from the alarm.
    */
   private async settle(now: number): Promise<void> {
+    await this.reapJobs(now);
+
     for (let pass = 0; pass < 3; pass++) {
       if (!this.room) return;
 
@@ -132,15 +160,35 @@ export class RoomDO implements DurableObject {
       }
       if (!result.needsPhoto || !this.room) return;
 
-      // reveal -> next round: the photo is I/O, so stamp, fetch, re-check.
+      // A previous fetch failed and its backoff has not run out: do nothing,
+      // the alarm is already set for the retry moment.
+      if (photoRetryBlocked(this.room, now)) return;
+
+      // reveal -> next round: the photo is I/O, so stamp, fetch, re-check, and
+      // only then write the bytes and the state that names them.
       const stamp = stampOf(this.room);
       const nextRound = this.room.round + 1;
-      const photo = await this.loadPhoto(nextRound);
+      const pending = await this.fetchPhotoOnce(nextRound);
       if (!this.room || !stampMatches(this.room, stamp)) return;
-      if (!photo) return; // could not load one; stay in reveal and retry on the next alarm
 
-      const adv = advance(this.room, 'timer', now, photo, this.set.revealMinMs);
+      if (!pending) {
+        // Both image hosts are down. Back off, and after a few tries end the
+        // game honestly instead of spinning the alarm on a dead fetch.
+        const failed = notePhotoFailure(this.room, now);
+        this.room = failed.state;
+        await this.save();
+        return;
+      }
+
+      const adv = advance(this.room, 'timer', now, pending.meta, this.set.revealMinMs);
       if (adv.state === this.room) return;
+      // Bytes first, then the state that names them, so no client can ever ask
+      // for a photo the room has already announced. There is an await between
+      // the stamp check and the assignment, which amendment 9 normally forbids,
+      // and it is safe here for one reason only: fetchPhotoOnce guarantees a
+      // single download per round, so a concurrent settle is writing the SAME
+      // bytes and computing the SAME transition. Two of them are idempotent.
+      await this.commitPhotoBytes(nextRound, pending);
       this.room = adv.state;
       await this.save();
       await this.syncBotJobs(now);
@@ -149,24 +197,59 @@ export class RoomDO implements DurableObject {
 
   // --- photos ----------------------------------------------------------------
 
-  /** Fetches, stores, and rotates out the round's photo bytes. Returns its metadata. */
-  private async loadPhoto(round: number) {
-    if (!this.room) return null;
+  /**
+   * Downloads the round's photo. Writes NOTHING: the caller re-checks its state
+   * stamp first and then calls commitPhotoBytes, so a duplicate Start/Next can
+   * never leave `photo.sha256` in state pointing at bytes another request
+   * overwrote.
+   *
+   * One in-flight promise per round, shared by every concurrent caller, so two
+   * settles racing the same rollover download once and agree on the result.
+   */
+  private fetchPhotoOnce(round: number): Promise<PendingPhoto | null> {
+    const existing = this.photoFetches.get(round);
+    if (existing) return existing;
+
+    const promise = this.downloadPhoto(round);
+    this.photoFetches.set(round, promise);
+    void promise.then(
+      () => {
+        if (this.photoFetches.get(round) === promise) this.photoFetches.delete(round);
+      },
+      () => {
+        if (this.photoFetches.get(round) === promise) this.photoFetches.delete(round);
+      }
+    );
+    return promise;
+  }
+
+  /** The download itself. Never throws: a failure is null, which the caller backs off on. */
+  private async downloadPhoto(round: number): Promise<PendingPhoto | null> {
+    const code = this.room?.code;
+    if (!code) return null;
     try {
-      const fetched = await fetchPhoto(this.set, this.room.code, round);
+      const fetched = await fetchPhoto(this.set, code, round);
       const buffer = new ArrayBuffer(fetched.bytes.byteLength);
       new Uint8Array(buffer).set(fetched.bytes);
-      await this.ctx.storage.put<StoredPhoto>(photoKey(round), {
-        bytes: buffer,
-        contentType: fetched.contentType,
-      });
-      // Only the newest two rounds of bytes are kept.
-      if (round >= 3) await this.ctx.storage.delete(photoKey(round - 2));
-      return fetched.meta;
+      return { meta: fetched.meta, bytes: buffer, contentType: fetched.contentType };
     } catch (err) {
       console.error('photo: ', err instanceof Error ? err.message : err);
       return null;
     }
+  }
+
+  /**
+   * Writes the fetched bytes, then rotates old rounds out. Called immediately
+   * before the state that names them is saved, so the bytes are always on disk
+   * by the time any client can ask for them.
+   */
+  private async commitPhotoBytes(round: number, pending: PendingPhoto): Promise<void> {
+    await this.ctx.storage.put<StoredPhoto>(photoKey(round), {
+      bytes: pending.bytes,
+      contentType: pending.contentType,
+    });
+    // Only the newest two rounds of bytes are kept.
+    if (round >= 3) await this.ctx.storage.delete(photoKey(round - 2));
   }
 
   private async photoBytes(round: number): Promise<Uint8Array | null> {
@@ -207,6 +290,7 @@ export class RoomDO implements DurableObject {
       visionModelFallback: this.set.visionModelFallback,
       textModel: this.set.textModel,
       timeoutMs: this.set.botTimeoutMs,
+      visionMaxBytes: this.set.visionMaxBytes,
     };
   }
 
@@ -256,6 +340,19 @@ export class RoomDO implements DurableObject {
     return true;
   }
 
+  /**
+   * Closes out every job whose deadline has passed. A job left `running` by a
+   * Durable Object that died mid-model-call is otherwise never retried and never
+   * recorded, so the room's job list would never converge.
+   */
+  private async reapJobs(now: number): Promise<void> {
+    if (!this.room) return;
+    const reaped = reapBotJobs(this.room, now);
+    if (reaped === this.room) return;
+    this.room = reaped;
+    await this.save();
+  }
+
   /** Runs every due bot job. Failures are logged and dropped; nobody waits on them. */
   private async runDueBotJobs(now: number): Promise<void> {
     const room = this.room;
@@ -263,10 +360,10 @@ export class RoomDO implements DurableObject {
     const due = dueBotJobs(room, now);
     if (due.length === 0) return;
 
-    // Mark running first so a second alarm cannot double-run the same job.
-    let marked = room;
-    for (const job of due) marked = setJobStatus(marked, job.jobId, 'running');
-    this.room = marked;
+    // Take the lease first (status `running` plus `startedAt`) so a second alarm
+    // cannot double-run the same job, and so a job abandoned by a dying DO can
+    // be recognised and failed later by reapBotJobs.
+    this.room = markJobsRunning(room, due.map((job) => job.jobId), now);
     await this.save();
 
     const models = this.botModels();
@@ -292,6 +389,7 @@ export class RoomDO implements DurableObject {
     }
 
     await this.settle(now);
+    await this.reapJobs(Date.now());
     await this.runDueBotJobs(Date.now());
     // A bot's own caption can complete the roster and flip the phase, which
     // means the next phase's jobs still need enqueueing before we settle again.
@@ -316,7 +414,11 @@ export class RoomDO implements DurableObject {
 
   private envelope(viewerId: string, extra: Record<string, unknown> = {}): Response {
     const now = Date.now();
-    return json({ state: publicView(this.room!, viewerId, now), serverTime: now, ...extra });
+    return json({
+      state: publicView(this.room!, viewerId, now, this.set.revealMinMs),
+      serverTime: now,
+      ...extra,
+    });
   }
 
   // --- HTTP ------------------------------------------------------------------
@@ -329,7 +431,7 @@ export class RoomDO implements DurableObject {
     if (path === 'create') return this.handleCreate(request, now);
 
     if (this.room && now >= this.room.expiresAt) await this.destroy();
-    if (!this.room) return json({ error: 'that room is not around any more' }, 404);
+    if (!this.room) return json({ error: ROOM_GONE }, 404);
 
     // The photo bytes are the only route a browser reaches with an <img> tag,
     // which cannot send headers. Rather than push a room secret into a URL
@@ -351,8 +453,25 @@ export class RoomDO implements DurableObject {
     }
 
     await this.settle(now);
-    if (!this.room) return json({ error: 'that room is not around any more' }, 404);
+    if (!this.room) return json({ error: ROOM_GONE }, 404);
 
+    const response = await this.route(path, url, request, playerId, now);
+
+    // Every path down here can have mutated the room, INCLUDING the plain GET:
+    // settle() above advances the clock on any request. The single alarm is
+    // re-armed once, here, so no route can strand a due bot job or a phase
+    // deadline by returning early.
+    await this.armAlarm(Date.now());
+    return response;
+  }
+
+  private route(
+    path: string,
+    url: URL,
+    request: Request,
+    playerId: string,
+    now: number
+  ): Promise<Response> | Response {
     switch (path) {
       case 'state':
         return this.handleState(url, playerId);
@@ -379,7 +498,11 @@ export class RoomDO implements DurableObject {
     };
 
     const hostId = newPlayerId();
-    const chosen = pickPersonas(Number(body.options?.botCount ?? 2));
+    // Clamp FIRST, then build exactly that many bots, so state's botCount and the
+    // actual roster can never disagree (a botCount of "x" used to advertise 2 AI
+    // players and create none).
+    const options = normalizeOptions(body.options as Partial<RoomOptions> | undefined);
+    const chosen = pickPersonas(options.botCount);
     const bots: Player[] = chosen.map((persona) => ({
       id: newPlayerId(),
       name: persona.name,
@@ -388,18 +511,12 @@ export class RoomDO implements DurableObject {
       lastSeenAt: now,
     }));
 
-    const room = createRoom(body.code, { id: hostId, name: body.name }, body.options, bots, now);
+    const room = createRoom(body.code, { id: hostId, name: body.name }, options, bots, now);
     if (room.players[0].name.length === 0) return json({ error: 'name required' }, 400);
-
-    // normalizeOptions may have clamped botCount below what we just built.
-    const keep = room.options.botCount;
-    room.players = [room.players[0], ...bots.slice(0, keep)];
 
     this.room = room;
     this.secrets = { [hostId]: crypto.randomUUID() };
-    this.personas = Object.fromEntries(
-      bots.slice(0, keep).map((bot, i) => [bot.id, chosen[i].id])
-    );
+    this.personas = Object.fromEntries(bots.map((bot, i) => [bot.id, chosen[i].id]));
 
     await this.ctx.storage.put({
       [KEY_STATE]: this.room,
@@ -417,7 +534,7 @@ export class RoomDO implements DurableObject {
 
   private async handleJoin(request: Request, now: number): Promise<Response> {
     await this.settle(now);
-    if (!this.room) return json({ error: 'that room is not around any more' }, 404);
+    if (!this.room) return json({ error: ROOM_GONE }, 404);
 
     const body = (await request.json()) as { name?: string };
     const playerId = newPlayerId();
@@ -438,20 +555,20 @@ export class RoomDO implements DurableObject {
     if (room.phase !== 'lobby') return json({ error: 'this game already started' }, 409);
     if (playerId !== room.hostId) return json({ error: 'only the host can start' }, 403);
 
-    // The photo is I/O, so stamp before and re-check after.
+    // The photo is I/O, so stamp, fetch, re-check, and only then write.
     const stamp = stampOf(room);
-    const photo = await this.loadPhoto(1);
-    if (!photo) return json({ error: 'could not load a photo, try again' }, 502);
+    const pending = await this.fetchPhotoOnce(1);
+    if (!pending) return json({ error: 'could not load a photo, try again' }, 502);
     if (!this.room || !stampMatches(this.room, stamp)) {
       return json({ error: 'this game already started' }, 409);
     }
 
-    const result = start(this.room, playerId, photo, Date.now());
+    const result = start(this.room, playerId, pending.meta, Date.now());
     if (result.error) return json({ error: result.error }, 409);
+    await this.commitPhotoBytes(1, pending);
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());
-    await this.armAlarm(Date.now());
     return this.envelope(playerId);
   }
 
@@ -468,7 +585,6 @@ export class RoomDO implements DurableObject {
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());
-    await this.armAlarm(Date.now());
     return this.envelope(playerId);
   }
 
@@ -478,31 +594,42 @@ export class RoomDO implements DurableObject {
     if (result.error) return json({ error: result.error }, 409);
     this.room = result.state;
     await this.save();
-    await this.armAlarm(Date.now());
     return this.envelope(playerId);
   }
 
   private async handleNext(playerId: string): Promise<Response> {
     const room = this.room!;
+    // The reveal timer can auto-advance to `done` in the gap between the host
+    // reading the screen and their tap landing. Asking to move on from a game
+    // that is already over got what it asked for, so it is a 200 with the state,
+    // not an error the champion screen has to apologise for.
+    if (room.phase === 'done') return this.envelope(playerId);
     if (room.phase !== 'reveal') return json({ error: 'nothing to move on from' }, 409);
 
     const dryRun = advance(room, playerId, Date.now(), undefined, this.set.revealMinMs);
     if (dryRun.error) return json({ error: dryRun.error }, 403);
 
-    let photo;
+    let pending: PendingPhoto | null = null;
+    const nextRound = room.round + 1;
     if (dryRun.needsPhoto) {
       const stamp = stampOf(room);
-      photo = await this.loadPhoto(room.round + 1);
-      if (!photo) return json({ error: 'could not load a photo, try again' }, 502);
+      pending = await this.fetchPhotoOnce(nextRound);
+      if (!pending) return json({ error: 'could not load a photo, try again' }, 502);
       if (!this.room || !stampMatches(this.room, stamp)) return this.envelope(playerId);
     }
 
-    const result = advance(this.room!, playerId, Date.now(), photo, this.set.revealMinMs);
+    const result = advance(
+      this.room!,
+      playerId,
+      Date.now(),
+      pending?.meta,
+      this.set.revealMinMs
+    );
     if (result.error) return json({ error: result.error }, 403);
+    if (pending) await this.commitPhotoBytes(nextRound, pending);
     this.room = result.state;
     await this.save();
     await this.syncBotJobs(Date.now());
-    await this.armAlarm(Date.now());
     return this.envelope(playerId);
   }
 
@@ -522,7 +649,10 @@ export class RoomDO implements DurableObject {
 
   private async handlePhoto(round: number): Promise<Response> {
     const stored = await this.ctx.storage.get<StoredPhoto>(photoKey(round));
-    if (!stored) return json({ error: 'no photo for that round' }, 404);
+    // Deliberately the same body a missing room gives. This route is open (an
+    // <img> cannot send headers), so a different message here would turn it into
+    // an unauthenticated oracle for "is this room code live?".
+    if (!stored) return json({ error: ROOM_GONE }, 404);
     return new Response(stored.bytes, {
       headers: {
         'Content-Type': stored.contentType || 'image/jpeg',

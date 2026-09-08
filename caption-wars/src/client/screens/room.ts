@@ -110,6 +110,10 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         .then((reply) => {
           identity = { playerId: reply.playerId, playerSecret: reply.playerSecret };
           writeIdentity(code, identity);
+          // Before absorb(), not after: the first paint asks "which of these is
+          // me?" and would otherwise render with an empty id (no "you" badge,
+          // and isSpectator briefly true).
+          ctx.playerId = identity.playerId;
           showProblem(null);
           if (reply.state) absorb(reply);
           beginPolling();
@@ -147,6 +151,12 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
 
   const paint = (): void => {
     if (!view) return;
+    // The game is over: polling has already stopped, so the once-a-second tick
+    // has nothing left to count down.
+    if (view.phase === 'done' && ticker !== 0) {
+      window.clearInterval(ticker);
+      ticker = 0;
+    }
     if (shownPhase !== view.phase || !screen) {
       screen?.destroy();
       screen = build(view.phase, ctx);
@@ -222,8 +232,20 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
           });
       },
       next() {
-        if (!identity) return;
-        void nextRound(code, identity).then(absorb).catch(handleActionError);
+        if (!identity) return Promise.resolve(false);
+        return nextRound(code, identity)
+          .then((envelope) => {
+            absorb(envelope);
+            return true;
+          })
+          .catch((error: unknown) => {
+            // The reveal timer can end the game while the host's tap is in
+            // flight. They asked to move on from a game that already moved on,
+            // so that is not a failure worth a toast.
+            if (view?.phase === 'done') return true;
+            handleActionError(error);
+            return false;
+          });
       },
       playAgain() {
         const name =

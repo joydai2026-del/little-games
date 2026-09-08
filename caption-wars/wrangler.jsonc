@@ -29,6 +29,7 @@
     "PHOTO_WIDTH": "800",
     "PHOTO_HEIGHT": "600",
     "PHOTO_MAX_BYTES": "2000000",
+    "VISION_MAX_BYTES": "1000000",
     "VISION_MODEL": "@cf/meta/llama-3.2-11b-vision-instruct",
     "VISION_MODEL_FALLBACK": "@cf/llava-hf/llava-1.5-7b-hf",
     "TEXT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",

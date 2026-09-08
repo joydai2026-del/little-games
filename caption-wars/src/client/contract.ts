@@ -70,7 +70,18 @@ export interface RoomView {
   roundPlayerIds?: string[];
   photo?: PhotoMetaView;
   captions: CaptionView[];
+  /**
+   * Empty during `caption` and `vote`: the server hides the live ballot, because
+   * its keys are player ids. Full from `reveal` on. Read `yourVote` for the
+   * viewer's own pick while it is hidden.
+   */
   votes: Record<string, string>;
+  /** The viewer's own vote this round, or null. Survives a reload during `vote`. */
+  yourVote?: string | null;
+  /** How long `reveal` must be on screen before the host may skip it. */
+  revealMinMs?: number;
+  /** Why the game ended, when it did not end by playing out every round. */
+  endedReason?: string;
   phaseEndsAt?: number;
   phaseStartedAt?: number;
   history: RoundResultView[];

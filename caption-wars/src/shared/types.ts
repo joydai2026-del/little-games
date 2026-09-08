@@ -51,6 +51,11 @@ export interface Caption {
  * One unit of bot work, stored in room state so it survives the Durable Object
  * being evicted mid-flight. The DO's single alarm runs jobs whose `dueAt` has
  * passed; a job past `deadline` is abandoned, never retried.
+ *
+ * `startedAt` is the lease stamp written when the job flips to `running`. If the
+ * Durable Object dies during the model call the job would otherwise sit
+ * `running` forever, so `reapBotJobs` marks any `pending` or `running` job past
+ * its `deadline` as `failed` on the next alarm or settle.
  */
 export interface BotJob {
   jobId: string;
@@ -59,6 +64,8 @@ export interface BotJob {
   phase: 'caption' | 'vote';
   dueAt: number;
   deadline: number;
+  /** Set when the job flips to `running`; absent while it is still `pending`. */
+  startedAt?: number;
   status: 'pending' | 'running' | 'done' | 'failed';
 }
 
@@ -98,6 +105,14 @@ export interface RoomState {
   botJobs: BotJob[];
   history: RoundResult[];
   championIds?: string[];
+  /**
+   * Set only while the next round's photo could not be fetched: how many
+   * attempts have failed and when the next one is allowed. Cleared the moment a
+   * round opens. It is what stops a dead image host from spinning the alarm.
+   */
+  photoRetry?: { attempts: number; nextAttemptAt: number };
+  /** Why the game ended, when it did not end by playing out all the rounds. */
+  endedReason?: 'photo-unavailable';
   nextPollMs: number;
 }
 
@@ -126,6 +141,16 @@ export interface PublicRoomState extends Omit<RoomState, 'captions' | 'botJobs'>
   captions: PublicCaption[];
   /** Captions submitted so far this round (visible during `caption` so players see "N of M in"). */
   captionCount: number;
+  /**
+   * Empty during `caption` and `vote`: a live ballot is secret, and the keys of
+   * this map are player ids, so shipping it would show everyone who voted for
+   * what before the reveal. Full from `reveal` on.
+   */
+  votes: Record<string, string>;
+  /** The viewer's own vote this round, so a reload can restore it while votes are hidden. */
+  yourVote: string | null;
+  /** How long `reveal` must be on screen before the host may skip it. */
+  revealMinMs: number;
   serverTime: number;
 }
 

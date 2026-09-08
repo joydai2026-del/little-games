@@ -2,10 +2,11 @@
 // the round. Winning cards get a gold pulse AND the word "winner", so the
 // colour is never the only signal.
 
+import { REVEAL_MIN_MS } from '../../shared/config';
 import type { CaptionView, RoomView } from '../contract';
+import { serverNow } from '../state';
 import { h } from '../ui';
 import {
-  countdown,
   isHost,
   photoFrame,
   playerName,
@@ -65,6 +66,17 @@ function captionCard(
   ]);
 }
 
+/**
+ * Milliseconds left on the reveal floor: how long the scoreboard still has to
+ * stay on screen before the server will accept the host's "next". The button is
+ * disabled and counts down until this reaches zero, so the tap can never fail.
+ */
+function floorMsLeft(view: RoomView | null): number {
+  if (!view || typeof view.phaseStartedAt !== 'number') return 0;
+  const floor = typeof view.revealMinMs === 'number' ? view.revealMinMs : REVEAL_MIN_MS;
+  return Math.max(0, view.phaseStartedAt + floor - serverNow());
+}
+
 export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
   const banner = h('h2', { class: 'banner', text: '' });
   const photo = photoFrame(ctx, 'small');
@@ -75,10 +87,6 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
     type: 'button',
     text: 'Next round',
   });
-  nextButton.addEventListener('click', () => {
-    nextButton.disabled = true;
-    ctx.actions.next();
-  });
   const waitLine = h('p', { class: 'wait-line', text: 'Next round soon.' });
 
   const el = h('div', {}, [
@@ -88,11 +96,58 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
   ]);
 
   let host = false;
-  let lastRound = -1;
+  let sending = false;
+  let current: RoomView | null = null;
+
+  /** The label the button carries when it is actually tappable. */
+  function baseLabel(view: RoomView): string {
+    return view.round >= view.options.rounds ? 'See the champion' : 'Next round';
+  }
+
+  /**
+   * The button's whole state, in one place: hidden for non-hosts, disabled with
+   * a countdown while the reveal floor runs, disabled while a tap is in flight,
+   * and tappable otherwise. Re-enabling on failure lives here too, which is what
+   * an early tap used to break.
+   */
+  function paintButton(): void {
+    if (!current) return;
+    nextButton.hidden = !host;
+    waitLine.hidden = host;
+    if (!host) return;
+
+    const label = baseLabel(current);
+    const waitMs = floorMsLeft(current);
+    if (sending) {
+      nextButton.disabled = true;
+      nextButton.textContent = label;
+      return;
+    }
+    if (waitMs > 0) {
+      nextButton.disabled = true;
+      nextButton.textContent = `${label} in ${Math.ceil(waitMs / 1000)}s`;
+      return;
+    }
+    nextButton.disabled = false;
+    nextButton.textContent = label;
+  }
+
+  nextButton.addEventListener('click', () => {
+    if (sending || nextButton.disabled) return;
+    sending = true;
+    paintButton();
+    void ctx.actions.next().then(() => {
+      // Whatever happened, the button comes back: a failed move-on used to
+      // leave the host staring at a dead button for the rest of the round.
+      sending = false;
+      paintButton();
+    });
+  });
 
   return {
     el,
     update(view: RoomView) {
+      current = view;
       photo.set(view);
       const counts = countVotes(view);
       const winners = new Set(winnerIds(view, counts));
@@ -116,17 +171,13 @@ export function createRevealScreen(ctx: RoomCtx): PhaseScreen {
       board.replaceChildren(scoreboard(view, ctx.playerId));
 
       host = isHost(view, ctx.playerId);
-      nextButton.hidden = !host;
-      waitLine.hidden = host;
-      if (host) {
-        const last = view.round >= view.options.rounds;
-        nextButton.textContent = last ? 'See the champion' : 'Next round';
-        if (view.round !== lastRound) nextButton.disabled = false;
-      }
-      lastRound = view.round;
+      paintButton();
     },
     tick(msLeft: number) {
-      if (host) return;
+      if (host) {
+        paintButton();
+        return;
+      }
       const seconds = Math.max(0, Math.ceil(msLeft / 1000));
       waitLine.textContent = seconds > 0 ? `Next round in ${seconds}s` : 'Next round any moment.';
     },

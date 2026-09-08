@@ -4,6 +4,10 @@
 // worker. See docs/plans/2026-09-07-mvp-plan.md, "Programmable policy".
 
 import type { Phase, RoomOptions } from './types';
+// The two text limits live in JSON because agent/play.mjs (plain ESM, no build
+// step) has to read the SAME numbers. It loads this file with fs at startup, so
+// the caption cap can never drift between the server and the terminal player.
+import limits from './limits.json';
 
 /** Defaults applied when the host does not override a field at create time. */
 export const DEFAULT_ROOM_OPTIONS: RoomOptions = {
@@ -17,8 +21,8 @@ export const DEFAULT_ROOM_OPTIONS: RoomOptions = {
 /** Config that is not a per-room option (fixed policy, not host-tunable). */
 export const MAX_HUMAN_PLAYERS = 8;
 export const MAX_BOTS = 4;
-export const CAPTION_MAX_CHARS = 120;
-export const NAME_MAX_CHARS = 20;
+export const CAPTION_MAX_CHARS = limits.captionMaxChars;
+export const NAME_MAX_CHARS = limits.nameMaxChars;
 export const ROOM_TTL_HOURS = 2;
 export const ROOM_TTL_MS = ROOM_TTL_HOURS * 60 * 60 * 1000;
 
@@ -35,6 +39,34 @@ export const BOT_TIMEOUT_MS = 20000;
 
 /** Byte cap on a fetched photo, overridable through the wrangler var PHOTO_MAX_BYTES. */
 export const PHOTO_MAX_BYTES = 2_000_000;
+
+/**
+ * Separate, smaller cap on the bytes handed to the vision model, overridable
+ * through the wrangler var VISION_MAX_BYTES. A photo bigger than this is still
+ * stored and still served to every player: only the bot skips its caption for
+ * that round, with the reason logged. The two caps are deliberately different
+ * numbers because `Array.from(bytes)` at the storage cap would build a
+ * multi-million-element JS array inside the Durable Object.
+ */
+export const VISION_MAX_BYTES = 1_000_000;
+
+/**
+ * A photo fetch can fail at a round rollover (both free image hosts down or
+ * rate-limiting). The room then waits this long before trying again, and gives
+ * up after PHOTO_MAX_ATTEMPTS failures rather than spinning the alarm. Index i
+ * is the wait after failure i+1; the last entry is the ceiling if the attempt
+ * cap is ever raised.
+ */
+export const PHOTO_RETRY_BACKOFF_MS = [5_000, 15_000, 60_000];
+
+/** Failed photo fetches at one rollover before the game ends honestly. */
+export const PHOTO_MAX_ATTEMPTS = 3;
+
+/** How long to wait after the nth failed photo fetch (n is 1-based). */
+export function photoRetryDelayMs(attempts: number): number {
+  const idx = Math.min(Math.max(attempts, 1), PHOTO_RETRY_BACKOFF_MS.length) - 1;
+  return PHOTO_RETRY_BACKOFF_MS[idx];
+}
 
 /**
  * Polling cadence the server tells clients to use, per phase. 0 = stop polling.

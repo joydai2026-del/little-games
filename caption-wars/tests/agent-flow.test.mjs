@@ -202,7 +202,7 @@ function startLiveGameServer() {
 test('echo brain plays a full game: join, caption, vote, reveal, done with correct headers', async () => {
   const fake = await startLiveGameServer();
   try {
-    await runAgent(['--url', fake.url, '--room', 'test', '--name', 'TestBot', '--brain', 'echo', '--once']);
+    await runAgent(['--url', fake.url, '--room', 'test', '--name', 'TestBot', '--brain', 'echo']);
 
     assert.equal(fake.calls.join, 1);
     assert.equal(fake.calls.caption, 1, 'agent should submit exactly one caption');
@@ -281,7 +281,7 @@ function startExcludedPlayerServer() {
 test('a caption phase where the agent is not in roundPlayerIds sends nothing', async () => {
   const fake = await startExcludedPlayerServer();
   try {
-    await runAgent(['--url', fake.url, '--room', 'test', '--name', 'Bystander', '--brain', 'echo', '--once']);
+    await runAgent(['--url', fake.url, '--room', 'test', '--name', 'Bystander', '--brain', 'echo']);
 
     assert.equal(fake.calls.caption, 0, 'agent must not caption when excluded from roundPlayerIds');
     assert.equal(fake.calls.vote, 0, 'agent must not vote when excluded from roundPlayerIds');

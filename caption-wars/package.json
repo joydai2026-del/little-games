@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run",
+    "test": "vitest run && node --test tests/agent-lib.test.mjs tests/agent-flow.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
-    "check:xss": "! grep -rn innerHTML src/client",
+    "check:xss": "! grep -rnE 'innerHTML|outerHTML|insertAdjacentHTML|document\\.write|eval\\(|new Function' src/client",
     "fixture": "node scripts/make-fixture.mjs",
     "deploy": "npm run build && wrangler deploy",
     "cf:dev": "npm run build && wrangler dev",

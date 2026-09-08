@@ -69,6 +69,10 @@ async function call<T extends RoomEnvelope>(
   } catch {
     throw new ApiError(plainError(0), 0);
   }
+  // Stamp the local clock the moment the headers land, not after the body has
+  // been read and parsed: otherwise the offset absorbs a whole round trip and
+  // every countdown runs that much generous.
+  const arrivedAt = Date.now();
 
   const text = await response.text();
   let data: unknown = null;
@@ -87,7 +91,7 @@ async function call<T extends RoomEnvelope>(
   }
 
   const envelope = (data ?? {}) as T;
-  noteServerTime(envelope.serverTime ?? envelope.state?.serverTime);
+  noteServerTime(envelope.serverTime ?? envelope.state?.serverTime, arrivedAt);
   return envelope;
 }
 

@@ -222,24 +222,83 @@ describe('publicView redaction', () => {
   });
 
   it('never shows authorship during the vote phase, and marks the viewer own caption unvotable', () => {
+    // Caption ids here deliberately do NOT contain a player id, so the
+    // "no other player's id anywhere" check below cannot pass or fail by
+    // accident on a substring of a caption id.
     let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
-    state = submitCaption(state, 'host', 'mine', 'c-host', T0 + 1).state;
-    state = submitCaption(state, 'b1', 'theirs', 'c-b1', T0 + 2).state;
-    state = submitCaption(state, 'b2', 'third', 'c-b2', T0 + 3).state;
+    state = submitCaption(state, 'host', 'mine', 'cap-1', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'theirs', 'cap-2', T0 + 2).state;
+    state = submitCaption(state, 'b2', 'third', 'cap-3', T0 + 3).state;
     expect(state.phase).toBe('vote');
 
     const view = publicView(state, 'host', T0 + 4);
     expect(view.captions).toHaveLength(3);
     for (const c of view.captions) expect(c.playerId).toBeUndefined();
 
-    const own = view.captions.find((c) => c.id === 'c-host')!;
-    expect(own).toEqual({ id: 'c-host', text: 'mine', isOwn: true, canVote: false });
-    const other = view.captions.find((c) => c.id === 'c-b1')!;
-    expect(other).toEqual({ id: 'c-b1', text: 'theirs', isOwn: false, canVote: true });
+    const own = view.captions.find((c) => c.id === 'cap-1')!;
+    expect(own).toEqual({ id: 'cap-1', text: 'mine', isOwn: true, canVote: false });
+    const other = view.captions.find((c) => c.id === 'cap-2')!;
+    expect(other).toEqual({ id: 'cap-2', text: 'theirs', isOwn: false, canVote: true });
 
-    // And the raw JSON of the whole view carries no author id for anyone else.
-    const json = JSON.stringify(view);
-    expect(json.includes('"playerId"')).toBe(false);
+    // And nothing in the payload links any OTHER player to anything.
+    //
+    // The old assertion here grepped for the literal string `"playerId"`, which
+    // proved nothing: `votes` is keyed BY player id, so every id was sitting in
+    // the same JSON while that assertion passed. This one checks the ids
+    // themselves. The public roster fields are pulled out first, on purpose:
+    // players / roundPlayerIds / hostId / championIds are ids every screen is
+    // supposed to see (they are the lobby list), and `history` carries finished
+    // rounds, which are public from their own reveal on. Everything else must be
+    // free of any id but the viewer's.
+    const { players, roundPlayerIds, hostId, championIds, history, ...secret } = view;
+    expect(history).toEqual([]); // round 1, so nothing is hiding in past rounds
+    expect(players.length).toBe(3);
+    const json = JSON.stringify(secret);
+    for (const id of ['b1', 'b2']) expect(json.includes(id)).toBe(false);
+    expect(roundPlayerIds).toContain('host');
+    expect(hostId).toBe('host');
+    expect(championIds).toBeUndefined();
+  });
+
+  it('hides the live ballot during caption and vote, and hands back only your own vote', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'mine', 'c-host', T0 + 1).state;
+    state = submitCaption(state, 'b1', 'theirs', 'c-b1', T0 + 2).state;
+    state = submitCaption(state, 'b2', 'third', 'c-b2', T0 + 3).state;
+    expect(state.phase).toBe('vote');
+
+    state = submitVote(state, 'b1', 'c-host', T0 + 4).state;
+    expect(state.phase).toBe('vote'); // b2 and the host still owe a vote
+
+    // b1 sees its own vote and nothing else.
+    const voter = publicView(state, 'b1', T0 + 5);
+    expect(voter.votes).toEqual({});
+    expect(voter.yourVote).toBe('c-host');
+
+    // The host has not voted, and cannot see that b1 has.
+    const waiting = publicView(state, 'host', T0 + 5);
+    expect(waiting.votes).toEqual({});
+    expect(waiting.yourVote).toBeNull();
+    expect(JSON.stringify(waiting.votes).includes('b1')).toBe(false);
+
+    // From reveal on the whole ballot is public.
+    state = submitVote(state, 'b2', 'c-host', T0 + 6).state;
+    state = submitVote(state, 'host', 'c-b1', T0 + 7).state;
+    expect(state.phase).toBe('reveal');
+    expect(publicView(state, 'host', T0 + 8).votes).toEqual({
+      b1: 'c-host',
+      b2: 'c-host',
+      host: 'c-b1',
+    });
+  });
+
+  it('keeps the caption phase ballot empty too', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = submitCaption(state, 'host', 'mine', 'c-host', T0 + 1).state;
+    const view = publicView(state, 'host', T0 + 2);
+    expect(view.phase).toBe('caption');
+    expect(view.votes).toEqual({});
+    expect(view.yourVote).toBeNull();
   });
 
   it('attaches authors from reveal on', () => {
@@ -286,18 +345,25 @@ describe('voting rules', () => {
 });
 
 describe('void round', () => {
-  it('awards nothing when fewer than two captions exist', () => {
+  it('skips the ballot entirely and awards nothing when fewer than two captions exist', () => {
     let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
     state = submitCaption(state, 'host', 'the only one', 'c1', T0 + 1).state;
     state = endCaptionPhase(state, state.phaseEndsAt!).state;
-    expect(state.phase).toBe('vote');
 
-    state = submitVote(state, 'b1', 'c1', T0 + 2).state;
-    state = endVotePhase(state, state.phaseEndsAt!).state;
-
+    // One caption cannot produce a winner however anyone votes, so the round is
+    // over the moment the caption phase closes: nobody sits through a 30-second
+    // vote timer on an unwinnable ballot.
     expect(state.phase).toBe('reveal');
     expect(state.history[0].winnerCaptionIds).toEqual([]);
     expect(state.players.every((p) => p.score === 0)).toBe(true);
+  });
+
+  it('voids a round with no captions at all, without a vote phase', () => {
+    let state = start(twoRoundRoom(), 'host', PHOTO, T0).state;
+    state = endCaptionPhase(state, state.phaseEndsAt!).state;
+    expect(state.phase).toBe('reveal');
+    expect(state.history[0].captions).toEqual([]);
+    expect(state.history[0].winnerCaptionIds).toEqual([]);
   });
 });
 

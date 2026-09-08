@@ -12,5 +12,8 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"],
+  // room-do.test.ts drives the Durable Object, so it needs Cloudflare's ambient
+  // types. It is typechecked by tsconfig.worker.json instead.
+  "exclude": ["tests/room-do.test.ts"]
 }

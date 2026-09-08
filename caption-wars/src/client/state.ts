@@ -25,7 +25,7 @@ export function identityKey(code: string): string {
   return IDENTITY_PREFIX + normalizeCode(code);
 }
 
-/** A room code as the server wants it: 4 upper-case letters, nothing else. */
+/** A room code as the server wants it: 4 characters from the server alphabet. */
 export function normalizeCode(raw: string): string {
   // Room codes use the server alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (src/shared/ids.ts):
   // letters minus I and O, digits 2 to 9. Keep both.

@@ -10,8 +10,9 @@ import type { RoomState } from '../shared/types';
 import { nextBotJobDueAt } from '../shared/room';
 
 /**
- * The earliest of: this phase's end (only while a phase is actually running),
- * the room's expiry, and the next pending bot job. Never earlier than `now`,
+ * The earliest of: this phase's end (only while a phase is actually running, and
+ * only while no photo retry is backing off), the room's expiry, and the next
+ * pending bot job. Never earlier than `now`,
  * because an alarm in the past just fires immediately and re-entering the
  * handler in a tight loop is worse than firing one millisecond late.
  * Returns undefined when nothing is scheduled (which cannot normally happen:
@@ -20,9 +21,15 @@ import { nextBotJobDueAt } from '../shared/room';
 export function nextAlarmAt(state: RoomState, now: number): number | undefined {
   const candidates: number[] = [state.expiresAt];
 
+  // A failed photo fetch leaves the room in `reveal` with `phaseEndsAt` already
+  // in the past. Honouring that would set the alarm to `now`, which fires
+  // instantly and fetches again: a hot loop. While a retry is pending the
+  // backoff time REPLACES the dead phase deadline.
+  const retryAt = state.photoRetry?.nextAttemptAt;
   const phaseRunning =
     state.phase === 'caption' || state.phase === 'vote' || state.phase === 'reveal';
-  if (phaseRunning && state.phaseEndsAt !== undefined) candidates.push(state.phaseEndsAt);
+  if (retryAt !== undefined) candidates.push(retryAt);
+  else if (phaseRunning && state.phaseEndsAt !== undefined) candidates.push(state.phaseEndsAt);
 
   const jobAt = nextBotJobDueAt(state, now);
   if (jobAt !== undefined) candidates.push(jobAt);

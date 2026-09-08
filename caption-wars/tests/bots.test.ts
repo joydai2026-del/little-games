@@ -89,6 +89,7 @@ function models(ai: AiLike, over: Partial<BotModels> = {}): BotModels {
     visionModelFallback: '@cf/llava-hf/llava-1.5-7b-hf',
     textModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
     timeoutMs: 20_000,
+    visionMaxBytes: 1_000_000,
     ...over,
   };
 }

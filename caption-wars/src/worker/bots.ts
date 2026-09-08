@@ -34,6 +34,14 @@ export interface BotModels {
   visionModelFallback: string;
   textModel: string;
   timeoutMs: number;
+  /**
+   * Cap on the bytes handed to the vision model, separate from the storage cap.
+   * `generateBotCaption` turns the image into a plain JS number array, so a
+   * photo at the 2 MB storage cap would build a 2,000,000-element array inside
+   * the Durable Object. Past this size the bot skips the round instead; players
+   * still get the full photo.
+   */
+  visionMaxBytes: number;
 }
 
 /**
@@ -234,6 +242,13 @@ export async function runBotJob(
     if (job.phase === 'caption') {
       const bytes = await host.photoBytes(job.round);
       if (!bytes || bytes.byteLength === 0) return 'failed';
+      if (bytes.byteLength > models.visionMaxBytes) {
+        console.warn(
+          `bots: round ${job.round} photo is ${bytes.byteLength} bytes, over the ` +
+            `${models.visionMaxBytes} vision cap; skipping this bot's caption`
+        );
+        return 'failed';
+      }
 
       const raw = await generateBotCaption(models, persona, bytes);
       if (raw === null) return 'failed';

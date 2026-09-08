@@ -12,7 +12,8 @@ export interface RoomActions {
   start(): void;
   sendCaption(text: string): Promise<boolean>;
   sendVote(captionId: string): Promise<boolean>;
-  next(): void;
+  /** Resolves false when the move-on failed, so the button can come back to life. */
+  next(): Promise<boolean>;
   playAgain(): void;
 }
 

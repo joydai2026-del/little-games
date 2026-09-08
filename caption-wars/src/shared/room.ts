@@ -41,10 +41,12 @@ import type {
 import {
   CAPTION_MAX_CHARS,
   MAX_HUMAN_PLAYERS,
+  PHOTO_MAX_ATTEMPTS,
   REVEAL_MIN_MS,
   ROOM_TTL_MS,
   nextPollMsFor,
   normalizeOptions,
+  photoRetryDelayMs,
 } from './config';
 import { hashSeed, seededShuffle } from './rng';
 import { sanitizeCaption, sanitizeName } from './text';
@@ -220,7 +222,13 @@ export function start(
   return { state: openRound(state, 1, photo, now) };
 }
 
-/** Freezes the roster and opens a caption phase for `round`. */
+/**
+ * Freezes the roster and opens a caption phase for `round`.
+ *
+ * The room's expiry is pushed out here as well: a 20-round game at the maximum
+ * timers is exactly the 2h TTL, so a long game would otherwise be deleted from
+ * under the players mid-round.
+ */
 function openRound(state: RoomState, round: number, photo: PhotoMeta, now: number): RoomState {
   return bump(
     state,
@@ -232,6 +240,8 @@ function openRound(state: RoomState, round: number, photo: PhotoMeta, now: numbe
       votes: {},
       botJobs: [],
       phaseEndsAt: now + state.options.captionSeconds * 1000,
+      expiresAt: Math.max(state.expiresAt, now + ROOM_TTL_MS),
+      photoRetry: undefined,
     },
     'caption',
     now
@@ -294,9 +304,9 @@ export function endCaptionPhase(state: RoomState, now: number): RoomResult {
     now
   );
 
-  // A vote phase can be over the moment it opens: with a single caption on the
-  // board its own author has nothing they are allowed to vote for, so nobody
-  // should sit and watch a 30-second timer run down on an empty ballot.
+  // A vote phase can be over the moment it opens: a round with fewer than two
+  // captions is void whatever anyone does, so nobody should sit and watch a
+  // 30-second timer run down on a ballot that cannot produce a winner.
   return endVotePhase(voting, now);
 }
 
@@ -359,10 +369,12 @@ export function tally(
  */
 export function endVotePhase(state: RoomState, now: number): RoomResult {
   if (state.phase !== 'vote') return { state };
-  const timedOut = state.phaseEndsAt !== undefined && now >= state.phaseEndsAt;
-  if (!allEligibleVoted(state) && !timedOut) return { state };
-
+  // Fewer than 2 captions is void no matter who votes, so the round is over the
+  // moment it is in that shape: do not run a timer on an unwinnable ballot.
   const isVoid = state.captions.length < 2;
+  const timedOut = state.phaseEndsAt !== undefined && now >= state.phaseEndsAt;
+  if (!isVoid && !allEligibleVoted(state) && !timedOut) return { state };
+
   const { counts, winnerCaptionIds: tallied } = tally(state.captions, state.votes);
   const winnerCaptionIds = isVoid ? [] : tallied;
 
@@ -432,7 +444,12 @@ export function advance(
 
   if (state.round >= state.options.rounds) {
     return {
-      state: bump(state, { championIds: computeChampionIds(state.players) }, 'done', now),
+      state: bump(
+        state,
+        { championIds: computeChampionIds(state.players), photoRetry: undefined },
+        'done',
+        now
+      ),
     };
   }
 
@@ -471,6 +488,53 @@ export function advanceIfDue(
   return { state: current };
 }
 
+/**
+ * Records that the next round's photo could not be fetched.
+ *
+ * Without this the room sits in `reveal` with `phaseEndsAt` already in the past,
+ * the alarm re-arms to "now", and the Durable Object spins on outbound image
+ * fetches until the room expires. So each failure gets a backoff, and after
+ * PHOTO_MAX_ATTEMPTS the game ends honestly with `endedReason:
+ * 'photo-unavailable'` and the scoreboard everyone already earned.
+ *
+ * Bookkeeping only, so it deliberately does not bump `version` unless the game
+ * actually ends (which players must see).
+ */
+export function notePhotoFailure(
+  state: RoomState,
+  now: number,
+  maxAttempts: number = PHOTO_MAX_ATTEMPTS
+): RoomResult {
+  const attempts = (state.photoRetry?.attempts ?? 0) + 1;
+
+  if (attempts >= maxAttempts) {
+    return {
+      state: bump(
+        state,
+        {
+          championIds: computeChampionIds(state.players),
+          endedReason: 'photo-unavailable',
+          photoRetry: undefined,
+        },
+        'done',
+        now
+      ),
+    };
+  }
+
+  return {
+    state: {
+      ...state,
+      photoRetry: { attempts, nextAttemptAt: now + photoRetryDelayMs(attempts) },
+    },
+  };
+}
+
+/** True while a failed photo fetch is still serving out its backoff. */
+export function photoRetryBlocked(state: RoomState, now: number): boolean {
+  return state.photoRetry !== undefined && now < state.photoRetry.nextAttemptAt;
+}
+
 // --- bot jobs ----------------------------------------------------------------
 //
 // Job bookkeeping deliberately does NOT bump `version`: jobs are internal, are
@@ -494,6 +558,38 @@ export function setJobStatus(
   return { ...state, botJobs };
 }
 
+/** Takes the lease on a batch of jobs: status `running` plus the `startedAt` stamp. */
+export function markJobsRunning(state: RoomState, jobIds: string[], now: number): RoomState {
+  const wanted = new Set(jobIds);
+  if (wanted.size === 0) return state;
+  let changed = false;
+  const botJobs = state.botJobs.map((job) => {
+    if (!wanted.has(job.jobId)) return job;
+    changed = true;
+    return { ...job, status: 'running' as const, startedAt: now };
+  });
+  return changed ? { ...state, botJobs } : state;
+}
+
+/**
+ * Marks every `pending` or `running` job past its `deadline` as `failed`.
+ *
+ * A `running` job whose Durable Object died mid-model-call would otherwise stay
+ * `running` forever: never retried (only `pending` jobs are due) and never
+ * recorded as finished. Called from the alarm and from settle, so the state
+ * machine always converges on a terminal status.
+ */
+export function reapBotJobs(state: RoomState, now: number): RoomState {
+  let changed = false;
+  const botJobs = state.botJobs.map((job) => {
+    const open = job.status === 'pending' || job.status === 'running';
+    if (!open || now < job.deadline) return job;
+    changed = true;
+    return { ...job, status: 'failed' as const };
+  });
+  return changed ? { ...state, botJobs } : state;
+}
+
 /** A job is still worth running only while its own round and phase are the live ones. */
 function isLive(state: RoomState, job: BotJob, now: number): boolean {
   return (
@@ -504,9 +600,23 @@ function isLive(state: RoomState, job: BotJob, now: number): boolean {
   );
 }
 
-/** Jobs that should run now: live, and due. */
+/**
+ * Jobs that should run now: live, due, and not a second attempt at work another
+ * job already holds or finished. One (botId, round, phase) runs at most once
+ * unless the earlier attempt is recorded `failed`.
+ */
 export function dueBotJobs(state: RoomState, now: number): BotJob[] {
-  return state.botJobs.filter((j) => isLive(state, j, now) && j.dueAt <= now);
+  const claimed = new Set(
+    state.botJobs
+      .filter((j) => j.status === 'running' || j.status === 'done')
+      .map((j) => `${j.botId}:${j.round}:${j.phase}`)
+  );
+  return state.botJobs.filter(
+    (j) =>
+      isLive(state, j, now) &&
+      j.dueAt <= now &&
+      !claimed.has(`${j.botId}:${j.round}:${j.phase}`)
+  );
 }
 
 /** The earliest moment a pending bot job wants the alarm to fire, if any. */
@@ -529,13 +639,24 @@ export function orderedCaptions(state: RoomState): Caption[] {
  *     copy or pre-judge anyone else's
  *   - during `vote` every caption is a VoteCaption: id, text, isOwn, canVote,
  *     and NEVER an author
- *   - from `reveal` on, authors are attached
+ *   - during `caption` and `vote` the live ballot is empty. `votes` is keyed by
+ *     PLAYER ID, so shipping it before the reveal shows every screen who voted
+ *     for which caption. Only the viewer's own vote comes back, as `yourVote`.
+ *   - from `reveal` on, authors and the full ballot are attached
  *   - `serverTime` rides along so the client can measure its clock offset
  */
-export function publicView(state: RoomState, viewerId: string, now: number): PublicRoomState {
-  const { botJobs: _botJobs, captions: _captions, ...rest } = state;
+export function publicView(
+  state: RoomState,
+  viewerId: string,
+  now: number,
+  revealMinMs: number = REVEAL_MIN_MS
+): PublicRoomState {
+  const { botJobs: _botJobs, captions: _captions, votes: _votes, ...rest } = state;
   void _botJobs;
   void _captions;
+  void _votes;
+
+  const ballotIsSecret = state.phase === 'caption' || state.phase === 'vote';
 
   let captions: PublicCaption[];
   if (state.phase === 'lobby') {
@@ -560,5 +681,13 @@ export function publicView(state: RoomState, viewerId: string, now: number): Pub
     }));
   }
 
-  return { ...rest, captions, captionCount: state.captions.length, serverTime: now };
+  return {
+    ...rest,
+    captions,
+    captionCount: state.captions.length,
+    votes: ballotIsSecret ? {} : state.votes,
+    yourVote: state.votes[viewerId] ?? null,
+    revealMinMs,
+    serverTime: now,
+  };
 }
