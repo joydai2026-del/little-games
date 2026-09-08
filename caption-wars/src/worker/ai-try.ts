@@ -28,6 +28,7 @@ import {
   judgeIsCaption,
   judgeRelevance,
   makeCallBudget,
+  type AiLike,
   type CaptionJudgeVerdict,
   type BotModels,
   type CaptionAttempt,
@@ -35,7 +36,7 @@ import {
 } from './bots';
 import { refusalMatch } from '../shared/caption-guard';
 import { fetchPhoto } from './photo';
-import { settings, type Env } from './env';
+import { modelProvider, settings, type Env } from './env';
 import { secretsMatch } from './token';
 
 /** Hard cap: this is model spend, and a Worker has a subrequest budget. */
@@ -108,6 +109,12 @@ export interface AiTryResult {
     judge_verdicts: Record<string, number>;
   };
   photoErrors: string[];
+  /**
+   * The PLATFORM said stop, not the model. See watchForSubrequestLimit: at most
+   * one entry, and any entry also sets `summary.truncated`, so a run that ran
+   * out of subrequests can never be read as a model-quality measurement.
+   */
+  limitErrors: string[];
 }
 
 function json(body: unknown, status = 200): Response {
@@ -115,6 +122,38 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
   });
+}
+
+/**
+ * THE PLATFORM CEILING, TOLD APART FROM A BAD MODEL (Codex review round 2,
+ * must-fix 5). Cloudflare's free plan allows 50 external subrequests per Worker
+ * invocation (grade B, developers.cloudflare.com/workers/platform/limits/), and
+ * on the OpenAI provider every model call is one of them, as is every photo
+ * fetch and every redirect it follows. Past the ceiling the runtime throws, the
+ * ladder swallows it as "this rung told us nothing", and the rig would report
+ * infrastructure exhaustion as a model-quality number: exactly the false reading
+ * rule 58's acceptance bar would be set from. Recorded once and reported as
+ * truncated instead. `Too many subrequests` is Cloudflare's live string (grade
+ * C, not reproduced here), so the match is loose and case-insensitive.
+ */
+function noteIfSubrequestLimit(message: string, limitErrors: string[]): void {
+  if (/subrequest/i.test(message) && limitErrors.length === 0) {
+    limitErrors.push(`worker subrequest ceiling reached: ${message.slice(0, 200)}`);
+  }
+}
+
+function watchForSubrequestLimit(ai: AiLike, limitErrors: string[]): AiLike {
+  return {
+    async run(model: string, input: unknown, options?: unknown): Promise<unknown> {
+      try {
+        return await ai.run(model, input, options);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        noteIfSubrequestLimit(message, limitErrors);
+        throw err;
+      }
+    },
+  };
 }
 
 /** A throwaway room code, so picsum's seed (and therefore the photo) differs per call. */
@@ -204,11 +243,18 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
   const byCap = Math.max(1, Math.floor(set.aiTryMaxSamples / personas.length));
   const photoCount = describeOnly ? Math.min(MAX_PHOTOS, asked) : Math.min(MAX_PHOTOS, asked, byCap);
 
+  // Third and last of the BotModels sites (room-do.ts botModels, smoke.ts,
+  // here). The rig must measure the SAME provider the game plays on, or the
+  // numbers it reports are about models nobody is running.
+  const chosen = modelProvider(env);
+  // Filled at most once, from either door: watchForSubrequestLimit on a model
+  // call, or the photo-fetch catch below.
+  const limitErrors: string[] = [];
   const models: BotModels = {
-    ai: env.AI as unknown as BotModels['ai'],
-    visionModel: set.visionModel,
-    visionModelFallback: set.visionModelFallback,
-    textModel: set.textModel,
+    ai: watchForSubrequestLimit(chosen.ai, limitErrors),
+    visionModel: chosen.visionModel,
+    visionModelFallback: chosen.visionModelFallback,
+    textModel: chosen.textModel,
     timeoutMs: set.botTimeoutMs,
     judgeTimeoutMs: set.captionJudgeTimeoutMs,
     visionMaxBytes: set.visionMaxBytes,
@@ -252,14 +298,15 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     }
     return json({
       prompt_version: CAPTION_PROMPT_VERSION,
-      model: set.textModel,
+      model: models.textModel,
       judge: verdicts,
       summary: {
         model_calls: judgeBudget.used(),
         model_call_cap: judgeBudget.cap(),
         model_calls_refused: judgeBudget.refused(),
-        truncated: judgeBudget.refused() > 0,
+        truncated: judgeBudget.refused() > 0 || limitErrors.length > 0,
       },
+      limitErrors,
     });
   }
 
@@ -286,7 +333,17 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     try {
       photo = await fetchPhoto(set, seedCode(), i + 1);
     } catch (err) {
-      photoErrors.push(err instanceof Error ? err.message : String(err));
+      // THE CEILING HAS TWO DOORS (review round 3, must-fix on both reviewers'
+      // lists). The watcher above wraps MODEL calls only, but photo fetches and
+      // the redirects they follow come out of the same 50 subrequests, so an
+      // exhausted run whose sixth PHOTO fetch is the one that dies used to land
+      // here and be reported as `truncated: false`: exactly the false reading
+      // the watcher exists to prevent, through the other door. Same test, same
+      // list. An ordinary photo failure (a 404, a byte-cap trip) does not match
+      // `/subrequest/i` and stays a plain photoError.
+      const message = err instanceof Error ? err.message : String(err);
+      noteIfSubrequestLimit(message, limitErrors);
+      photoErrors.push(message);
       continue;
     }
     if (photo.bytes.byteLength > set.visionMaxBytes) {
@@ -381,11 +438,12 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       model_calls: callBudget.used(),
       model_call_cap: callBudget.cap(),
       model_calls_refused: callBudget.refused(),
-      truncated: stoppedAtCap || callBudget.refused() > 0,
+      truncated: stoppedAtCap || callBudget.refused() > 0 || limitErrors.length > 0,
       judge_rejected: judgeRejected,
       judge_verdicts: judgeVerdicts,
     },
     photoErrors,
+    limitErrors,
   };
 
   if (samples.length > 0) return json(result, 200);

@@ -63,7 +63,9 @@ export const CAPTION_JUDGE_TIMEOUT_MS = 10000;
  * so a tuning session can raise them for a run without a deploy of new logic.
  */
 export const AI_TRY_MAX_SAMPLES = 24;
-export const AI_TRY_MAX_MODEL_CALLS = 160;
+// 40, matching wrangler.jsonc: the code default is what fires if the var is ever
+// absent, and 160 is over three times the free plan's 50-subrequest ceiling.
+export const AI_TRY_MAX_MODEL_CALLS = 40;
 
 /** Byte cap on a fetched photo, overridable through the wrangler var PHOTO_MAX_BYTES. */
 export const PHOTO_MAX_BYTES = 2_000_000;

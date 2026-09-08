@@ -49,4 +49,8 @@ console.log(JSON.stringify(body, null, 2));
 if (!body.vision?.ok) die(`the vision model did not answer (tried ${body.vision?.model})`);
 if (!body.text?.ok) die(`the text model did not answer (tried ${body.text?.model})`);
 
-console.log(`ai:smoke OK - vision ${body.vision.model}, text ${body.text.model}`);
+// The provider is in the answer because the same model ids mean nothing without
+// knowing who answered (AI_PROVIDER: workers-ai or openai).
+console.log(
+  `ai:smoke OK - provider ${body.provider ?? 'unknown'}, vision ${body.vision.model}, text ${body.text.model}`
+);
