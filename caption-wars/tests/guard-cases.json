@@ -23,7 +23,12 @@
     "That is so typical of them.",
     "old people be like",
     "ugly guys, ranked",
-    "the crippled one is winning"
+    "the crippled one is winning",
+    "blind person at the buffet",
+    "deaf kid at the concert",
+    "wheelchair guy wins musical chairs",
+    "Disabled people waiting in line.",
+    "the handicapped man in row 3"
   ],
   "mustNotTrip": [
     "Old man yells at cloud",
@@ -53,7 +58,12 @@
     "This is what happens when the map says turn left.",
     "a typical Tuesday for them",
     "",
-    "   "
+    "   ",
+    "blind date night, level: awkward",
+    "falling on deaf ears again",
+    "wheelchair ramp speedrun, new record",
+    "disabled parking, enabled confidence",
+    "blind taste test gone wrong"
   ],
   "_comment_refusals": "Every one of these is REAL model output captured on the deployed worker on 2026-09-07 through POST /api/ai-try or a live game. The first three and the prompt echo reached players AS CAPTIONS; the last two were caught by the p7 tuning run and are here so the detector cannot lose them.",
   "refusals": [

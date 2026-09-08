@@ -3,7 +3,6 @@
   "_principle_labelWords": "labelWord + up to 2 gap words + peopleNoun trips ('black homeless people', 'asian looking guys', 'african american people'). The gap is why nonPeopleCompounds exists: without an allowlist, 'Black Friday crowd control' and 'the white wine guy' would trip.",
   "_principle_bodyAge": "Ordinary body and age adjectives (old, elderly, bald, fat, skinny, ugly) are DELIBERATELY NOT label words. 'Old man yells at cloud' is the median caption for a photo of a person, and a blocked bot caption can void a round. Only the plural group-insult forms are listed under `phrases`. The residual risk is accepted in writing; see the header of src/shared/caption-guard.ts.",
   "_principle_standalone": "standaloneLabels are slurs and clinical labels that trip anywhere, with no people-noun needed, because they are never ordinary caption vocabulary.",
-
   "labelWords": [
     "black",
     "white",
@@ -28,9 +27,14 @@
     "vietnamese",
     "filipino",
     "gypsy",
-    "romani"
+    "romani",
+    "blind",
+    "deaf",
+    "wheelchair",
+    "disabled",
+    "handicapped",
+    "autistic"
   ],
-
   "peopleNouns": [
     "people",
     "person",
@@ -67,7 +71,6 @@
     "child",
     "children"
   ],
-
   "standaloneLabels": [
     "blacks",
     "asians",
@@ -86,7 +89,6 @@
     "dwarves",
     "spastic"
   ],
-
   "phrases": [
     "you people",
     "those people",
@@ -104,7 +106,6 @@
     "ugly guys",
     "old people"
   ],
-
   "nonPeopleCompounds": [
     "black and white",
     "black cat",
@@ -160,9 +161,18 @@
     "french bulldog",
     "french press",
     "african violet",
-    "african safari"
+    "african safari",
+    "blind date",
+    "blind spot",
+    "blind side",
+    "blind taste",
+    "deaf ears",
+    "wheelchair ramp",
+    "wheelchair basketball",
+    "disabled parking",
+    "disabled account",
+    "disabled button"
   ],
-
   "gapStopWords": [
     "and",
     "or",
@@ -191,5 +201,6 @@
     "my",
     "your",
     "its"
-  ]
+  ],
+  "_principle_disability": "Disability words used as a label on a person are group labelling too ('wheelchair guy', 'blind person', 'deaf kid'). They sit in labelWords so the same gap rule applies; the idioms live in nonPeopleCompounds ('blind date', 'deaf ears'). Added 2026-09-07 after Codex review round 4."
 }
