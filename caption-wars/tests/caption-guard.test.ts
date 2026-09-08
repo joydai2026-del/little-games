@@ -19,6 +19,7 @@ import {
   refusalMatch,
   stripCaptionPrefix,
 } from '../src/shared/caption-guard';
+import { cleanModelCaption } from '../src/shared/text';
 
 describe('labellingMatch: the shared case table', () => {
   it('trips on every must-trip caption', () => {
@@ -123,8 +124,22 @@ describe('labellingMatch: the principle, stated as tests', () => {
     // The accepted cost of the pair rule, stated as a test so nobody discovers
     // it by surprise: see THE GAP in src/shared/caption-guard.ts.
     expect(labellingMatch('black and white people')).toBeNull();
+    expect(labellingMatch('black or white people')).toBeNull();
     // ...but a colour word that is NOT the tail of a pair still walks.
     expect(labellingMatch('white people just standing there')).toBe('white people');
+  });
+
+  it('(b) the pair rule is COLOURS only, not any two label words (round 6)', () => {
+    // Round 5 wrote the rule for colours and implemented it for any two label
+    // words, so a race label on a group of people got the exemption that exists
+    // for black-and-white photography.
+    expect(labellingMatch('asian and black men')).toBe('black men');
+    expect(labellingMatch('black or asian guys')).toBe('asian guys');
+    for (const colour of BLOCKED_TERMS.pairLabels ?? []) {
+      expect(BLOCKED_TERMS.labelWords, colour).toContain(colour);
+    }
+    // A short list: widening it widens the exemption and weakens the guard.
+    expect((BLOCKED_TERMS.pairLabels ?? []).length).toBeLessThan(6);
   });
 
   it('(c) standalone slurs and clinical labels trip with no people-noun at all', () => {
@@ -178,6 +193,75 @@ describe('looksLikeRefusal', () => {
     }
   });
 
+  it('is honest about the non-captions the fast path MISSES', () => {
+    // Real model output from the round-6 ai:try run on the deployed worker.
+    // None of these has a marker shape, and the fast path is not supposed to
+    // grow one for each: the JUDGE caught every one of them live. Asserting the
+    // misses is what stops a later round quietly re-opening the marker chase.
+    for (const text of cases.judgeOnlyNonCaptions) {
+      expect(refusalMatch(text), `documented regex miss: ${text}`).toBeNull();
+    }
+  });
+
+  it('is honest about the captions the fast path DOES fail', () => {
+    // Review round 6. These are asserted as a COST, not as correct behaviour:
+    // the regex is the fast path, and the round-6 decision is that a model judge
+    // (judgeIsCaption in src/worker/bots.ts) is the authority on "is this a
+    // caption". Each one costs a regeneration, not a silent bot. See
+    // `_comment_acceptedFalseRefusals` in tests/guard-cases.json.
+    for (const text of cases.acceptedFalseRefusals) {
+      expect(refusalMatch(text), `accepted false positive: ${text}`).not.toBeNull();
+    }
+  });
+
+  it('catches the three refusals a NEW live build shipped after round 5', () => {
+    // The strings that made round 6 stop chasing phrasings and add a judge.
+    expect(
+      looksLikeRefusal("This image is not appropriate for use in a children's environment.")
+    ).toBe(true);
+    expect(
+      looksLikeRefusal(
+        "I'm just a neutral AI, I don't have feelings. However, I can generate a humorous caption for you."
+      )
+    ).toBe(true);
+    // The one that refused in its SECOND clause, where the old `^` anchor never
+    // reached, using a verb the old adverb run had no path to ("try to write").
+    expect(
+      looksLikeRefusal(
+        "This photo of a chalkboard in a coffee shop doesn't make me laugh out loud, so I won't try to write a caption for it."
+      )
+    ).toBe(true);
+  });
+
+  it('catches "I\'m an AI", which the round-5 determiner could not', () => {
+    // `(?:a\s+)?` accepted "a" and never "an", so the single most canonical
+    // opener in the family returned null in both implementations.
+    for (const text of [
+      "I'm an AI and I don't write captions.",
+      "I am an AI assistant, I can't do that.",
+      "I'm an AI language model.",
+      "I'm just an AI, I don't have opinions.",
+    ]) {
+      expect(looksLikeRefusal(text), text).toBe(true);
+    }
+    // ...and the boundary that stops it eating ordinary captions still holds.
+    expect(looksLikeRefusal('Dressed as an airline pilot for no reason.')).toBe(false);
+  });
+
+  it('does not fire on the three commonest verbs in English (should-fix 1)', () => {
+    for (const text of [
+      "I can't do Mondays.",
+      "Sorry I can't make it, the goat ate my invite.",
+      "Sorry, I can't answer the phone, I'm a cat now.",
+      'Unfortunately I cannot make eye contact at this volume.',
+    ]) {
+      expect(refusalMatch(text), text).toBeNull();
+    }
+    // The verbs that DO name the task are untouched.
+    expect(looksLikeRefusal("I can't write a caption for this.")).toBe(true);
+    expect(looksLikeRefusal("Honestly, I can't generate a caption here.")).toBe(true);
+  });
+
   it('catches the three refusals a live game actually shipped as captions', () => {
     expect(
       looksLikeRefusal("I'm a large language model, I'm not capable of generating original content")
@@ -215,5 +299,31 @@ describe('looksLikeRefusal', () => {
     expect(looksLikeRefusal("I can't even with this dog today.")).toBe(false);
     // ...but the same words followed by a task verb, at the start, are a refusal.
     expect(looksLikeRefusal("I can't write a caption for this.")).toBe(true);
+  });
+});
+
+// --- the model-preamble stripper, from the round-6 live game -----------------
+
+describe('cleanModelCaption strips a preamble instead of failing the caption', () => {
+  it('eats the preamble the round-6 live game shipped to a player', () => {
+    // Verbatim from room 92PV on the deployed worker, 2026-09-07: the tail after
+    // "caption" was 22 characters and the pattern allowed 20, so the whole thing
+    // went on screen. The payload after the colon was a good caption, which is
+    // why rule 39 strips this shape rather than failing it.
+    expect(
+      cleanModelCaption(
+        'This is the caption I wrote for the photo: "The moment you don\'t want to discuss in the break room."'
+      )
+    ).toBe("The moment you don't want to discuss in the break room.");
+    expect(cleanModelCaption("Here's a caption: the goat has seen things.")).toBe(
+      'the goat has seen things.'
+    );
+  });
+
+  it('leaves an ordinary caption with a colon in it alone', () => {
+    expect(cleanModelCaption('Day four of the standoff: nobody blinks.')).toBe(
+      'Day four of the standoff: nobody blinks.'
+    );
+    expect(cleanModelCaption('Old man yells at cloud')).toBe('Old man yells at cloud');
   });
 });

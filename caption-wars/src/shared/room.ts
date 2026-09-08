@@ -39,7 +39,6 @@ import type {
   VoteCaption,
 } from './types';
 import {
-  CAPTION_MAX_CHARS,
   MAX_HUMAN_PLAYERS,
   PHOTO_MAX_ATTEMPTS,
   REVEAL_MIN_MS,
@@ -277,7 +276,8 @@ function openRound(state: RoomState, round: number, photo: PhotoMeta, now: numbe
 
 /**
  * Records one caption. First write per player wins; the text is sanitized
- * (one line, trimmed, capped) and must be 1..CAPTION_MAX_CHARS afterwards.
+ * (one line, trimmed, capped at CAPTION_MAX_CHARS by sanitizeCaption) and must
+ * not be empty afterwards.
  * Ends the caption phase automatically once everyone in the round roster has
  * captioned.
  */
@@ -295,11 +295,13 @@ export function submitCaption(
     return { state, error: 'you already captioned this round' };
   }
 
+  // sanitizeCaption ENFORCES the cap (it trims at a word boundary), so the
+  // length check that used to sit here could never fire: it was dead in every
+  // round since the cap moved into text.ts, and it read as if an over-long
+  // caption were rejected when it was actually being silently cut. Only the
+  // empty case is a real error.
   const clean = sanitizeCaption(text);
   if (clean.length < 1) return { state, error: 'caption cannot be empty' };
-  if (clean.length > CAPTION_MAX_CHARS) {
-    return { state, error: `caption must be at most ${CAPTION_MAX_CHARS} characters` };
-  }
 
   const caption: Caption = { id: captionId, playerId, text: clean };
   const withCaption: RoomState = {

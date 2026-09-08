@@ -13,5 +13,10 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src/worker/**/*.ts", "src/shared/**/*.ts", "tests/room-do.test.ts"]
+  "include": [
+    "src/worker/**/*.ts",
+    "src/shared/**/*.ts",
+    "tests/room-do.test.ts",
+    "tests/ai-try.test.ts"
+  ]
 }

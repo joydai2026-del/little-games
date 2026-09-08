@@ -52,7 +52,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
   if (!expected) {
     return json({ error: 'the smoke test is off: set the SMOKE_TOKEN secret first' }, 503);
   }
-  if (!secretsMatch(request.headers.get('x-smoke-token'), expected)) {
+  if (!(await secretsMatch(request.headers.get('x-smoke-token'), expected))) {
     return json({ error: 'bad smoke token' }, 401);
   }
 
@@ -63,6 +63,7 @@ export async function handleAiSmoke(request: Request, env: Env): Promise<Respons
     visionModelFallback: set.visionModelFallback,
     textModel: set.textModel,
     timeoutMs: set.botTimeoutMs,
+    judgeTimeoutMs: set.captionJudgeTimeoutMs,
     visionMaxBytes: set.visionMaxBytes,
   };
 

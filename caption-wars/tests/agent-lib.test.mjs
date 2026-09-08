@@ -260,6 +260,23 @@ test('refusalMatch catches every refusal and prompt-echo in the shared table', (
   }
 });
 
+test('refusalMatch is honest about the non-captions the fast path MISSES', () => {
+  // The worker's model judge is what catches these; the agent has no judge, so
+  // for the terminal agent they are a documented miss. See guard-cases.json.
+  for (const text of cases.judgeOnlyNonCaptions) {
+    assert.equal(refusalMatch(text), null, `documented regex miss: ${text}`);
+  }
+});
+
+test('refusalMatch is honest about the captions the fast path DOES fail', () => {
+  // Review round 6: asserted as a known COST, not as correct behaviour. The
+  // regex is the fast path; the worker's model judge is the authority. See
+  // `_comment_acceptedFalseRefusals` in tests/guard-cases.json.
+  for (const text of cases.acceptedFalseRefusals) {
+    assert.notEqual(refusalMatch(text), null, `accepted false positive: ${text}`);
+  }
+});
+
 test('refusalMatch lets real captions through', () => {
   for (const text of cases.notRefusals) {
     assert.equal(refusalMatch(text), null, `must NOT be a refusal: ${text}`);

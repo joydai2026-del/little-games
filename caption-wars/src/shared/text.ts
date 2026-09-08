@@ -40,9 +40,17 @@ export function sanitizeName(raw: string): string {
  * A caption: one line, trimmed, whitespace runs collapsed to a single space,
  * at most CAPTION_MAX_CHARS. Truncation is the ONLY thing that changes the
  * visible characters, so an injection-shaped caption survives as literal text.
+ *
+ * ROUND 6 (Claude nit 1): the cut is at a WORD boundary here too. The browser
+ * sets `maxlength` so a phone cannot reach the cap, but the terminal agent and
+ * the raw API can, and round 4 already decided that a caption severed mid-word
+ * ("...claiming ownership of a t") reads as a bug on somebody's screen. It was
+ * fixed on the model path and not on this one; the cut is our doing in exactly
+ * the same way. This function is still the single place the cap is ENFORCED,
+ * which is why src/shared/room.ts no longer re-checks the length afterwards.
  */
 export function sanitizeCaption(raw: string): string {
-  return toOneLine(raw).replace(/\s+/g, ' ').trim().slice(0, CAPTION_MAX_CHARS);
+  return trimToWordBoundary(toOneLine(raw).replace(/\s+/g, ' ').trim(), CAPTION_MAX_CHARS);
 }
 
 const QUOTE_PAIRS: Record<string, string> = {
@@ -61,7 +69,16 @@ export function cleanModelCaption(raw: string): string {
   let text = toOneLine(raw).replace(/\s+/g, ' ').trim();
 
   // Drop a leading "Caption:" / "Here's a caption:" style preamble.
-  text = text.replace(/^[^:]{0,40}\bcaption\b[^:]{0,20}:\s*/i, '');
+  //
+  // ROUND 6 widened the tail from 20 to 40 characters. The round-6 live game
+  // shipped this to a player, verbatim, because the tail after "caption" was 22
+  // characters and the old pattern allowed 20:
+  //   This is the caption I wrote for the photo: "The moment you don't want to
+  //   discuss in the break room."
+  // The payload after the colon was a perfectly good caption, which is exactly
+  // why this is a STRIP and not a refusal (rule 39). Both halves stay bounded so
+  // this can only ever eat a short preamble, never a sentence.
+  text = text.replace(/^[^:]{0,40}\bcaption\b[^:]{0,40}:\s*/i, '');
 
   // Peel matching wrapping quotes (straight or curly), at most twice.
   for (let i = 0; i < 2; i++) {

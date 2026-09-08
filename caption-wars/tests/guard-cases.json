@@ -31,7 +31,8 @@
     "the handicapped man in row 3",
     "black young homeless people just standing there",
     "african american young people",
-    "white middle-aged men in a queue"
+    "white middle-aged men in a queue",
+    "asian and black men"
   ],
   "mustNotTrip": [
     "Old man yells at cloud",
@@ -74,7 +75,8 @@
     "Blind drunk guy at the office party.",
     "Nobody told the deaf cat lady.",
     "asian black and white men",
-    "wheelchair front row guy"
+    "wheelchair front row guy",
+    "black or white people"
   ],
   "_comment_refusals": "Every one of these is REAL model output captured on the deployed worker on 2026-09-07 through POST /api/ai-try or a live game. The first three and the prompt echo reached players AS CAPTIONS; the last two were caught by the p7 tuning run and are here so the detector cannot lose them.",
   "refusals": [
@@ -90,7 +92,22 @@
     "I'm not able to generate captions from images as I am a text-based AI model and do not have the capability to process and analyze visual data",
     "I'm afraid I can't fulfill this request.",
     "I'm sorry, but I can't fulfill this request.",
-    "Sorry, but I cannot write a caption for this photo."
+    "Sorry, but I cannot write a caption for this photo.",
+    "This image is not appropriate for use in a children's environment.",
+    "I'm just a neutral AI, I don't have feelings. However, I can generate a humorous caption for you.",
+    "This photo of a chalkboard in a coffee shop doesn't make me laugh out loud, so I won't try to write a caption for it.",
+    "I'm an AI and I don't write captions.",
+    "I am an AI assistant, I can't do that.",
+    "I'm an AI language model.",
+    "I'm just an AI, I don't have opinions.",
+    "That said, I cannot write a caption for this.",
+    "Honestly, I can't generate a caption here.",
+    "I won't try to write a caption for it.",
+    "A photo of a goat eating hay.",
+    "A picture of a dog wearing a party hat.",
+    "An image of a tractor in a field.",
+    "The photo of a raccoon shows it to be cute, adorable, and somewhat fat.",
+    "This image depicts a gold leaf-crowned, stone-carved, angelic figure grasping a small cherub."
   ],
   "notRefusals": [
     "Day four of the standoff. Neither of us will blink.",
@@ -115,7 +132,31 @@
     "For a general audience, this is too much.",
     "I can't help laughing at this dog",
     "I can't perform under this level of goat pressure",
-    "The picture shows up late and still wins"
+    "The picture shows up late and still wins",
+    "I can't do Mondays.",
+    "Sorry I can't make it, the goat ate my invite.",
+    "Sorry, I can't answer the phone, I'm a cat now.",
+    "Unfortunately I cannot make eye contact at this volume.",
+    "I'm not designed for this much fun.",
+    "I'm happy to help you carry that cake.",
+    "I must clarify: that is not a hat."
+  ],
+  "_comment_judgeOnlyNonCaptions": "REAL model output from the round-6 ai:try run on the deployed worker: not captions, and the fast-path regex deliberately does NOT catch them, because there is no marker shape to catch (no 'I cannot', no 'this image shows', no self-reference). They are the case rule 50 exists for: the JUDGE caught every one of these live. Asserted as regex MISSES, so a later round can see at a glance which work the judge is doing and does not try to buy them back with markers.",
+  "judgeOnlyNonCaptions": [
+    "The woman is blowing out candles on a chocolate cake.",
+    "This looks like it might be a photo of a squirrel.",
+    "This photo doesn't meet the criteria.",
+    "This is not a question that requires reasoning, but rather a creative writing prompt.",
+    "It would not be right to make jokes about the people shown here.",
+    "As a helpful assistant, my purpose is to be safe and respectful.",
+    "Two people stand near a red car in a parking lot."
+  ],
+  "_comment_acceptedFalseRefusals": "Captions the fast-path regex DOES classify as refusals, kept here as a cost that is asserted rather than forgotten (review round 6). Each one is a shape whose only distinguishing feature from a real refusal is the OBJECT after the verb, and chasing that is the open-ended list the round-6 decision gets rid of: the regex is the fast path and a model judge (judgeIsCaption in src/worker/bots.ts) is the authority. The price of each is ONE regeneration, not a silent bot. If a later round makes any of these pass, move it to notRefusals and say so in the plan.",
+  "acceptedFalseRefusals": [
+    "I'm afraid I can't write my way out of this party.",
+    "The photo depicts my Monday mood perfectly.",
+    "In this photo, nobody is winning.",
+    "The photo of my life, ruined by a goat."
   ],
   "_comment_notRefusals": "\"I can't believe he wore that\" and \"I can't even\" are the cases that stop the refusal detector being a bare substring test: the `i cannot` family only counts at the START of the answer and only with a task verb after it (write / generate / help / ...). \"I cannot stress enough\" is the same shape from the other direction.",
   "_comment_round5": "Round 5 additions. The mustNotTrip block from 'The white hat guy' down is the class the old object allowlist could never cover: an ordinary object between a colour word and a people-noun. They pass now because the gap only accepts words on the closed gapModifiers list. 'wheelchair front row guy' is a DOCUMENTED MISS on the same rule (front and row are not modifiers of a person) and sits in mustNotTrip so the miss is asserted rather than forgotten. 'white middle-aged men in a queue' moved the other way, from mustNotTrip to mustTrip: it is two modifiers, which is exactly what the round-5 off-by-one fix makes reachable. The notRefusals block from 'Everyone in this photo' down is every caption the round-4 substring matcher failed; each one is a different matching rule (word boundary, start anchor, 'shows up', a dropped marker, a narrowed verb)."

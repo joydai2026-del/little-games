@@ -76,7 +76,7 @@ in `src/shared/config.ts` if the var is missing.
 
 | Var | Default | What it does |
 |---|---|---|
-| `PHOTO_TAGS` | `dog,cat,funny,awkward,party,baby,goat,costume,fail` | the tag pool loremflickr draws from |
+| `PHOTO_TAGS` | `dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue` | the tag pool loremflickr draws from. **This is the game's content policy** (see below) |
 | `PHOTO_WIDTH` / `PHOTO_HEIGHT` | `800` / `600` | requested photo size |
 | `PHOTO_MAX_BYTES` | `2000000` | hard byte cap, enforced while the image streams in |
 | `PHOTO_TIMEOUT_MS` | `8000` | deadline on one outbound photo request. The download happens inside the request every player polls, so a stalled image host without this parks the whole room |
@@ -87,7 +87,7 @@ in `src/shared/config.ts` if the var is missing.
 | `BOT_TIMEOUT_MS` | `20000` | the budget for one bot's WHOLE caption ladder (up to three model calls), which is also the deadline the job is reaped at |
 | `REVEAL_MIN_MS` | `3000` | how long reveal must be on screen before the host may skip it |
 | `AI_TRY_MAX_SAMPLES` | `24` | cost ceiling on one `POST /api/ai-try` call: photos x personas |
-| `AI_TRY_MAX_MODEL_CALLS` | `160` | hard ceiling on model calls in one `ai-try` request (captions, photo descriptions and relevance judges) |
+| `AI_TRY_MAX_MODEL_CALLS` | `160` | HARD ceiling on model calls in one `ai-try` request (captions, caption judges, photo descriptions, relevance judges). Reserved before every call, so a cap below one photo batch really does stop the batch |
 | `SMOKE_TOKEN` | *(secret, unset)* | guards `POST /api/ai-smoke` and `POST /api/ai-try`. Unset means both are off. |
 
 Room options (host-settable at create, clamped): `rounds` 1-20 (default 5), `captionSeconds` 15-180
@@ -120,7 +120,19 @@ So there are three defences, in this order of importance:
    plan; change them together or not at all.
 3. **The refusal detector** (`looksLikeRefusal`, same file). A model that refuses, talks about itself,
    or describes the photo back has not written a caption. A leading "Caption:" is stripped rather than
-   failed.
+   failed. This is the FAST PATH, not the last word: see below.
+4. **The caption judge** (`judgeIsCaption` in `src/worker/bots.ts`), which is the AUTHORITY on "is this
+   a caption". Rounds 3, 4 and 5 each closed the exact refusal phrasings that had just shipped, and the
+   next live build shipped new ones anyway: after round 5, three fresh phrasings reached players in
+   three different games. A marker list cannot enumerate the ways a model declines. So every bot caption
+   the regex lets through is shown once to `TEXT_MODEL` in JSON mode, caption text only, and only the
+   verdict `caption` ships; `refusal` (a statement about an AI, its abilities, feelings or willingness,
+   or about whether content is appropriate) and `description` (a neutral summary with no joke) are
+   treated exactly like a guard trip. It costs ONE extra text call per delivered bot caption, it spends
+   the same job budget the caption ladder spends, and it FAILS OPEN: a judge that errors, times out or
+   runs out of budget leaves the regex verdict standing, because a dead judge must never sit every bot
+   out. Audit it live at any time:
+   `curl -X POST $CAPTION_WARS_URL/api/ai-try -H "x-smoke-token: $SMOKE_TOKEN" -d '{"judgeTexts":["..."]}'`
 
 A caption that fails the guard or the refusal check gets **one** regeneration (a calm correction naming
 the flagged words after a guard trip, a LIGHTER prompt after a refusal) and then **one** attempt on
@@ -129,8 +141,30 @@ reason is logged, and the round carries on without it.
 
 `agent/lib.mjs` carries the same two checks for the terminal agent and reads the SAME
 `blocked-terms.json`, and `tests/guard-cases.json` is one case table asserted against both, so the two
-can never disagree. **Humans are never filtered.** Their captions are their own, and the game does not
-moderate players.
+can never disagree. The terminal agent has no judge: it drives a CLI brain and has no `TEXT_MODEL`
+binding to judge with. **Humans are never filtered.** Their captions are their own, and the game does
+not moderate players.
+
+### What the game puts ON THE SCREEN: `PHOTO_TAGS` is the content policy
+
+Everything above is about what the bots WRITE. `PHOTO_TAGS` decides what every player LOOKS AT, and
+that is a separate question with no automated answer: the photo host has no safe-search, and nothing in
+`fetchPhoto` classifies content (it checks status, content type, byte cap and the "no match" placeholder,
+and that is all). Review round 6 pulled 17 real photos and found 3 sexualised close-ups, all of them
+from `party` or `costume`, one served by a live game. Both tags are gone.
+
+**Anything with people in it is JJ's call, not an agent's.** An agent may add or remove a tag only after
+auditing it live, and must show her the descriptions:
+
+```bash
+npm run ai:try -- --audit-tags duck,pigeon --per-tag 3
+```
+
+That pulls 3 real photos per tag through the worker's own fetch path and prints the vision model's
+one-sentence description of each. A tag ships only if its photos are about the tag at least 2 of 3
+times and none of the three is people-focused. On 2026-09-07 that audit accepted `duck`, `pigeon`,
+`squirrel`, `cake` and `statue`, and rejected `tractor` (toys and a picsum fallback, no tractor),
+`penguin` (1 of 3) and `llama` (three photos of people and no llama).
 
 ### Tuning the caption prompt against real photos
 

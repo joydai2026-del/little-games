@@ -351,6 +351,7 @@ export class RoomDO implements DurableObject {
       visionModelFallback: this.set.visionModelFallback,
       textModel: this.set.textModel,
       timeoutMs: this.set.botTimeoutMs,
+      judgeTimeoutMs: this.set.captionJudgeTimeoutMs,
       visionMaxBytes: this.set.visionMaxBytes,
     };
   }

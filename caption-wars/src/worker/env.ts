@@ -14,6 +14,7 @@ import {
   AI_TRY_MAX_MODEL_CALLS,
   AI_TRY_MAX_SAMPLES,
   BOT_TIMEOUT_MS,
+  CAPTION_JUDGE_TIMEOUT_MS,
   CAPTION_MAX_CHARS,
   PHOTO_MAX_BYTES,
   PHOTO_TIMEOUT_MS,
@@ -36,6 +37,7 @@ export interface Env {
   VISION_MODEL_FALLBACK: string;
   TEXT_MODEL: string;
   BOT_TIMEOUT_MS: string;
+  CAPTION_JUDGE_TIMEOUT_MS: string;
   REVEAL_MIN_MS: string;
   AI_TRY_MAX_SAMPLES: string;
   AI_TRY_MAX_MODEL_CALLS: string;
@@ -55,6 +57,7 @@ export interface Settings {
   visionModelFallback: string;
   textModel: string;
   botTimeoutMs: number;
+  captionJudgeTimeoutMs: number;
   revealMinMs: number;
   captionMaxChars: number;
   aiTryMaxSamples: number;
@@ -72,7 +75,10 @@ function str(raw: string | undefined, fallback: string): string {
 }
 
 /** Defaults that only exist as wrangler vars (there is no game logic that needs them elsewhere). */
-const DEFAULT_TAGS = 'dog,cat,funny,awkward,party,baby,goat,costume,fail';
+// Must stay the same list as PHOTO_TAGS in wrangler.jsonc, where the content
+// policy behind it is written down (review round 6: `party` and `costume` were
+// dropped for returning sexualised photos, every replacement was audited live).
+const DEFAULT_TAGS = 'dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue';
 const DEFAULT_VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 const DEFAULT_VISION_MODEL_FALLBACK = '@cf/llava-hf/llava-1.5-7b-hf';
 const DEFAULT_TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -94,6 +100,7 @@ export function settings(env: Env): Settings {
     visionModelFallback: str(env.VISION_MODEL_FALLBACK, DEFAULT_VISION_MODEL_FALLBACK),
     textModel: str(env.TEXT_MODEL, DEFAULT_TEXT_MODEL),
     botTimeoutMs: num(env.BOT_TIMEOUT_MS, BOT_TIMEOUT_MS),
+    captionJudgeTimeoutMs: num(env.CAPTION_JUDGE_TIMEOUT_MS, CAPTION_JUDGE_TIMEOUT_MS),
     revealMinMs: num(env.REVEAL_MIN_MS, REVEAL_MIN_MS),
     captionMaxChars: CAPTION_MAX_CHARS,
     aiTryMaxSamples: num(env.AI_TRY_MAX_SAMPLES, AI_TRY_MAX_SAMPLES),

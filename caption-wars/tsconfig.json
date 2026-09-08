@@ -13,7 +13,8 @@
     "resolveJsonModule": true
   },
   "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"],
-  // room-do.test.ts drives the Durable Object, so it needs Cloudflare's ambient
-  // types. It is typechecked by tsconfig.worker.json instead.
-  "exclude": ["tests/room-do.test.ts"]
+  // These two drive worker modules that name Cloudflare's ambient binding types
+  // (Env, DurableObjectNamespace, Ai), so they are typechecked by
+  // tsconfig.worker.json instead, which loads @cloudflare/workers-types.
+  "exclude": ["tests/room-do.test.ts", "tests/ai-try.test.ts"]
 }

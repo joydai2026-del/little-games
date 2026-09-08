@@ -38,6 +38,21 @@ export const REVEAL_MIN_MS = 3000;
 export const BOT_TIMEOUT_MS = 20000;
 
 /**
+ * Hard stop on ONE caption-judge call (rule 50), overridable through the
+ * wrangler var CAPTION_JUDGE_TIMEOUT_MS. It is still clamped again by whatever
+ * is left of the bot job's own deadline, so this only ever makes the judge
+ * WAIT LESS than the job would allow.
+ *
+ * Measured: 6000 was too tight. The round-6 ai:try run drove four personas
+ * concurrently (a vision call and a judge call each, plus a relevance judge per
+ * photo) and `wrangler tail` showed the judge failing with "The operation was
+ * aborted due to timeout" on about 1 call in 10, which fails OPEN and therefore
+ * shipped two descriptions the judge would otherwise have caught. p95 for a
+ * text call under that load measured 6382ms.
+ */
+export const CAPTION_JUDGE_TIMEOUT_MS = 10000;
+
+/**
  * The cost ceiling on ONE POST /api/ai-try request, overridable through the
  * wrangler vars AI_TRY_MAX_SAMPLES and AI_TRY_MAX_MODEL_CALLS.
  *

@@ -25,7 +25,20 @@
     "enabled": true
   },
   "vars": {
-    "PHOTO_TAGS": "dog,cat,funny,awkward,party,baby,goat,costume,fail",
+    // PHOTO_TAGS IS THE CONTENT POLICY: it decides what the game PUTS ON THE
+    // SCREEN, which is a different question from what the bots WRITE and the
+    // one five review rounds never asked. Review round 6 pulled 17 real photos
+    // and 3 of the 7 from `party` and `costume` were sexualised close-ups of a
+    // woman, one of them served by a live game, so both tags are gone. Every
+    // candidate that replaced them was AUDITED live before it shipped: 3 real
+    // photos per tag through the worker's own fetch path, each described by the
+    // vision model, keep only tags that are about the tag at least 2 of 3 times
+    // with no people-focused content. `tractor`, `llama` and `penguin` were
+    // audited and REJECTED (llama returned three photos of people and no llama).
+    // Re-run the audit before adding one:
+    //   npm run ai:try -- --audit-tags <tag>,<tag> --per-tag 3
+    // ANYTHING WITH PEOPLE IN IT IS JJ'S CALL, not an agent's.
+    "PHOTO_TAGS": "dog,cat,funny,awkward,baby,goat,fail,duck,pigeon,squirrel,cake,statue",
     "PHOTO_WIDTH": "800",
     "PHOTO_HEIGHT": "600",
     "PHOTO_MAX_BYTES": "2000000",
@@ -35,6 +48,9 @@
     "VISION_MODEL_FALLBACK": "@cf/llava-hf/llava-1.5-7b-hf",
     "TEXT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "BOT_TIMEOUT_MS": "20000",
+    // One caption-judge call (rule 50), clamped again by what is left of the
+    // bot job's deadline. 6000 measured too tight under a four-persona burst.
+    "CAPTION_JUDGE_TIMEOUT_MS": "10000",
     "REVEAL_MIN_MS": "3000",
     // The cost ceiling on one POST /api/ai-try request (the prompt tuning rig).
     // Samples = photos x personas; the model-call cap counts every caption

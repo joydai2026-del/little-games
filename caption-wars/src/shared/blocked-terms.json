@@ -133,6 +133,12 @@
     "and",
     "or"
   ],
-  "_principle_pairConjunctions": "A label word joined to another label word by one of these ('black AND white') is a colour PAIR, which in a photo caption is overwhelmingly about the picture, not the people. The second half of such a pair never starts a walk, so 'black and white family photo energy' and 'asian black and white men' are ordinary play. Accepted cost, in writing: 'black and white people' does NOT trip either. The phrase is ambiguous with a black-and-white photograph and the guard is a backstop, not a classifier (principle (a)).",
+  "pairLabels": [
+    "black",
+    "white",
+    "brown"
+  ],
+  "_principle_pairConjunctions": "A COLOUR word joined to another COLOUR word by one of these ('black AND white') is a colour PAIR, which in a photo caption is overwhelmingly about the picture, not the people. The second half of such a pair never starts a walk, so 'black and white family photo energy' and 'asian black and white men' are ordinary play. Accepted cost, in writing: 'black and white people' and 'black or white people' do NOT trip either. The phrase is ambiguous with a black-and-white photograph and the guard is a backstop, not a classifier (principle (a)).",
+  "_principle_pairLabels": "BOTH halves of a pair must be on this list (review round 6). Round 5 accepted any two labelWords either side of the conjunction, so 'asian and black men' got an exemption written for monochrome photography and did not trip. Only colours have the picture-versus-people ambiguity that justifies the exemption, so only colours are here. Adding a word here widens the exemption and therefore weakens the guard: do it only with a case in tests/guard-cases.json.",
   "_principle_disability": "Disability words used as a label on a person are group labelling too ('wheelchair guy', 'blind person', 'deaf kid'). They sit in labelWords so the same modifier-gap rule applies; the idioms need no allowlist any more, because 'blind date', 'deaf ears', 'wheelchair ramp' and 'disabled parking' all end the walk on their own (date / ears / ramp / parking are not gapModifiers). Added 2026-09-07 after Codex review round 4; the allowlist it used to need was deleted in round 5."
 }

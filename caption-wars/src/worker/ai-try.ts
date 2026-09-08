@@ -25,11 +25,15 @@ import {
   CAPTION_PROMPT_VERSION,
   composeBotCaption,
   describePhoto,
+  judgeIsCaption,
   judgeRelevance,
+  makeCallBudget,
+  type CaptionJudgeVerdict,
   type BotModels,
   type CaptionAttempt,
   type RelevanceVerdict,
 } from './bots';
+import { refusalMatch } from '../shared/caption-guard';
 import { fetchPhoto } from './photo';
 import { settings, type Env } from './env';
 import { secretsMatch } from './token';
@@ -37,6 +41,17 @@ import { secretsMatch } from './token';
 /** Hard cap: this is model spend, and a Worker has a subrequest budget. */
 const MAX_PHOTOS = 10;
 const DEFAULT_PHOTOS = 3;
+
+/**
+ * A tag override is an operator-supplied string that ends up in an outbound URL,
+ * so it is validated rather than trusted: lower-case letters, digits and hyphens,
+ * short, and at most this many of them. See the tag policy in the README.
+ */
+const TAG_RE = /^[a-z0-9-]{1,24}$/;
+const MAX_TAGS = 12;
+
+/** How many strings one judge-audit request may check. Each one is a model call. */
+const MAX_JUDGE_TEXTS = 30;
 
 export interface AiTrySample {
   photoSha: string;
@@ -54,6 +69,8 @@ export interface AiTrySample {
   final: string | null;
   /** Is the delivered caption about THIS photo? Tuning only. See judgeRelevance. */
   relevance: RelevanceVerdict;
+  /** The tag the photo host was asked for, when the request overrode PHOTO_TAGS. */
+  photoTag?: string;
 }
 
 export interface AiTryResult {
@@ -71,6 +88,15 @@ export interface AiTryResult {
     relevance: Record<string, number>;
     /** Every model call this request made, so the spend is visible in the answer. */
     model_calls: number;
+    /** The ceiling those calls were reserved against. */
+    model_call_cap: number;
+    /**
+     * Captions the fast-path regex passed and the caption JUDGE then rejected
+     * (round 6). This is the number that says whether the judge is earning its
+     * one extra text call per caption.
+     */
+    judge_rejected: number;
+    judge_verdicts: Record<string, number>;
   };
   photoErrors: string[];
 }
@@ -101,18 +127,54 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
   if (!expected) {
     return json({ error: 'ai-try is off: set the SMOKE_TOKEN secret first' }, 503);
   }
-  if (!secretsMatch(request.headers.get('x-smoke-token'), expected)) {
+  if (!(await secretsMatch(request.headers.get('x-smoke-token'), expected))) {
     return json({ error: 'bad smoke token' }, 401);
   }
 
-  let body: { photos?: number; personas?: string[] } = {};
+  let body: {
+    photos?: number;
+    personas?: string[];
+    tags?: string[];
+    describeOnly?: boolean;
+    judgeTexts?: string[];
+  } = {};
   try {
     body = ((await request.json()) ?? {}) as typeof body;
   } catch {
     body = {};
   }
 
-  const set = settings(env);
+  const base = settings(env);
+
+  // TAG VERIFICATION (review round 6, must-fix 3 / M4). PHOTO_TAGS is the game's
+  // content policy: what the game PUTS ON THE SCREEN, which five review rounds
+  // never looked at while spending their whole content budget on what the bots
+  // WRITE. A tag is only worth shipping if photos of it are actually about that
+  // subject and have no people-focused content in them, and the only way to know
+  // that is to pull real photos for the tag and describe them. So this route
+  // takes a tag override plus `describeOnly`, and the same command that tunes the
+  // prompt also audits a candidate tag:
+  //
+  //   curl -X POST .../api/ai-try -H "x-smoke-token: $SMOKE_TOKEN" \
+  //        -d '{"tags":["duck"],"photos":3,"describeOnly":true}'
+  //
+  // The override never touches the deployed PHOTO_TAGS: it is per request, so an
+  // audit costs no redeploy and cannot leave the game pointed at a test tag.
+  let tags: string[] | null = null;
+  if (body.tags !== undefined) {
+    if (!Array.isArray(body.tags) || body.tags.length === 0 || body.tags.length > MAX_TAGS) {
+      return json({ error: `tags must be an array of 1 to ${MAX_TAGS} strings` }, 400);
+    }
+    const cleaned = body.tags.map((t) => String(t ?? '').trim().toLowerCase());
+    const bad = cleaned.find((t) => !TAG_RE.test(t));
+    if (bad !== undefined) {
+      return json({ error: `tag ${JSON.stringify(bad)} is not [a-z0-9-]{1,24}` }, 400);
+    }
+    tags = cleaned;
+  }
+  const set = tags ? { ...base, photoTags: tags } : base;
+  const describeOnly = body.describeOnly === true;
+
   const personas: Persona[] =
     Array.isArray(body.personas) && body.personas.length > 0
       ? PERSONAS.filter((p) => body.personas!.includes(p.id) || body.personas!.includes(p.name))
@@ -131,7 +193,7 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
   const wanted = Number(body.photos);
   const asked = Math.max(1, Number.isFinite(wanted) ? Math.trunc(wanted) : DEFAULT_PHOTOS);
   const byCap = Math.max(1, Math.floor(set.aiTryMaxSamples / personas.length));
-  const photoCount = Math.min(MAX_PHOTOS, asked, byCap);
+  const photoCount = describeOnly ? Math.min(MAX_PHOTOS, asked) : Math.min(MAX_PHOTOS, asked, byCap);
 
   const models: BotModels = {
     ai: env.AI as unknown as BotModels['ai'],
@@ -139,13 +201,58 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     visionModelFallback: set.visionModelFallback,
     textModel: set.textModel,
     timeoutMs: set.botTimeoutMs,
+    judgeTimeoutMs: set.captionJudgeTimeoutMs,
     visionMaxBytes: set.visionMaxBytes,
   };
 
+  // THE JUDGE AUDIT (review round 6). The judge is now the AUTHORITY on "is this
+  // a caption" (see the header of src/shared/caption-guard.ts), so its verdicts
+  // have to be checkable on demand rather than inferred from a game. Give it a
+  // list of strings and it answers for each one, next to what the fast-path
+  // regex said, on the deployed models:
+  //
+  //   curl -X POST .../api/ai-try -H "x-smoke-token: $SMOKE_TOKEN" \
+  //        -d '{"judgeTexts":["I am an AI and I have no feelings.","Day four of the standoff."]}'
+  //
+  // The strings are DATA: they go to the judge as the text under test and never
+  // as instructions (judgeIsCaption says so in its own prompt).
+  if (body.judgeTexts !== undefined) {
+    if (
+      !Array.isArray(body.judgeTexts) ||
+      body.judgeTexts.length === 0 ||
+      body.judgeTexts.length > MAX_JUDGE_TEXTS
+    ) {
+      return json({ error: `judgeTexts must be an array of 1 to ${MAX_JUDGE_TEXTS} strings` }, 400);
+    }
+    const texts = body.judgeTexts.map((t) => String(t ?? '').slice(0, 300));
+    const judgeBudget = makeCallBudget(set.aiTryMaxModelCalls);
+    const verdicts: Array<{
+      text: string;
+      regex: string | null;
+      judge: CaptionJudgeVerdict;
+      ships: boolean;
+    }> = [];
+    for (const text of texts) {
+      const regex = refusalMatch(text);
+      const judge = await judgeIsCaption(models, text, set.botTimeoutMs, judgeBudget);
+      verdicts.push({ text, regex, judge, ships: regex === null && judge === 'caption' });
+    }
+    return json({
+      prompt_version: CAPTION_PROMPT_VERSION,
+      model: set.textModel,
+      judge: verdicts,
+      summary: { model_calls: judgeBudget.used(), model_call_cap: judgeBudget.cap() },
+    });
+  }
+
   const samples: AiTrySample[] = [];
   const photoErrors: string[] = [];
-  let modelCalls = 0;
-  const spent = (): boolean => modelCalls >= set.aiTryMaxModelCalls;
+  // Every model call below RESERVES a slot in this object before it happens
+  // (Codex round 6, must-fix 1). The old counter was checked once per photo and
+  // incremented after a `Promise.all` fan-out had already run, so a cap smaller
+  // than one photo batch could be exceeded by a whole batch.
+  const callBudget = makeCallBudget(set.aiTryMaxModelCalls);
+  const spent = (): boolean => callBudget.used() >= callBudget.cap();
 
   for (let i = 0; i < photoCount; i++) {
     if (spent()) {
@@ -165,20 +272,38 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
     }
 
     // One plain description of this photo, shared by every persona's sample. It
-    // is what makes `relevance` checkable by a human reading the table.
-    modelCalls += 1;
-    const description = await describePhoto(models, photo.bytes);
+    // is what makes `relevance` checkable by a human reading the table, and in
+    // `describeOnly` mode it is the whole answer.
+    const description = await describePhoto(models, photo.bytes, set.botTimeoutMs, callBudget);
+
+    if (describeOnly) {
+      samples.push({
+        photoSha: photo.meta.sha256,
+        photoSource: photo.meta.source,
+        photoBytes: photo.meta.bytes,
+        photoDescription: description,
+        persona: '(describe only)',
+        model: models.visionModel,
+        attempts: [],
+        final: null,
+        relevance: 'unknown',
+        ...(tags ? { photoTag: tags.join(',') } : {}),
+      });
+      continue;
+    }
 
     // The personas for one photo run together: same picture, four voices, which
-    // is exactly the shape of a real round.
+    // is exactly the shape of a real round. The shared budget is what keeps that
+    // fan-out inside the cap: `reserve()` is synchronous, so every branch has
+    // taken its slot before it awaits anything.
     const forPhoto = await Promise.all(
       personas.map(async (persona) => {
-        const { attempts, final } = await composeBotCaption(models, persona, photo.bytes);
-        modelCalls += attempts.length;
+        const { attempts, final } = await composeBotCaption(models, persona, photo.bytes, {
+          callBudget,
+        });
         let relevance: RelevanceVerdict = 'unknown';
         if (final !== null && description !== null) {
-          modelCalls += 1;
-          relevance = await judgeRelevance(models, description, final);
+          relevance = await judgeRelevance(models, description, final, set.botTimeoutMs, callBudget);
         }
         return {
           photoSha: photo.meta.sha256,
@@ -190,6 +315,7 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
           attempts,
           final,
           relevance,
+          ...(tags ? { photoTag: tags.join(',') } : {}),
         } satisfies AiTrySample;
       })
     );
@@ -198,12 +324,24 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
 
   const firstAttempt: Record<string, number> = { ok: 0, refusal: 0, labelling: 0, empty: 0 };
   const relevance: Record<string, number> = { 'on-photo': 0, 'off-photo': 0, unknown: 0 };
+  const judgeVerdicts: Record<string, number> = {
+    caption: 0,
+    refusal: 0,
+    description: 0,
+    unknown: 0,
+  };
   let labellingAnywhere = 0;
+  let judgeRejected = 0;
   for (const sample of samples) {
     const first = sample.attempts[0];
     if (first) firstAttempt[first.verdict] = (firstAttempt[first.verdict] ?? 0) + 1;
     if (sample.attempts.some((a) => a.verdict === 'labelling')) labellingAnywhere += 1;
     if (sample.final !== null) relevance[sample.relevance] = (relevance[sample.relevance] ?? 0) + 1;
+    for (const attempt of sample.attempts) {
+      if (attempt.judge === null || attempt.judge === undefined) continue;
+      judgeVerdicts[attempt.judge] = (judgeVerdicts[attempt.judge] ?? 0) + 1;
+      if (attempt.judge === 'refusal' || attempt.judge === 'description') judgeRejected += 1;
+    }
   }
 
   const result: AiTryResult = {
@@ -217,7 +355,10 @@ export async function handleAiTry(request: Request, env: Env): Promise<Response>
       final_failed: samples.filter((s) => s.final === null).length,
       labelling_anywhere: labellingAnywhere,
       relevance,
-      model_calls: modelCalls,
+      model_calls: callBudget.used(),
+      model_call_cap: callBudget.cap(),
+      judge_rejected: judgeRejected,
+      judge_verdicts: judgeVerdicts,
     },
     photoErrors,
   };

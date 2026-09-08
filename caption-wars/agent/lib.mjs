@@ -143,9 +143,19 @@ function normalizeTerm(text) {
     .trim();
 }
 
-/** True when this label word is the tail of a colour pair ("black AND white"). */
-function isPairTail(words, i, labels, conjunctions) {
-  return i >= 2 && conjunctions.has(words[i - 1]) && labels.has(words[i - 2]);
+/**
+ * True when this label word is the tail of a COLOUR pair ("black AND white").
+ * Round 6: both halves must be on `pairLabels` (black / white / brown), so
+ * "asian and black men" no longer gets the monochrome-photograph exemption.
+ * Twin of isPairTail in src/shared/caption-guard.ts.
+ */
+function isPairTail(words, i, pairLabels, conjunctions) {
+  return (
+    i >= 2 &&
+    pairLabels.has(words[i]) &&
+    conjunctions.has(words[i - 1]) &&
+    pairLabels.has(words[i - 2])
+  );
 }
 
 /** The term that made this read as a label on the people in the photo, or null. */
@@ -172,10 +182,11 @@ export function labellingMatch(text, terms = BLOCKED_TERMS) {
   const peopleNouns = new Set((terms.peopleNouns ?? []).map(normalizeTerm));
   const modifiers = new Set((terms.gapModifiers ?? []).map(normalizeTerm));
   const conjunctions = new Set((terms.pairConjunctions ?? []).map(normalizeTerm));
+  const pairLabels = new Set((terms.pairLabels ?? []).map(normalizeTerm));
 
   for (let i = 0; i < words.length; i++) {
     if (!labels.has(words[i])) continue;
-    if (isPairTail(words, i, labels, conjunctions)) continue;
+    if (isPairTail(words, i, pairLabels, conjunctions)) continue;
     for (let j = i + 1; j <= i + MAX_GAP_WORDS + 1 && j < words.length; j++) {
       if (peopleNouns.has(words[j])) return `${words[i]} ${words[j]}`;
       if (!modifiers.has(words[j])) break;
@@ -199,31 +210,47 @@ export function looksLikeLabelling(text, terms = BLOCKED_TERMS) {
 // tie..." to players AS CAPTIONS; round 5's probes then showed the round-4
 // substring matching failing ordinary captions like "Dressed as an airline pilot
 // for no reason." Both halves have to stay true, in both implementations.
+//
+// ROUND 6: the worker's bot path now has a MODEL JUDGE behind this regex
+// (judgeIsCaption in src/worker/bots.ts), and that judge, not the regex, is the
+// authority on "is this a caption". The terminal agent keeps the regex ONLY: it
+// drives a CLI brain and has no TEXT_MODEL binding to judge with. The regex
+// itself must still stay identical to the worker's copy, which is what
+// tests/guard-cases.json enforces.
 
 const SELF_REFERENCE_RE =
-  /\b(?:i'm|i am|as an?|being an?)\s+(?:a\s+)?(?:large\s+|small\s+|text[\s-]based\s+)?(?:language model|ai|artificial intelligence)\b/;
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai|artificial intelligence)\b/;
 
 const REFUSAL_MARKERS = [
-  "i'm not designed",
-  'i am not designed',
+  "i'm not designed to",
+  'i am not designed to',
   'against my guidelines',
   'not appropriate or acceptable',
-  'i must clarify',
-  "i'm happy to help",
-  'i am happy to help',
+  'not appropriate for use',
+  "children's environment",
+  'i must clarify that',
   "i don't have the capability",
   'i do not have the capability',
   "i'm not capable",
   'i am not capable',
+  'neutral ai',
+  "don't have feelings",
+  'do not have feelings',
 ];
+
+/** Twin of CONTENT_POLICY_RE in src/shared/caption-guard.ts. */
+const CONTENT_POLICY_RE = /\bthis\s+(?:image|photo|picture)\s+is\s+not\s+(?:appropriate|suitable)\b/;
 
 const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
 
-// The "I cannot ..." family, matched only at the START and only with a task
-// verb after it: "I can't believe he wore that to a wedding." is a caption, not
-// a refusal. Must stay identical to REFUSAL_OPENER_RE in caption-guard.ts.
+// The "I cannot ..." family, matched only at the start of a CLAUSE and only with
+// a task verb after it: "I can't believe he wore that to a wedding." is a
+// caption, not a refusal. Must stay identical to REFUSAL_OPENER_RE in
+// caption-guard.ts, including round 6's clause-start anchor (a live build
+// refused in its SECOND clause), the try-to / attempt-to adverbs, and the
+// removal of make / do / answer from the verb list.
 const REFUSAL_OPENER_RE =
-  /^(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|fulfil|fulfill|comply|assist|caption|continue|complete|answer|respond|help\s+(?:you|with))\b/;
+  /(?:^|[,.;:]\s+(?:so\s+|but\s+|and\s+|then\s+)?)(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+|try\s+to\s+|attempt\s+to\s+)*(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\s+(?:you|with))\b/;
 
 const META_MARKERS = [
   'the party game photo shows',
@@ -235,11 +262,21 @@ const META_MARKERS = [
   'this picture shows',
   'the image depicts',
   'the photo depicts',
+  'this image depicts',
+  'this photo depicts',
+  'this picture depicts',
+  'the picture depicts',
   'in this image',
   'in this photo',
   "here's a caption",
   'here is a caption',
   'here are some captions',
+  'a photo of',
+  'an image of',
+  'a picture of',
+  'the photo of',
+  'the image of',
+  'the picture of',
 ];
 
 /** Twin of markerRe in src/shared/caption-guard.ts. */
@@ -270,6 +307,7 @@ export function refusalMatch(text) {
   if (flat.length === 0) return null;
   if (SELF_REFERENCE_RE.test(flat)) return 'model talking about itself';
   if (APOLOGY_RE.test(flat)) return 'i apologize, but';
+  if (CONTENT_POLICY_RE.test(flat)) return 'a verdict on whether the photo is allowed';
   for (let i = 0; i < REFUSAL_MARKERS.length; i++) {
     if (REFUSAL_RES[i].test(flat)) return REFUSAL_MARKERS[i];
   }

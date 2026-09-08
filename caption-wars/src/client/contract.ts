@@ -97,8 +97,13 @@ export interface RoomView {
    * of pretending they are tappable.
    */
   photoRetryAt?: number | null;
-  /** Why the game ended, when it did not end by playing out every round. */
-  endedReason?: string;
+  /**
+   * Why the game ended, when it did not end by playing out every round. The
+   * UNION, not `string` (round 6, Claude nit 2): round 4 gave the sibling
+   * `voidReason` its union so a typo in a comparison stops typechecking, and
+   * done.ts compares this one to a string literal in exactly the same way.
+   */
+  endedReason?: 'photo-unavailable';
   phaseEndsAt?: number;
   phaseStartedAt?: number;
   history: RoundResultView[];

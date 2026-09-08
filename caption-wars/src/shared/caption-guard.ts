@@ -34,8 +34,9 @@
 // (d) ORDINARY BODY AND AGE ADJECTIVES ARE NOT BLOCKED: `old`, `elderly`,
 //     `bald`, `fat`, `skinny`, `ugly`. "Old man yells at cloud" is a stock meme
 //     and the median caption for a photo of an older person; the PHOTO_TAGS
-//     ship `party`, `baby`, `costume`, so those photos are full of exactly
-//     those people. Round 3 put these words in the matcher and blocked `old
+//     ship `baby` and `funny`, so those photos are full of exactly those
+//     people. (`party` and `costume` were dropped in round 6 for what they put
+//     on the SCREEN, not for what the bots wrote about them: see rule 51.) Round 3 put these words in the matcher and blocked `old
 //     man`, `bald guy`, `skinny guy`, `old lady`, `old couple`, `ugly kids`.
 //     ACCEPTED RESIDUAL RISK, in writing: a bot caption of the form "Fat guy
 //     just standing there." now passes this file and is stopped by the prompt
@@ -77,10 +78,13 @@
 // pulled a label and a people-noun inside the gap that were four words apart
 // ("asian black and white men" -> "asian ALLOWLISTED men" -> "asian men").
 //
-// ONE special case survives, and it is closed too: a label word joined to
-// another label word by "and" / "or" is a colour PAIR ("black and white"), and
+// ONE special case survives, and it is closed too: a COLOUR word joined to
+// another COLOUR word by "and" / "or" is a colour PAIR ("black and white"), and
 // its second half never starts a walk. That keeps "black and white family photo
-// energy" and "asian black and white men" ordinary.
+// energy" and "asian black and white men" ordinary. Round 6 narrowed both sides
+// to the `pairLabels` colour set (black / white / brown), because round 5's
+// version accepted any two label words and handed "asian and black men" an
+// exemption written for monochrome photography.
 //
 // ACCEPTED CONSEQUENCES, in writing, so a later round cannot flip them quietly:
 //   - "black and white people" does NOT trip. The phrase is ambiguous with a
@@ -122,6 +126,14 @@ export interface BlockedTerms {
   gapModifiers?: string[];
   /** Words that join two label words into a colour pair ("black AND white"). */
   pairConjunctions?: string[];
+  /**
+   * The ONLY label words the colour-pair rule covers, on BOTH sides. Round 5
+   * wrote the rule for colours and implemented it for any two label words, so
+   * "asian and black men" got the black-and-white photograph exemption it has
+   * nothing to do with. Absent means no pairs at all, which is the safe
+   * direction (more tripping, never less).
+   */
+  pairLabels?: string[];
 }
 
 export const BLOCKED_TERMS: BlockedTerms = blocked as BlockedTerms;
@@ -144,17 +156,29 @@ function normalize(text: string): string {
 }
 
 /**
- * True when this label word is the second half of a colour pair ("black AND
+ * True when this label word is the second half of a COLOUR pair ("black AND
  * white"), which describes the picture far more often than the people in it.
  * The pair's second half never starts a walk. See THE GAP in the header.
+ *
+ * ROUND 6 (Claude should-fix 2): both halves must be on `pairLabels`, a
+ * three-word colour set. Round 5 accepted ANY two label words either side of the
+ * conjunction, so "asian and black men" and "black or asian guys" silently got
+ * the black-and-white-photograph exemption, which is documented for colours and
+ * for nothing else. The documented case is untouched: "black and white people"
+ * still does not trip, and neither does "black or white people".
  */
 function isPairTail(
   words: string[],
   i: number,
-  labels: Set<string>,
+  pairLabels: Set<string>,
   conjunctions: Set<string>
 ): boolean {
-  return i >= 2 && conjunctions.has(words[i - 1]) && labels.has(words[i - 2]);
+  return (
+    i >= 2 &&
+    pairLabels.has(words[i]) &&
+    conjunctions.has(words[i - 1]) &&
+    pairLabels.has(words[i - 2])
+  );
 }
 
 /**
@@ -187,10 +211,11 @@ export function labellingMatch(text: string, terms: BlockedTerms = BLOCKED_TERMS
   const peopleNouns = new Set((terms.peopleNouns ?? []).map((t) => normalize(t)));
   const modifiers = new Set((terms.gapModifiers ?? []).map((t) => normalize(t)));
   const conjunctions = new Set((terms.pairConjunctions ?? []).map((t) => normalize(t)));
+  const pairLabels = new Set((terms.pairLabels ?? []).map((t) => normalize(t)));
 
   for (let i = 0; i < words.length; i++) {
     if (!labels.has(words[i])) continue;
-    if (isPairTail(words, i, labels, conjunctions)) continue;
+    if (isPairTail(words, i, pairLabels, conjunctions)) continue;
     // j walks the people-noun slot: adjacent first, then over 1 and 2 modifiers.
     for (let j = i + 1; j <= i + MAX_GAP_WORDS + 1 && j < words.length; j++) {
       if (peopleNouns.has(words[j])) return `${words[i]} ${words[j]}`;
@@ -207,6 +232,48 @@ export function looksLikeLabelling(text: string, terms: BlockedTerms = BLOCKED_T
 }
 
 // --- refusals and other non-captions ----------------------------------------
+//
+// ============================================================================
+// THE AUTHORITY ON "IS THIS A CAPTION" IS A MODEL JUDGE (settled review round 6,
+// 2026-09-07). This is the written standard; do not re-litigate it.
+//
+// Rounds 3, 4 and 5 each fixed the exact refusal phrasings that had just shipped,
+// and each time the next live build shipped a NEW phrasing the regex had never
+// seen. After round 5, three fresh ones reached players as captions in three
+// different games:
+//   "This image is not appropriate for use in a children's environment."
+//   "I'm just a neutral AI, I don't have feelings. However, I can generate a
+//    humorous caption for you."
+//   "This photo of a chalkboard in a coffee shop doesn't make me laugh out loud,
+//    so I won't try to write a caption for it."
+// A list of markers cannot enumerate the ways a model can decline. Chasing them
+// is whack-a-mole, and every widening of the list buys a false positive that
+// silences a bot (principle (a)).
+//
+// So the job is split, once, and explicitly:
+//
+//   THE REGEX IN THIS FILE IS THE FAST PATH. Deterministic, zero model calls,
+//   and it catches every shape we have actually observed. It is ALLOWED to miss.
+//   Its expensive mistake is the other direction: a false positive costs a
+//   regeneration, so it stays narrow.
+//
+//   THE AUTHORITY IS `judgeIsCaption` in src/worker/bots.ts. Every bot caption
+//   that gets past this regex is shown to TEXT_MODEL in JSON mode, caption text
+//   only, and only the verdict `caption` ships. `refusal` (any statement about
+//   an AI, its abilities, feelings or willingness, or about whether content is
+//   appropriate) and `description` (a neutral summary of a photo with no joke)
+//   are treated exactly like a guard trip. The call is inside the bot job's
+//   budget (rule 46) and FAILS OPEN to this regex if it errors, times out, or
+//   the budget is spent, because a dead judge must never sit every bot out.
+//
+// A later round that finds another leaked refusal fixes the JUDGE PROMPT, or
+// adds the observed string to tests/guard-cases.json as a fast-path case. It
+// does not go looking for a cleverer regex.
+//
+// The terminal agent (agent/lib.mjs) keeps the regex ONLY: it drives a CLI brain
+// and has no TEXT_MODEL binding to judge with. Its captions are JJ's own agents
+// playing, not the bots the game ships to strangers.
+// ============================================================================
 //
 // Live runs on 2026-09-07 put THESE strings in front of players as captions:
 //   "I'm a large language model, I'm not capable of generating original content or ca..."
@@ -240,9 +307,19 @@ export function looksLikeLabelling(text: string, terms: BlockedTerms = BLOCKED_T
  * (a caption may contain that); it is a model SAYING IT IS ONE. Matched
  * anywhere, because a refusal often gets there in its second clause ("I'm happy
  * to help, but I must clarify that I'm a large language model").
+ *
+ * ROUND 6 widened two groups, both from strings a live build shipped:
+ *   - the determiner was `(?:a\s+)?`, which accepts "a" and never "an", so the
+ *     single most canonical opener in the family was missed: "I'm an AI and I
+ *     don't write captions.", "I am an AI assistant, I can't do that.", "I'm an
+ *     AI language model." all returned null. It is `(?:an?\s+)?` now. This cannot
+ *     create a false positive, because `ai` still needs a word boundary after it:
+ *     "Dressed as an airline pilot for no reason." still passes.
+ *   - an optional intensifier (just / only / merely / simply) and `neutral`,
+ *     after a live build shipped "I'm just a neutral AI, I don't have feelings."
  */
 const SELF_REFERENCE_RE =
-  /\b(?:i'm|i am|as an?|being an?)\s+(?:a\s+)?(?:large\s+|small\s+|text[\s-]based\s+)?(?:language model|ai|artificial intelligence)\b/;
+  /\b(?:i'm|i am|as an?|being an?)\s+(?:just\s+|only\s+|merely\s+|simply\s+)?(?:an?\s+)?(?:large\s+|small\s+|text[\s-]based\s+|neutral\s+)?(?:language model|ai|artificial intelligence)\b/;
 
 /**
  * Markers of a model talking about itself or about the request, matched ANYWHERE
@@ -258,20 +335,50 @@ const SELF_REFERENCE_RE =
  *   `i apologize` on its own failed "I apologize to the cake.", so it now
  *      requires the "but" that every real refusal has.
  *   `language model`, `text-based ai`, `as an ai` moved into SELF_REFERENCE_RE.
+ *
+ * ROUND 6 narrowed three that were ordinary English matched anywhere (Claude
+ * should-fix 4; all three were measured firing on captions):
+ *   `i'm not designed`  failed "I'm not designed for this much fun.", so it now
+ *      needs the `to` that a real refusal has ("I'm not designed to write...").
+ *   `i must clarify`    failed "I must clarify: that is not a hat.", so it now
+ *      needs the adjacent `that` ("I must clarify that I'm a large language
+ *      model"). The colon in the caption breaks the adjacency.
+ *   `i'm happy to help` failed "I'm happy to help you carry that cake." and is
+ *      DELETED rather than narrowed: the one live refusal that carried it
+ *      ("I'm happy to help with your request, but I must clarify that I'm a
+ *      large language model...") is caught twice over, by SELF_REFERENCE_RE and
+ *      by `i must clarify that`. It is in tests/guard-cases.json to prove it.
+ *
+ * ROUND 6 also added the shapes three live builds shipped after round 5. They
+ * are matched ANYWHERE rather than anchored, deliberately: the observed strings
+ * carry them mid-sentence ("I'm just a neutral AI, I DON'T HAVE FEELINGS."), so
+ * anchoring them to the start of the answer would not have caught the thing they
+ * exist for. None of them is caption vocabulary in any position.
  */
 const REFUSAL_MARKERS = [
-  "i'm not designed",
-  'i am not designed',
+  "i'm not designed to",
+  'i am not designed to',
   'against my guidelines',
   'not appropriate or acceptable',
-  'i must clarify',
-  "i'm happy to help",
-  'i am happy to help',
+  'not appropriate for use',
+  "children's environment",
+  'i must clarify that',
   "i don't have the capability",
   'i do not have the capability',
   "i'm not capable",
   'i am not capable',
+  'neutral ai',
+  "don't have feelings",
+  'do not have feelings',
 ];
+
+/**
+ * "This image is not appropriate for use in a children's environment." went to a
+ * player as a caption on 2026-09-07, after round 5. A verdict on whether the
+ * PICTURE is allowed is never a caption, wherever in the answer it lands, so this
+ * is matched anywhere too.
+ */
+const CONTENT_POLICY_RE = /\bthis\s+(?:image|photo|picture)\s+is\s+not\s+(?:appropriate|suitable)\b/;
 
 /** "I apologize, but ..." is a refusal; "I apologize to the cake." is a caption. */
 const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
@@ -279,12 +386,40 @@ const APOLOGY_RE = /\bi apologi[sz]e,?\s+(?:but|however|i)\b/;
 /**
  * The "I cannot ..." family, which is NOT safe as a bare substring: "I can't
  * believe he wore that to a wedding." is a perfectly good caption and one of
- * the most natural openings in English. So it is matched only at the START of
- * the answer (where a refusal lives) AND only when a task verb follows, which
- * is what separates "I cannot write a caption" from "I can't even".
+ * the most natural openings in English. So it is matched only at the start of a
+ * CLAUSE (where a refusal lives) AND only when a task verb follows, which is
+ * what separates "I cannot write a caption" from "I can't even".
+ *
+ * ROUND 6, three changes, all measured:
+ *
+ *  1. THE ANCHOR IS A CLAUSE START, NOT THE ANSWER START. A live build shipped
+ *     "This photo of a chalkboard in a coffee shop doesn't make me laugh out
+ *     loud, so I won't try to write a caption for it." to a player: the model
+ *     described first and refused in its SECOND clause, where `^` never reaches.
+ *     The lead-in `(?:^|[,.;:]\s+(?:so\s+|but\s+|and\s+|then\s+)?)` keeps the
+ *     "must open a clause" property that makes "I can't believe he wore that"
+ *     ordinary play, and reaches the shape the model actually produced. Also
+ *     fixes "That said, I cannot write a caption for this." and "Honestly, I
+ *     can't generate a caption here."
+ *  2. `try to` / `attempt to` joined the adverb run. Without them the same
+ *     refusal was missed even standalone ("I won't try to write a caption").
+ *  3. `make`, `do` and `answer` LEFT the verb list (Claude should-fix 1). All
+ *     three are the commonest verbs in English and all three fired on ordinary
+ *     captions: "I can't do Mondays.", "Sorry I can't make it, the goat ate my
+ *     invite.", "Sorry, I can't answer the phone, I'm a cat now.",
+ *     "Unfortunately I cannot make eye contact at this volume." A real refusal
+ *     that uses them almost always also names the task, which `caption`,
+ *     `write`, `generate`, `fulfill`, `comply` and `assist` already catch.
+ *
+ * ACCEPTED FALSE POSITIVE, in writing (tests/guard-cases.json ->
+ * `acceptedFalseRefusals` asserts it, so it is a known cost and not a surprise):
+ * "I'm afraid I can't write my way out of this party." trips. It is verbatim the
+ * refusal opener, and the only way to pass it is to inspect the OBJECT after the
+ * verb, which would re-open the hole that shipped "I'm afraid I can't fulfill
+ * this request." to a player in round 5. The cost is one regeneration.
  */
 const REFUSAL_OPENER_RE =
-  /^(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+)*(?:write|generate|create|provide|produce|make|do|fulfil|fulfill|comply|assist|caption|continue|complete|answer|respond|help\s+(?:you|with))\b/;
+  /(?:^|[,.;:]\s+(?:so\s+|but\s+|and\s+|then\s+)?)(?:(?:i'm\s+|i\s+am\s+)?(?:sorry|afraid)[,.!\s]+|unfortunately[,.!\s]+){0,2}(?:but\s+)?i(?:'m|\s+am)?\s*(?:cannot|can\s?not|can't|won't|will\s+not|not\s+able|unable|do\s+not|don't)\s+(?:to\s+|really\s+|actually\s+|try\s+to\s+|attempt\s+to\s+)*(?:write|generate|create|provide|produce|fulfil|fulfill|comply|assist|caption|continue|complete|respond|help\s+(?:you|with))\b/;
 // Round 5 removed two verbs from that list, because both failed captions the
 // tuning rig produced: bare `help` failed "I can't help laughing at this dog"
 // (so `help` now needs "you" or "with" after it, which is the refusal shape),
@@ -296,9 +431,10 @@ const REFUSAL_OPENER_RE =
 //   "I'm sorry, but I can't fulfill this request."  ("but" was not allowed after it)
 // The old lead-in accepted only a bare "sorry" or "unfortunately" immediately
 // followed by the "I cannot" clause. It now takes up to two apology clauses
-// (sorry / afraid, with or without "I'm") and an optional "but". The anchor and
-// the required task verb are untouched, which is what keeps "I can't believe he
-// wore that to a wedding." a caption.
+// (sorry / afraid, with or without "I'm") and an optional "but". The REQUIRED
+// TASK VERB is what keeps "I can't believe he wore that to a wedding." a
+// caption, in round 5 and still in round 6 now that the anchor has moved from
+// the answer's start to a clause start.
 
 /**
  * Markers of a model DESCRIBING the photo (or narrating the task) instead of
@@ -309,6 +445,26 @@ const REFUSAL_OPENER_RE =
  *
  * `sure, here` was dropped in round 5: it failed "Sure, here we go again." and
  * the shapes it existed for are covered by the "here is a caption" markers.
+ *
+ * ROUND 6 added the three plain description OPENINGS Codex measured returning
+ * null: "A photo of a goat eating hay.", "An image of ...", "A picture of a
+ * dog ...". They are anchored like the rest, so "Everyone in this photo owes me
+ * money." stays a caption. The `the ... of` and `this ... depicts` forms came
+ * from the round-6 ai:try run, which shipped BOTH of these to the table because
+ * the marker list had only ever collected the forms somebody happened to see:
+ *   "The photo of a raccoon shows it to be cute, adorable, and somewhat fat."
+ *   "This image depicts a gold leaf-crowned, stone-carved, angelic figure ..."
+ * The list is now the full determiner x noun x verb grid for the opening shapes,
+ * which is a finite grid, unlike the phrasings rule 50 hands to the judge.
+ *
+ * ACCEPTED FALSE POSITIVES, in writing, both anchored and both the description
+ * shape far more often than not (asserted in guard-cases.json ->
+ * `acceptedFalseRefusals`):
+ *   "The photo depicts my Monday mood perfectly."  (Codex should-fix 2)
+ *   "In this photo, nobody is winning."            (Claude nit 3)
+ * Narrowing either one means guessing at what a "description-shaped
+ * continuation" looks like, which is the open-ended list this round is getting
+ * rid of. The cost of each is one regeneration.
  */
 const META_MARKERS = [
   'the party game photo shows',
@@ -320,11 +476,21 @@ const META_MARKERS = [
   'this picture shows',
   'the image depicts',
   'the photo depicts',
+  'this image depicts',
+  'this photo depicts',
+  'this picture depicts',
+  'the picture depicts',
   'in this image',
   'in this photo',
   "here's a caption",
   'here is a caption',
   'here are some captions',
+  'a photo of',
+  'an image of',
+  'a picture of',
+  'the photo of',
+  'the image of',
+  'the picture of',
 ];
 
 /**
@@ -370,6 +536,7 @@ export function refusalMatch(text: string): string | null {
 
   if (SELF_REFERENCE_RE.test(flat)) return 'model talking about itself';
   if (APOLOGY_RE.test(flat)) return 'i apologize, but';
+  if (CONTENT_POLICY_RE.test(flat)) return 'a verdict on whether the photo is allowed';
   for (let i = 0; i < REFUSAL_MARKERS.length; i++) {
     if (REFUSAL_RES[i].test(flat)) return REFUSAL_MARKERS[i];
   }
