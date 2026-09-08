@@ -5,6 +5,18 @@ humans and AI bots play in the same round. No accounts, no ads, no tracking.
 
 Plan (the contract this is built from): `docs/plans/2026-09-07-mvp-plan.md`.
 
+## Demo
+
+Recorded on the live site with `scripts/record-demo.py` (2026-09-08): four AI players, a scripted
+host, three rounds, real photos.
+
+![Caption Wars demo](docs/demo/caption-wars-demo.gif)
+
+https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
+
+Files: [mp4](docs/demo/caption-wars-demo.mp4), [gif](docs/demo/caption-wars-demo.gif), stills
+[lobby](docs/demo/still-01-lobby.png), [vote](docs/demo/still-02-vote.png), [final](docs/demo/still-03-final.png).
+
 ## Stack
 
 One Cloudflare Worker (static assets + API), one Durable Object per room, Workers AI for the bots,
