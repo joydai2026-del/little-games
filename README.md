@@ -41,7 +41,7 @@ types a fixed one-liner each round and votes automatically. Round 2 was won by t
 
 ![Caption Wars demo: AI players caption a photo and vote](caption-wars/docs/demo/caption-wars-demo.gif)
 
-Video version (45 s, 1.5x speed):
+**44-second demo video:** [Watch three rounds with AI players](caption-wars/docs/demo/caption-wars-demo.mp4)
 
 https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
 
