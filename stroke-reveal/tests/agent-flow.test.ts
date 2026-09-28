@@ -51,6 +51,7 @@ describe('agent flow', () => {
     expect(result.points).toBeGreaterThan(3 * 100);
     expect(lines.some((l) => l.startsWith('got word 1'))).toBe(true);
     const board = (await teacher.state(created.code)).state;
-    expect(board.standings[0]).toMatchObject({ name: 'Robo', agent: true, correct: 3 });
+    expect(board.standings).toEqual([]); // AI players never take a kid place
+    expect(board.robots[0]).toMatchObject({ name: 'Robo', agent: true, correct: 3, place: 1 });
   });
 });

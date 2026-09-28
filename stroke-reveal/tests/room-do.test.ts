@@ -4,6 +4,7 @@ import { GAME, LEVELS } from '../src/shared/config';
 import daRaw from './fixtures/大.json?raw';
 import shanRaw from './fixtures/山.json?raw';
 import renRaw from './fixtures/人.json?raw';
+import xueRaw from './fixtures/学.json?raw';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -53,15 +54,20 @@ describe('RoomDO', () => {
     const kidView = (await (await room.fetch(new Request('https://room/state', { headers: hdr(kid) }))).json()) as any;
     expect(kidView.state.question.answer).toBeNull();
     expect(kidView.state.question.char).toBeNull();
-    const answer = started.state.question.answer;
+    expect(kidView.state.list).toBeNull();
+    // Each phone has its own card order: find the right word on the kid's own cards.
+    const word = started.state.question.cards[started.state.question.answer];
+    const answer = kidView.state.question.cards.indexOf(word);
 
     const early = await room.fetch(post('guess', { race: 1, question: 0, seq: 1, card: answer }, kid));
     expect(early.status).toBe(409);
     vi.setSystemTime(started.state.question.startAt + 200);
+    expect((await room.fetch(post('guess', { race: 1, question: 0, seq: 1, card: answer }, kid))).status).toBe(409); // stroke 1 not readable yet
     const drawing = (await (await room.fetch(new Request('https://room/drawing', { headers: hdr(kid) }))).json()) as any;
-    expect(drawing).toMatchObject({ round: 1, question: 0, shown: 1, complete: false, char: '人' });
+    expect(drawing).toMatchObject({ round: 1, question: 0, shown: 1, complete: false, char: started.state.question.char });
+    vi.setSystemTime(started.state.question.openAt);
     const ok = (await (await room.fetch(post('guess', { race: 1, question: 0, seq: 1, card: answer }, kid))).json()) as any;
-    expect(ok.state.score.points).toBeGreaterThan(800);
+    expect(ok.state.score.points).toBe(1000);
     // Only one kid, and they got it: the question closes at once and the answer shows.
     expect(ok.state.question.closedAt).not.toBeNull();
     expect(ok.state.question.answer).toBe(answer);
@@ -120,14 +126,14 @@ describe('Worker routes', () => {
   it('/drawing returns only the strokes on the big screen, hash-checked, and never names the character', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
-    const bodies: Record<string, string> = { 大: daRaw, 山: shanRaw, 人: renRaw };
+    const bodies: Record<string, string> = { 大: daRaw, 山: shanRaw, 人: renRaw, 学: xueRaw };
     const upstream = vi.fn(async (url: string) => {
       const ch = decodeURIComponent(url.split('/').pop()!.replace('.json', ''));
       return new Response(new TextEncoder().encode(bodies[ch]));
     });
     vi.stubGlobal('fetch', upstream);
     const w = buildWorker();
-    const made = (await (await w.fetch('/api/rooms', { method: 'POST', body: JSON.stringify({ text: '大 山 人', options: { charsPerRound: 1, level: 'k2' } }) })).json()) as any;
+    const made = (await (await w.fetch('/api/rooms', { method: 'POST', body: JSON.stringify({ text: '大 山 人 学', options: { charsPerRound: 1, level: 'k2' } }) })).json()) as any;
     const kid = seat(await (await w.fetch(`/api/rooms/${made.code}/join`, { method: 'POST', body: JSON.stringify({ name: 'Ava' }) })).json());
     const start = (await (await w.fetch(`/api/rooms/${made.code}/start`, { method: 'POST', headers: hdr(seat(made)), body: '{}' })).json()) as any;
     const before = (await (await w.fetch(`/api/rooms/${made.code}/drawing`, { headers: hdr(kid) })).json()) as any;
@@ -140,8 +146,9 @@ describe('Worker routes', () => {
     expect(d.strokes).toHaveLength(2);
     expect(d.medians).toHaveLength(2);
     expect(text).not.toContain('"char"');
-    expect(JSON.parse(daRaw).strokes.slice(0, 2)).toEqual(d.strokes);
-    expect(upstream).toHaveBeenCalledWith('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/%E5%A4%A7.json', expect.anything());
+    const char = start.state.question.char;
+    expect(JSON.parse(bodies[char]).strokes.slice(0, 2)).toEqual(d.strokes);
+    expect(upstream).toHaveBeenCalledWith(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/${encodeURIComponent(char)}.json`, expect.anything());
     expect((await w.fetch(`/api/rooms/${made.code}/drawing`)).status).toBe(403);
   });
 });

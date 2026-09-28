@@ -21,11 +21,12 @@ export function cardsView(q: PublicQuestion, mine: Attempt | null, now: number, 
   const looks = q.cards.map((_, i): CardLook => {
     if ((closed && q.answer === i) || (got && mine!.rightCard === i)) return 'right';
     if (tried.has(i)) return 'tried';
-    if (closed || got || out || cooling || sending || now < q.startAt) return 'off';
+    if (closed || got || out || cooling || sending || now < q.openAt) return 'off';
     return 'open';
   });
   let message = 'Look at the big screen! Which word is Momo drawing?';
   if (now < q.startAt && !closed) message = 'Get ready, Momo is picking up the brush...';
+  else if (now < q.openAt && !closed) message = 'Watch Momo draw the first stroke...';
   else if (closed && q.answer != null) message = got ? `You got it! +${mine!.points}` : `It was ${q.cards[q.answer]}. Next time!`;
   else if (got) message = `好棒! +${mine!.points}. Wait for the others.`;
   else if (out) message = 'Oops, not that one. Wait for the next word.';

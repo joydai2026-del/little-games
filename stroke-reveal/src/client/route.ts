@@ -28,6 +28,15 @@ export function goTo(hash: string, win: { location: { hash: string }; dispatchEv
   else win.location.hash = next;
 }
 
+/**
+ * Whether a polled state may replace the one on screen. Only a state at least
+ * as new: polls overlap (a forced refresh after a tap, the timer's poll), and
+ * a slow older answer must never roll a phone back to old cards.
+ */
+export function acceptState(current: Pick<PublicState, 'version'> | null, incoming: Pick<PublicState, 'version'>): boolean {
+  return !current || incoming.version >= current.version;
+}
+
 /** Whether the Avery header may link home on a room screen. Plain text (false)
  *  only for a kid who is playing this round while it runs: leaving would drop
  *  them out of it. Late kids, teachers, the lobby and done keep the link. */

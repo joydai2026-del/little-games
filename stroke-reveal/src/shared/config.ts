@@ -12,18 +12,26 @@ export interface LevelRules {
   strokeMs: number;
   /** A wrong guess locks the kid out of this character (true), or only pauses them (false). */
   lockOnWrong: boolean;
-  /** With no lock: how long the cards stay grey after a wrong guess (ms). */
+  /** With no lock: the shortest time the cards stay grey after a wrong guess (ms). */
   wrongCooldownMs: number;
+  /**
+   * With no lock: the pause also lasts at least this share of the whole drawing.
+   * A flat 2 s pause lets blind tapping beat reading on long characters (four
+   * quick taps would reach the right card while it is still worth a lot); with
+   * this, random tapping always scores below a kid who reads at mid-drawing
+   * (tests/reveal.test.ts "blind tapping").
+   */
+  wrongCooldownShare: number;
 }
 
 export const LEVELS: Record<Level, LevelRules> = {
-  k2: { label: 'K-2', strokeMs: 1500, lockOnWrong: false, wrongCooldownMs: 2000 },
-  g35: { label: 'Grades 3-5', strokeMs: 900, lockOnWrong: true, wrongCooldownMs: 0 },
+  k2: { label: 'K-2', strokeMs: 1500, lockOnWrong: false, wrongCooldownMs: 2000, wrongCooldownShare: 0.4 },
+  g35: { label: 'Grades 3-5', strokeMs: 900, lockOnWrong: true, wrongCooldownMs: 0, wrongCooldownShare: 0 },
 };
 
 export interface RevealOptions {
   level: Level;
-  /** How many characters one round draws, taken in order from the teacher's list. */
+  /** How many characters one round draws, dealt from a private shuffled deck of the teacher's list. */
   charsPerRound: number;
 }
 
@@ -37,7 +45,7 @@ export const OPTION_LIMITS = {
 } as const;
 
 export const SCORING = {
-  /** Points for a right guess the moment the first stroke appears. */
+  /** Points for a right guess the moment guessing opens (first stroke visible + minRevealDelayMs). */
   maxPoints: 1000,
   /** Points for a right guess after the whole character is drawn. */
   minPoints: 100,
@@ -48,6 +56,12 @@ export const GAME = {
   countdownSeconds: 3,
   /** Word cards on each kid's phone (the right one plus wrong ones from the list). */
   cardsPerQuestion: 4,
+  /** Fewest cards a word may have. Fewer cards make blind tapping pay, so a list needs this many words with different first characters. */
+  minCardsPerQuestion: 4,
+  /** How long the big screen takes to finish drawing stroke 1 (ms, at strokeAnimationSpeed). Guessing never opens before it. */
+  firstStrokeShowMs: 800,
+  /** Minimum reveal: after stroke 1 is fully visible, guessing opens this much later (ms). Points count from then. */
+  minRevealDelayMs: 600,
   /** Guessing stays open this long after the last stroke is drawn (ms). */
   holdAfterDrawnMs: 6000,
   /** How long the answer shows before the next character starts (ms). */

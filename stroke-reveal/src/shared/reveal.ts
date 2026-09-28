@@ -6,7 +6,8 @@
 // by stroke on the big screen, and every kid picks one of the word cards on
 // their phone. Timeline of one question:
 //
-//   qStartAt ........ first stroke appears; guessing opens
+//   qStartAt ........ first stroke starts drawing
+//   + firstStrokeShowMs + minRevealDelayMs ... openAt: guessing opens, points count from here
 //   + strokes x strokeMs ... the drawing is complete
 //   + holdAfterDrawnMs ..... qEndsAt: guessing closes (sooner if every kid is done)
 //   qClosedAt ....... the answer shows for answerShowMs, then the next question
@@ -88,6 +89,7 @@ export function createRoom(
     ],
     scores: {},
     attempts: {},
+    deck: [],
   };
 }
 
@@ -110,21 +112,13 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
 export function setList(state: RoomState, byId: string, list: WordList): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can change the list', 403);
   if (state.phase === 'playing') return fail(state, 'wait for this round to end', 409);
-  return { state: bump({ ...state, list, round: state.phase === 'lobby' ? 0 : state.round }) };
+  return { state: bump({ ...state, list, deck: [], round: state.phase === 'lobby' ? 0 : state.round }) };
 }
 
 export function setOptions(state: RoomState, byId: string, input: Partial<Record<keyof RevealOptions, unknown>>): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can change settings', 403);
   if (state.phase === 'playing') return fail(state, 'wait for this round to end', 409);
   return { state: bump({ ...state, options: normalizeOptions({ ...state.options, ...input }) }) };
-}
-
-/** The words for round number `round` (0-based): the next chunk of the list, wrapping, never repeating inside one round. */
-export function wordsForRound(words: string[], round: number, perRound: number): string[] {
-  if (words.length === 0) return [];
-  const count = Math.min(perRound, words.length);
-  const startAt = (round * count) % words.length;
-  return Array.from({ length: count }, (_, i) => words[(startAt + i) % words.length]);
 }
 
 /** Fisher-Yates with an injected random source, so tests are repeatable. */
@@ -143,14 +137,52 @@ function shuffle<T>(items: T[], random: () => number): T[] {
  * both match the drawing), so there is always exactly one right card.
  * Returns null when the list has no word that starts with another character.
  */
-export function buildQuestion(word: string, list: WordList, random: () => number): Question | null {
+export function buildQuestion(word: string, list: WordList, random: () => number, playerIds: string[] = []): Question | null {
   const char = drawnChar(word);
   const pool = list.words.filter((w) => drawnChar(w) !== char);
-  if (pool.length === 0) return null;
+  if (pool.length < GAME.minCardsPerQuestion - 1) return null;
   const wrong = shuffle(pool, random).slice(0, GAME.cardsPerQuestion - 1);
   const cards = shuffle([word, ...wrong], random);
-  return { word, char, strokes: list.strokeCounts[char] ?? 0, cards, answer: cards.indexOf(word) };
+  const base = cards.map((_, i) => i);
+  const orders: Record<string, number[]> = {};
+  for (const id of playerIds) orders[id] = shuffle(base, random);
+  return { word, char, strokes: list.strokeCounts[char] ?? 0, cards, answer: cards.indexOf(word), orders };
 }
+
+/**
+ * Deals the next round's words from the private shuffled deck, refilling it
+ * with a fresh shuffle when it runs out (never repeating a word inside one
+ * round). Pasted order says nothing about play order.
+ */
+export function dealWords(deck: string[], words: string[], perRound: number, random: () => number): { picked: string[]; deck: string[] } {
+  let d = deck.filter((w) => words.includes(w));
+  const picked: string[] = [];
+  const count = Math.min(perRound, words.length);
+  while (picked.length < count) {
+    if (d.length === 0) d = shuffle(words.filter((w) => !picked.includes(w)), random);
+    if (d.length === 0) break;
+    picked.push(d.shift()!);
+  }
+  return { picked, deck: d };
+}
+
+/** Taps count from here: stroke 1 fully visible on the big screen plus the minimum reveal delay. */
+export function openAt(state: RoomState): number {
+  return (state.qStartAt ?? 0) + GAME.firstStrokeShowMs + GAME.minRevealDelayMs;
+}
+
+/** Points reach the floor here: the drawing is complete (never sooner than one stroke after opening). */
+function scoreEndAt(state: RoomState): number {
+  const q = state.questions[state.qIndex];
+  return Math.max((state.qStartAt ?? 0) + drawMs(state, q), openAt(state) + LEVELS[state.options.level].strokeMs);
+}
+
+/** A kid's own card index -> the room's card index (and back). */
+const toBase = (q: Question, playerId: string, local: number): number => q.orders?.[playerId]?.[local] ?? local;
+const toLocal = (q: Question, playerId: string, base: number): number => {
+  const order = q.orders?.[playerId];
+  return order ? order.indexOf(base) : base;
+};
 
 export function drawMs(state: RoomState, q: Question): number {
   return q.strokes * LEVELS[state.options.level].strokeMs;
@@ -164,9 +196,10 @@ export function startRound(state: RoomState, byId: string, now: number, random: 
   const active = presentKids(state, now);
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
   const questions: Question[] = [];
-  for (const word of wordsForRound(state.list.words, state.round, state.options.charsPerRound)) {
-    const q = buildQuestion(word, state.list, random);
-    if (!q) return fail(state, 'add at least 2 words that start with different characters', 409);
+  const dealt = dealWords(state.deck ?? [], state.list.words, state.options.charsPerRound, random);
+  for (const word of dealt.picked) {
+    const q = buildQuestion(word, state.list, random, active.map((k) => k.id));
+    if (!q) return fail(state, `add at least ${GAME.minCardsPerQuestion} words that start with different characters`, 409);
     questions.push(q);
   }
   const goAt = now + GAME.countdownSeconds * 1000;
@@ -184,6 +217,7 @@ export function startRound(state: RoomState, byId: string, now: number, random: 
     endedAt: null,
     scores,
     attempts: {},
+    deck: dealt.deck,
   };
   const qEndsAt = goAt + drawMs(next, questions[0]) + GAME.holdAfterDrawnMs;
   // A room never expires in the middle of a round.
@@ -193,7 +227,8 @@ export function startRound(state: RoomState, byId: string, now: number, random: 
 
 /** Every kid in the round has the right card or is locked out: the question can close early. */
 export function everyoneDone(state: RoomState): boolean {
-  const list = players(state);
+  // AI seats never hold a word open or close it early: only kids count.
+  const list = players(state).filter((k) => !k.agent);
   return list.length > 0 && list.every((k) => {
     const a = state.attempts[k.id];
     return Boolean(a && (a.correctAt != null || a.locked));
@@ -227,11 +262,10 @@ export function advanceIfDue(state: RoomState, now: number): RoomState {
   return s === state ? state : bump(s);
 }
 
-/** Points for a right card at `now`: maxPoints at the first stroke, down to minPoints once the drawing is complete. */
+/** Points for a right card at `now`: maxPoints when guessing opens, down to minPoints once the drawing is complete. */
 export function pointsAt(state: RoomState, now: number): number {
-  const q = state.questions[state.qIndex];
-  const total = Math.max(1, drawMs(state, q));
-  const frac = Math.min(1, Math.max(0, (now - (state.qStartAt ?? now)) / total));
+  const from = openAt(state);
+  const frac = Math.min(1, Math.max(0, (now - from) / Math.max(1, scoreEndAt(state) - from)));
   return Math.round(SCORING.minPoints + (SCORING.maxPoints - SCORING.minPoints) * (1 - frac));
 }
 
@@ -272,27 +306,29 @@ export function submitGuess(state: RoomState, playerId: string, input: GuessInpu
   if (input.seq > score.seq + GAME.maxSeqJump) return fail(state, 'that guess number is too far ahead', 400);
   if (input.question !== state.qIndex || state.qClosedAt != null) return fail(state, 'time is up for that word', 409);
   if (state.qStartAt != null && now < state.qStartAt) return fail(state, 'wait for Momo to start drawing', 409);
+  if (now < openAt(state)) return fail(state, 'watch the first stroke, then tap', 409);
   const q = state.questions[state.qIndex];
   if (input.card >= q.cards.length) return fail(state, 'there is no card with that number', 400);
+  const card = toBase(q, playerId, input.card);
   const a = state.attempts[playerId] ?? freshAttempt();
   if (a.correctAt != null) return fail(state, 'you already got this one', 409);
   if (a.locked) return fail(state, 'you are out for this word, wait for the next one', 409);
   if (a.coolUntil != null && now < a.coolUntil) return fail(state, 'wait a moment, then try again', 429);
-  if (a.tried.includes(input.card)) return fail(state, 'you already tried that card', 409);
+  if (a.tried.includes(card)) return fail(state, 'you already tried that card', 409);
 
   let attempt: Attempt;
   let nextScore: Score;
-  if (input.card === q.answer) {
+  if (card === q.answer) {
     const points = pointsAt(state, now);
-    attempt = { ...a, correctAt: now, points, coolUntil: null, rightCard: input.card };
+    attempt = { ...a, correctAt: now, points, coolUntil: null, rightCard: card };
     nextScore = { ...score, points: score.points + points, correct: score.correct + 1, seq: input.seq };
   } else {
     const rules = LEVELS[state.options.level];
     attempt = {
       ...a,
-      tried: [...a.tried, input.card],
+      tried: [...a.tried, card],
       locked: rules.lockOnWrong,
-      coolUntil: rules.lockOnWrong ? null : now + rules.wrongCooldownMs,
+      coolUntil: rules.lockOnWrong ? null : now + Math.max(rules.wrongCooldownMs, Math.round(rules.wrongCooldownShare * drawMs(state, q))),
     };
     nextScore = { ...score, wrong: score.wrong + 1, seq: input.seq };
   }
@@ -311,9 +347,13 @@ function statusOf(state: RoomState, playerId: string): QuestionStatus {
   return 'thinking';
 }
 
-/** The board, best first: points (more first), then right answers (more first). Equal on both = same place. */
-export function standings(state: RoomState): Standing[] {
-  const rows = players(state).map((k) => ({ k, s: state.scores[k.id]! }));
+/**
+ * The board, best first: points (more first), then right answers (more first).
+ * Equal on both = same place. Kids and AI players are ranked apart
+ * (`agents: true` gives the AI line), so an AI never takes a kid's place.
+ */
+export function standings(state: RoomState, agents = false): Standing[] {
+  const rows = players(state).filter((k) => k.agent === agents).map((k) => ({ k, s: state.scores[k.id]! }));
   const key = (s: Score) => [-s.points, -s.correct];
   const cmp = (a: number[], b: number[]) => (a[0] - b[0]) || (a[1] - b[1]);
   rows.sort((a, b) => cmp(key(a.s), key(b.s)) || a.k.joinedAt - b.k.joinedAt);
@@ -328,24 +368,34 @@ export function touch(state: RoomState, playerId: string, now: number): RoomStat
   return { ...state, players: state.players.map((p) => (p.id === playerId ? { ...p, lastSeenAt: now } : p)) };
 }
 
-function publicQuestion(state: RoomState, teacher: boolean): PublicQuestion | null {
+function publicQuestion(state: RoomState, viewerId: string, teacher: boolean): PublicQuestion | null {
   if (state.phase === 'lobby' || state.questions.length === 0) return null;
   const q = state.questions[state.qIndex];
   const closed = state.qClosedAt != null;
   const show = teacher || closed;
+  const order = teacher ? null : q.orders?.[viewerId] ?? null;
+  const cards = order ? order.map((i) => q.cards[i]) : q.cards;
   return {
     index: state.qIndex,
     total: state.questions.length,
-    cards: q.cards,
+    cards,
     startAt: state.qStartAt ?? 0,
-    endsAt: state.qEndsAt ?? 0,
+    openAt: openAt(state),
+    endsAt: teacher ? state.qEndsAt : null,
     closedAt: state.qClosedAt,
     nextAt: closed ? state.qClosedAt! + GAME.answerShowMs : null,
     strokeMs: LEVELS[state.options.level].strokeMs,
     char: show ? q.char : null,
     strokes: show ? q.strokes : null,
-    answer: show ? q.answer : null,
+    answer: show ? (order ? order.indexOf(q.answer) : q.answer) : null,
   };
+}
+
+function ownAttempt(state: RoomState, viewerId: string): Attempt | null {
+  const a = state.attempts[viewerId];
+  if (!a) return null;
+  const q = state.questions[state.qIndex];
+  return { ...a, tried: a.tried.map((i) => toLocal(q, viewerId, i)), rightCard: a.rightCard == null ? null : toLocal(q, viewerId, a.rightCard) };
 }
 
 /**
@@ -363,20 +413,21 @@ export function publicView(state: RoomState, viewerId: string, now: number): Pub
     version: state.version,
     phase: state.phase,
     options: state.options,
-    list: state.list,
+    list: role === 'teacher' ? state.list : null,
     round: state.round,
     endedAt: state.endedAt,
-    expiresAt: state.expiresAt,
+    expiresAt: role === 'teacher' ? state.expiresAt : null,
     players: state.players,
     you: viewerId,
     role,
     present: presentKids(state, now).map((k) => k.id),
     inRound: state.scores[viewerId] !== undefined,
-    question: publicQuestion(state, role === 'teacher'),
-    mine: state.attempts[viewerId] ?? null,
+    question: publicQuestion(state, viewerId, role === 'teacher'),
+    mine: ownAttempt(state, viewerId),
     score: state.scores[viewerId] ?? null,
     history: state.questions.slice(0, closedCount).map((q) => ({ word: q.word, char: q.char })),
     standings: standings(state),
+    robots: standings(state, true),
     serverNow: now,
   };
 }

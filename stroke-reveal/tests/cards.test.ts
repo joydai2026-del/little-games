@@ -4,7 +4,7 @@ import { cardsView } from '../src/client/cards';
 import type { Attempt, PublicQuestion } from '../src/shared/types';
 
 const q = (over: Partial<PublicQuestion> = {}): PublicQuestion => ({
-  index: 0, total: 3, cards: ['山', '大人', '学校', '人'], startAt: 1000, endsAt: 20000, closedAt: null, nextAt: null,
+  index: 0, total: 3, cards: ['山', '大人', '学校', '人'], startAt: 1000, openAt: 1400, endsAt: null, closedAt: null, nextAt: null,
   strokeMs: 900, char: null, strokes: null, answer: null, ...over,
 });
 const att = (over: Partial<Attempt> = {}): Attempt => ({ tried: [], locked: false, coolUntil: null, correctAt: null, points: 0, rightCard: null, ...over });
@@ -12,6 +12,7 @@ const att = (over: Partial<Attempt> = {}): Attempt => ({ tried: [], locked: fals
 describe('cardsView', () => {
   it('all cards open once Momo starts, none before', () => {
     expect(cardsView(q(), null, 500, false)).toMatchObject({ canTap: false, message: 'Get ready, Momo is picking up the brush...' });
+    expect(cardsView(q(), null, 1200, false)).toMatchObject({ canTap: false, message: 'Watch Momo draw the first stroke...' });
     expect(cardsView(q(), null, 1500, false)).toMatchObject({ looks: ['open', 'open', 'open', 'open'], canTap: true });
   });
   it('a right guess lights your card and shows your points', () => {

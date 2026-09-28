@@ -7,7 +7,7 @@ import type { PublicState } from '../../shared/types';
 import { startDrawing, type DrawHandle } from '../drawer';
 import { cardsView } from '../cards';
 import { brand, h, momo, setHeaderLink } from '../ui';
-import { goTo, headerLinkOn } from '../route';
+import { acceptState, goTo, headerLinkOn } from '../route';
 import { board } from './board';
 
 interface Ctx {
@@ -54,7 +54,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
     const q = ctx.state?.phase === 'playing' ? ctx.state.question : null;
     if (q) {
       const now = serverNow(ctx);
-      const moment = q.closedAt == null ? (now >= q.endsAt ? `end:${q.index}` : '') : q.nextAt != null && now >= q.nextAt ? `next:${q.index}` : '';
+      const moment = q.closedAt == null ? (q.endsAt != null && now >= q.endsAt ? `end:${q.index}` : '') : q.nextAt != null && now >= q.nextAt ? `next:${q.index}` : '';
       if (moment && moment !== lastMoment) {
         lastMoment = moment;
         ctx.refresh();
@@ -111,7 +111,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
       const full = force || !s0 || (s0.role === 'teacher' && s0.phase !== 'playing');
       const res = await poll(code, seat!, full ? undefined : s0!.version);
       ctx.offset = res.serverTime - Date.now();
-      if (res.state && (!ctx.state || res.state.version >= ctx.state.version || full)) {
+      if (res.state && acceptState(ctx.state, res.state)) {
         ctx.state = res.state;
         render();
       }
@@ -167,6 +167,7 @@ function levelPicker(current: Level, onSet: (level: Level) => void): HTMLElement
 }
 
 function listNotes(s: PublicState): (HTMLElement | null)[] {
+  if (!s.list) return [];
   const plural = (n: number) => (n === 1 ? 'it' : 'them');
   return [
     s.list.missing.length ? h('p', { class: 'notice warn', text: `Momo cannot draw ${s.list.missing.join(' ')} yet, so we left ${plural(s.list.missing.length)} out.` }) : null,
@@ -177,6 +178,7 @@ function listNotes(s: PublicState): (HTMLElement | null)[] {
 
 function teacherLobby(ctx: Ctx): HTMLElement {
   const s = ctx.state!;
+  const words = s.list?.words ?? [];
   const kids = s.players.filter((p) => s.present.includes(p.id));
   const link = `${location.origin}/#/join/${s.code}`;
   const err = h('p', { class: 'error', role: 'status' });
@@ -189,7 +191,7 @@ function teacherLobby(ctx: Ctx): HTMLElement {
     }
   };
   const start = h('button', { class: 'btn btn-primary', text: 'Start the game' });
-  const why = s.list.words.length < 2 ? 'Add at least 2 words first.' : !kids.length ? 'Waiting for kids to join...' : '';
+  const why = words.length < GAME.minCardsPerQuestion ? `Add at least ${GAME.minCardsPerQuestion} words first.` : !kids.length ? 'Waiting for kids to join...' : '';
   start.disabled = Boolean(why);
   start.addEventListener('click', async () => {
     start.disabled = true;
@@ -215,10 +217,11 @@ function teacherLobby(ctx: Ctx): HTMLElement {
     brand('Kids join on their phones with this code'),
     h('section', { class: 'card' }, [h('p', { class: 'roomcode', text: s.code }), h('p', { class: 'joinlink', text: link })]),
     h('section', { class: 'card' }, [
-      h('h2', { text: `Words (${s.list.words.length})` }),
-      h('div', { class: 'chips' }, s.list.words.map((w) => h('span', { class: 'chip word', text: w }))),
+      h('h2', { text: `Words (${words.length})` }),
+      h('p', { class: 'muted', text: 'Momo picks them in a surprise order every round.' }),
+      h('div', { class: 'chips' }, words.map((w) => h('span', { class: 'chip word', text: w }))),
       ...listNotes(s),
-      h('details', {}, [h('summary', { text: 'Change the list' }), paste, h('p'), replace]),
+      h('details', {}, [h('summary', { class: 'tap-summary', text: 'Change the list' }), paste, h('p'), replace]),
     ]),
     h('section', { class: 'card' }, [
       levelPicker(s.options.level, (level) => void save({ level })),
@@ -302,6 +305,7 @@ class TeacherGame implements Game {
       this.note.textContent = '';
     }
     const closed = q.closedAt != null;
+    // The big screen shows the words (the order differs on every phone).
     this.cards.replaceChildren(
       ...q.cards.map((w, i) => h('div', { class: `word-card${closed && q.answer === i ? ' right' : closed ? ' off' : ''}`, text: w }))
     );
@@ -330,8 +334,8 @@ class TeacherGame implements Game {
     } else {
       const shown = Math.min(q.strokes ?? 0, Math.floor((now - q.startAt) / q.strokeMs) + 1);
       this.pad.showUpTo(shown);
-      title = shown >= (q.strokes ?? 0) ? 'Momo is done drawing. Last chance!' : 'What is Momo drawing?';
-      headRight = h('span', { class: 'timer', 'data-until': String(q.endsAt), text: fmt(secondsLeft(this.ctx, q.endsAt)) });
+      title = shown >= (q.strokes ?? 0) ? 'Momo is done drawing. Last chance!' : now < q.openAt ? 'Watch Momo draw...' : 'What is Momo drawing?';
+      headRight = h('span', { class: 'timer', 'data-until': String(q.endsAt ?? 0), text: fmt(secondsLeft(this.ctx, q.endsAt)) });
       this.buddy.className = 'momo tilt';
     }
     if (this.title.textContent !== title) this.title.textContent = title;

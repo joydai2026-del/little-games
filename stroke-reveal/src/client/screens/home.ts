@@ -43,7 +43,7 @@ export function renderHome(root: HTMLElement, prefillCode: string): () => void {
   make.addEventListener('click', async () => {
     teachError.textContent = '';
     if (paste.value.length > GAME.maxPasteLength) return void (teachError.textContent = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`);
-    if (parseWords(paste.value).words.length < 2) return void (teachError.textContent = 'Paste at least 2 Chinese words.');
+    if (parseWords(paste.value).words.length < GAME.minCardsPerQuestion) return void (teachError.textContent = `Paste at least ${GAME.minCardsPerQuestion} Chinese words.`);
     make.disabled = true;
     try {
       const data = await createRoom('Teacher', paste.value);

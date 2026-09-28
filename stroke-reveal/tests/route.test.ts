@@ -35,3 +35,18 @@ describe('stale seat recovery', () => {
   });
 });
 
+import { acceptState } from '../src/client/route';
+
+describe('acceptState', () => {
+  it('never lets an older poll answer replace newer state, even a forced one', () => {
+    expect(acceptState(null, { version: 3 })).toBe(true);
+    expect(acceptState({ version: 5 }, { version: 5 })).toBe(true);
+    expect(acceptState({ version: 5 }, { version: 6 })).toBe(true);
+    expect(acceptState({ version: 5 }, { version: 4 })).toBe(false);
+  });
+  it('room.ts uses it for every poll, with no bypass', async () => {
+    const src = (await import('../src/client/screens/room.ts?raw')).default;
+    expect(src).toContain('acceptState(ctx.state, res.state)');
+    expect(src).not.toMatch(/version\s*>=\s*ctx\.state\.version\s*\|\|/);
+  });
+});

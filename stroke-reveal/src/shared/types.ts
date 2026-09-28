@@ -32,11 +32,13 @@ export interface Question {
   cards: string[];
   /** Index of the right card in `cards`. */
   answer: number;
+  /** Each kid's own card order: orders[playerId][i] = index in `cards` of that kid's card i. */
+  orders: Record<string, number[]>;
 }
 
 /** One kid's try at the current question. */
 export interface Attempt {
-  /** Wrong cards this kid tapped (indexes into cards). */
+  /** Wrong cards this kid tapped (indexes into the room's cards; the view turns them into the kid's own order). */
   tried: number[];
   /** Locked out of this question (a wrong guess at a level that locks). */
   locked: boolean;
@@ -99,6 +101,8 @@ export interface RoomState {
   scores: Record<string, Score>;
   /** One entry per player who has tapped a card on the current question. */
   attempts: Record<string, Attempt>;
+  /** PRIVATE: words not yet played, in a shuffled order no phone ever sees. Rounds deal from it. */
+  deck: string[];
 }
 
 export type QuestionStatus = 'thinking' | 'got' | 'out';
@@ -118,9 +122,13 @@ export interface Standing {
 export interface PublicQuestion {
   index: number;
   total: number;
+  /** The cards in THIS viewer's order (each kid has their own). */
   cards: string[];
   startAt: number;
-  endsAt: number;
+  /** Taps count from here: stroke 1 fully visible plus the minimum reveal delay. */
+  openAt: number;
+  /** When guessing closes: teacher only (it would tell a kid the stroke count). */
+  endsAt: number | null;
   closedAt: number | null;
   /** When the next question (or the end) comes, once this one is closed. */
   nextAt: number | null;
@@ -137,11 +145,12 @@ export interface PublicState {
   version: number;
   phase: Phase;
   options: RevealOptions;
-  list: WordList;
+  /** The teacher's list: teacher only. Kids and agents get null (it would give away the words to come). */
+  list: WordList | null;
   round: number;
   endedAt: number | null;
-  /** The room is gone after this moment. */
-  expiresAt: number;
+  /** The room is gone after this moment: teacher only (it grows with the round's strokes). */
+  expiresAt: number | null;
   players: Player[];
   you: string;
   role: Role;
@@ -156,6 +165,9 @@ export interface PublicState {
   score: Score | null;
   /** Questions already closed this round: the word and its drawn character. */
   history: { word: string; char: string }[];
+  /** Kids only, ranked among kids. */
   standings: Standing[];
+  /** AI players, ranked in their own line, never in the kids' places. */
+  robots: Standing[];
   serverNow: number;
 }

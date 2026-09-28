@@ -103,7 +103,7 @@ export function matchingCards(drawing, cardData) {
 export function planGuess(state, drawing, cardData, { patience = 0.4, mistakeRate = 0.1, random = Math.random } = {}) {
   const q = state?.question;
   if (!state || state.phase !== 'playing' || !q || q.closedAt != null || !state.inRound) return null;
-  if (state.serverNow < q.startAt) return null;
+  if (state.serverNow < (q.openAt ?? q.startAt)) return null;
   const mine = state.mine;
   if (mine && (mine.correctAt != null || mine.locked)) return null;
   if (mine?.coolUntil != null && state.serverNow < mine.coolUntil) return null;
@@ -155,7 +155,7 @@ export async function playRound({
     if (state.inRound) played = true;
     if (played && state.phase === 'done') break;
     const q = state.question;
-    if (state.phase === 'playing' && state.inRound && q && q.closedAt == null && state.serverNow >= q.startAt) {
+    if (state.phase === 'playing' && state.inRound && q && q.closedAt == null && state.serverNow >= (q.openAt ?? q.startAt)) {
       const drawing = await client.drawing(code);
       const cardData = await Promise.all(q.cards.map((w) => dataFor(firstChar(w))));
       const plan = planGuess(state, drawing, cardData, { patience, mistakeRate, random });
@@ -174,6 +174,7 @@ export async function playRound({
     await sleep(pollMs);
     state = (await client.state(code)).state;
   }
-  const me = state.standings?.find((r) => r.playerId === state.you);
+  // AI players are ranked in their own line (state.robots), never among the kids.
+  const me = [...(state.robots ?? []), ...(state.standings ?? [])].find((r) => r.playerId === state.you);
   return { right, wrong, points: me?.points ?? 0, place: me?.place ?? null, phase: state.phase };
 }

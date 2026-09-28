@@ -16,7 +16,7 @@ const state = (over = {}) => ({
   serverNow: 5000,
   score: { seq: 3 },
   mine: null,
-  question: { index: 0, cards: ['山', '大人', '学校', '人'], startAt: 1000, closedAt: null },
+  question: { index: 0, cards: ['山', '大人', '学校', '人'], startAt: 1000, openAt: 2400, closedAt: null },
   ...over,
 });
 const cardData = [shan, da, xue, ren];
@@ -43,6 +43,7 @@ test('does nothing when it cannot or should not guess', () => {
   assert.equal(planGuess(state({ mine: { correctAt: null, locked: true, tried: [0] } }), d, cardData), null);
   assert.equal(planGuess(state({ mine: { correctAt: null, locked: false, tried: [0], coolUntil: 9000 } }), d, cardData), null);
   assert.equal(planGuess(state({ serverNow: 500 }), d, cardData), null);
+  assert.equal(planGuess(state({ serverNow: 2000 }), d, cardData), null); // stroke 1 not yet readable
   assert.equal(planGuess(state(), { ...d, question: 1 }, cardData), null);
 });
 
