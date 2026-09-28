@@ -72,6 +72,13 @@ describe('options and list', () => {
     s = startRace(touch(s, 'A', T0 + 30 * 60_000), 'T', T0 + 30 * 60_000, SEED).state;
     expect(s.roundChars).toEqual(['山', '水', '火']);
   });
+  it('a room saved before listPos existed still starts a game from the top of its list', () => {
+    const old = withKids(room(), 'A') as unknown as Record<string, unknown>;
+    delete old.listPos;
+    const s = startRace(old as unknown as RoomState, 'T', T0, SEED).state;
+    expect(s.roundChars).toEqual(['山', '水', '火']);
+    expect(s.listPos).toBe(0);
+  });
   it('the room cap counts kids who are here, so a kid who left frees a seat', () => {
     let s = room();
     for (let i = 0; i < GAME.maxKids; i++) s = join(s, { id: `k${i}`, name: `Kid ${i}` }, T0).state;

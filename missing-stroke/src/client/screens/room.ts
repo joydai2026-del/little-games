@@ -41,6 +41,9 @@ export function renderRoom(root: HTMLElement, backend: Backend): () => void {
   let kid: KidRace | null = null;
   const ctx: Ctx = { root, backend, state: null, offset: 0, forceFull: false, refresh: () => void tick(true) };
   let polledStep = -1;
+  // Polls and forced refreshes can overlap: only the answer to the newest request sent is applied.
+  let sentReads = 0;
+  let appliedRead = 0;
 
   const ticker = setInterval(() => {
     for (const el of root.querySelectorAll<HTMLElement>('[data-until]')) {
@@ -114,11 +117,14 @@ export function renderRoom(root: HTMLElement, backend: Backend): () => void {
       // outside a race: "Kids here" changes with time, not only with the version.
       const s0 = ctx.state;
       const full = force || ctx.forceFull || !s0 || (s0.role === 'teacher' && s0.phase !== 'racing');
+      const readNo = ++sentReads;
       const res = await backend.poll(full ? undefined : s0!.version);
+      const stale = readNo < appliedRead;
+      if (!stale) appliedRead = readNo;
       ctx.offset = res.serverTime - Date.now();
-      // Polls and forced refreshes can overlap: an answer older than what we show is dropped.
-      if (res.state && ctx.state && res.state.version < ctx.state.version) {
-        wait = GAME.pollMs[ctx.state.phase];
+      // An answer to an older request, or an older version than we show, is dropped.
+      if (stale || (res.state && ctx.state && res.state.version < ctx.state.version)) {
+        wait = GAME.pollMs[ctx.state?.phase ?? 'lobby'];
       } else if (res.state) {
         ctx.state = res.state;
         if (full) ctx.forceFull = false;

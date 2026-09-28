@@ -88,8 +88,8 @@ export const GAME = {
   roomCodeAttempts: 5,
   /** How stale a player's lastSeenAt may get on disk before a plain poll writes it. */
   lastSeenWriteMs: 15_000,
-  /** Solo mode looks up at most maxListChars x this many pasted characters (some may have no stroke data). */
-  soloLookupFactor: 2,
+  /** Solo mode looks pasted characters up in batches of this many, until maxListChars are playable. */
+  soloLookupBatch: 20,
   /** Solo mode: the player's name on this phone. */
   soloName: 'You',
 } as const;

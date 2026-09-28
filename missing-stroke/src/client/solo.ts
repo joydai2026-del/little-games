@@ -22,24 +22,26 @@ function seed(): number {
 /** Looks up stroke data for each pasted character (through the same proxy), keeping the ones we can play. */
 export async function soloList(text: string): Promise<CharList> {
   // Same order as the class room (src/worker/strokes.ts resolveList): drop characters with no
-  // stroke data FIRST, then keep the first GAME.maxListChars playable ones. Lookups are bounded.
+  // stroke data FIRST, then keep the first GAME.maxListChars playable ones. Looked up in small
+  // batches, stopping once enough are found (the paste itself is capped at GAME.maxPasteLength).
   const parsed = parseCharList(text, Number.MAX_SAFE_INTEGER);
-  const wanted = parsed.chars.slice(0, GAME.maxListChars * GAME.soloLookupFactor);
-  const found = await Promise.all(wanted.map((c) => charData(c).then((d) => d.strokes.length, () => 0)));
-  const playable: string[] = [];
+  const chars: string[] = [];
   const missing: string[] = [];
-  const counts: Record<string, number> = {};
-  wanted.forEach((c, i) => {
-    if (found[i] > 0) {
-      playable.push(c);
-      counts[c] = found[i];
-    } else missing.push(c);
-  });
-  const chars = playable.slice(0, GAME.maxListChars);
   const strokeCounts: Record<string, number> = {};
-  for (const c of chars) strokeCounts[c] = counts[c];
-  const overflow = [...playable.slice(GAME.maxListChars), ...parsed.chars.slice(wanted.length)];
-  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow };
+  let next = 0;
+  while (next < parsed.chars.length && chars.length < GAME.maxListChars) {
+    const batch = parsed.chars.slice(next, next + GAME.soloLookupBatch);
+    next += batch.length;
+    const found = await Promise.all(batch.map((c) => charData(c).then((d) => d.strokes.length, () => 0)));
+    batch.forEach((c, i) => {
+      if (found[i] === 0) missing.push(c);
+      else if (chars.length < GAME.maxListChars) {
+        chars.push(c);
+        strokeCounts[c] = found[i];
+      }
+    });
+  }
+  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow: parsed.chars.slice(next) };
 }
 
 /** Makes the solo game and starts it right away (3, 2, 1...). */

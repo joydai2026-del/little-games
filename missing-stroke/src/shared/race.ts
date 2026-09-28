@@ -132,7 +132,8 @@ export function setOptions(state: RoomState, byId: string, input: Partial<Record
 export function charsForRound(list: string[], pos: number, perRound: number): string[] {
   if (list.length === 0) return [];
   const count = Math.min(perRound, list.length);
-  const startAt = ((pos % list.length) + list.length) % list.length;
+  const at = Number.isInteger(pos) ? pos : 0; // a room saved before listPos existed starts at the top
+  const startAt = ((at % list.length) + list.length) % list.length;
   return Array.from({ length: count }, (_, i) => list[(startAt + i) % list.length]);
 }
 
@@ -189,7 +190,8 @@ export function startRace(state: RoomState, byId: string, now: number, seed: num
   if (state.list.chars.length === 0) return fail(state, 'the list has no characters we can use yet', 409);
   const active = presentKids(state, now);
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
-  const roundChars = charsForRound(state.list.chars, state.listPos, state.options.charsPerRound);
+  const pos = Number.isInteger(state.listPos) ? state.listPos : 0;
+  const roundChars = charsForRound(state.list.chars, pos, state.options.charsPerRound);
   const hidden = roundChars.map((c, i) => hiddenStrokeFor(state.list.strokeCounts[c] ?? 1, seed >>> 0, i));
   const goAt = now + GAME.countdownSeconds * 1000;
   const progress: Record<string, Progress> = {};
@@ -200,7 +202,7 @@ export function startRace(state: RoomState, byId: string, now: number, seed: num
     ...state,
     phase: 'racing',
     round: state.round + 1,
-    listPos: state.list.chars.length ? (state.listPos + roundChars.length) % state.list.chars.length : 0,
+    listPos: state.list.chars.length ? (pos + roundChars.length) % state.list.chars.length : 0,
     roundChars,
     hidden,
     goAt,
