@@ -1,0 +1,72 @@
+/* App chrome. Colors only through theme.css variables. */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font: 17px/1.45 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "PingFang SC", sans-serif;
+}
+.app-chrome { max-width: 760px; margin: 0 auto; padding: 16px; }
+.top { display: flex; gap: 12px; align-items: flex-start; }
+.momo { flex: none; width: 64px; height: 64px; animation: bob 3s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
+@media (prefers-reduced-motion: reduce) { .momo { animation: none; } }
+h1 { font-size: 1.5rem; margin: 4px 0 6px; letter-spacing: -0.01em; }
+.bubble {
+  margin: 0; padding: 10px 14px; border-radius: 16px 16px 16px 4px;
+  background: var(--white); box-shadow: 0 2px 0 var(--mint);
+  font-size: 0.98rem;
+}
+.card {
+  margin-top: 16px; padding: 16px; border-radius: 20px;
+  background: var(--white); box-shadow: 0 3px 0 var(--mint), 0 8px 24px var(--shadow);
+}
+.big-label { display: block; font-weight: 800; font-size: 1.2rem; margin-bottom: 8px; }
+textarea {
+  width: 100%; min-height: 110px; padding: 12px 14px; resize: vertical;
+  border: 3px solid var(--mint); border-radius: 14px; background: var(--cream);
+  font: 1.6rem/1.4 "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", sans-serif; color: var(--ink);
+}
+textarea:focus { outline: none; border-color: var(--mint-deep); }
+.hint { margin: 8px 2px 0; font-size: 0.88rem; color: var(--ink-soft); }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+@media (max-width: 480px) { .controls { grid-template-columns: 1fr; } }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
+.seg { display: flex; gap: 6px; }
+.seg label { flex: 1; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span {
+  display: block; text-align: center; padding: 9px 6px; border-radius: 12px; cursor: pointer;
+  background: var(--cream); border: 2px solid var(--mint); font-weight: 700; font-size: 0.95rem;
+  transition: transform 0.08s;
+}
+.seg input:checked + span { background: var(--mint); border-color: var(--mint-deep); }
+.seg input:focus-visible + span { outline: 3px solid var(--coral); outline-offset: 2px; }
+.seg span:active { transform: scale(0.96); }
+.print-bar {
+  position: sticky; bottom: 0; z-index: 2; margin: 16px -16px 0; padding: 12px 16px;
+  background: var(--cream); box-shadow: 0 -6px 12px var(--cream);
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+}
+.print-bar .hint { margin: 0; flex: 1; min-width: 180px; }
+#print {
+  padding: 14px 34px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--mint-deep); color: var(--white); font: inherit; font-weight: 800; font-size: 1.15rem;
+  box-shadow: 0 4px 0 var(--ink);
+}
+#print:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
+#print:disabled { background: var(--mint); color: var(--ink-soft); box-shadow: none; cursor: default; }
+.sheet { max-width: 760px; margin: 8px auto 0; padding: 0 16px 16px; display: grid; gap: 16px; }
+.sheet .sheet-page {
+  padding: 3%; border-radius: 6px; box-shadow: 0 2px 0 var(--mint), 0 10px 30px var(--shadow);
+}
+.credits { font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
+.credits a { color: inherit; }
+
+@media print {
+  body { background: none; }
+  .app-chrome { display: none !important; }
+  .sheet { display: block; max-width: none; margin: 0; padding: 0; }
+  .sheet .sheet-page { padding: 0; }
+}

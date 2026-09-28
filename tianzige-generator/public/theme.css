@@ -1,0 +1,21 @@
+/* Avery Studio + 墨墨 (Momo) palette. The ONLY place colors are defined.
+   Everything else (app, printed sheet, API sheet) uses these variables. */
+:root {
+  --cream: #FFF7E8;   /* page */
+  --mint: #BFE8D8;    /* light fill */
+  --mint-deep: #3FA88A; /* CTAs */
+  --coral: #FF7B6B;   /* accent */
+  --ink: #2D3436;     /* text */
+  --white: #FFFFFF;
+
+  /* Derived tones for the printed grid and the gray practice ink. */
+  --ink-soft: #636E72;
+  --paper: var(--white);
+  --grid-border: var(--mint-deep);
+  --grid-guide: #8FD0B8;
+  --grid-diag: #CDEBDF;
+  --stroke-build: #B9C1C7;
+  --stroke-trace: #DCE1E4;
+  --rule: #B9C1C7;
+  --shadow: rgba(45, 52, 54, 0.12);
+}

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Momo, the ink drop">
+  <!-- PLACEHOLDER Momo (墨墨). No canonical mascot art exists yet. Swap this one
+       file for the real asset; the app only references /momo.svg. -->
+  <path d="M60 8 C60 8 22 52 22 76 A38 38 0 0 0 98 76 C98 52 60 8 60 8 Z" fill="#2D3436"/>
+  <ellipse cx="46" cy="72" rx="6" ry="8" fill="#FFFFFF"/>
+  <ellipse cx="74" cy="72" rx="6" ry="8" fill="#FFFFFF"/>
+  <circle cx="47.5" cy="74" r="3.2" fill="#2D3436"/>
+  <circle cx="75.5" cy="74" r="3.2" fill="#2D3436"/>
+  <circle cx="36" cy="88" r="5" fill="#FF7B6B" opacity="0.8"/>
+  <circle cx="84" cy="88" r="5" fill="#FF7B6B" opacity="0.8"/>
+  <path d="M52 90 Q60 97 68 90" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="44" cy="46" rx="5" ry="9" fill="#FFFFFF" opacity="0.18" transform="rotate(25 44 46)"/>
+</svg>

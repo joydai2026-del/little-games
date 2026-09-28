@@ -1,0 +1,37 @@
+/* The printed worksheet. Shared by the app preview and the /api/sheet page.
+   Colors come from theme.css; page size comes from pageCss() at runtime. */
+.sheet-page {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--paper);
+  overflow: visible;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.sheet-page .g-border { fill: none; stroke: var(--grid-border); }
+.sheet-page .g-guide { stroke: var(--grid-guide); }
+.sheet-page .g-diag { fill: var(--grid-diag); stroke: none; }
+.sheet-page .ink-model { fill: var(--ink); }
+.sheet-page .ink-build { fill: var(--stroke-build); }
+.sheet-page .ink-trace { fill: var(--stroke-trace); }
+.sheet-page .glyph-font {
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", "BiauKai", "DFKai-SB", "Noto Serif CJK SC", "Songti SC", serif;
+}
+.sheet-page .sheet-label,
+.sheet-page .sheet-foot {
+  fill: var(--ink-soft);
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+.sheet-page .sheet-rule { stroke: var(--rule); }
+
+@media print {
+  .sheet-page {
+    break-after: page;
+    page-break-after: always;
+    box-shadow: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .sheet-page:last-child { break-after: auto; page-break-after: auto; }
+}
