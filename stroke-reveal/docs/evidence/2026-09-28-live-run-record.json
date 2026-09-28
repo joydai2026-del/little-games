@@ -1,0 +1,59 @@
+{
+  "url": "https://stroke-reveal.joyd-ai-2026.workers.dev",
+  "deployed_version": "989d3b9d-f57a-44d3-9383-91626b0399b1",
+  "deployed_commit": "a6dd83e",
+  "args": {
+    "url": "https://stroke-reveal.joyd-ai-2026.workers.dev",
+    "words": 3,
+    "no_video": false
+  },
+  "started_at": "2026-09-28T21:29:25.721603+00:00",
+  "kid_taps": [
+    {
+      "word": 1,
+      "tapped": "大人",
+      "right": true,
+      "strokes_seen": 2
+    },
+    {
+      "word": 2,
+      "tapped": "学校",
+      "right": false,
+      "strokes_seen": 2
+    },
+    {
+      "word": 2,
+      "tapped": "山",
+      "right": true,
+      "strokes_seen": 3
+    },
+    {
+      "word": 3,
+      "tapped": "学校",
+      "right": true,
+      "strokes_seen": 2
+    }
+  ],
+  "code": "N3HC",
+  "teacher_notes": [
+    "Momo cannot draw 𠮷野 yet, so we left it out.",
+    "These looked like headings, so they are not cards: 第三课"
+  ],
+  "agent_output": [
+    "joined N3HC as Robo",
+    "got word 2 after 3 strokes: 山",
+    "guess refused: time is up for that word",
+    "{\"right\":1,\"wrong\":0,\"points\":448,\"place\":1,\"phase\":\"done\"}"
+  ],
+  "board": "Room N3HC · Round 1\nFinished!\nWinners!\n大人\n山\n学校\n1\nMia\n1725 points · 3 right\n\nRobo players (ranked on their own)\n\n1\nRoboAI\n448 points · 1 right\nPlay again (next words)\n\nNext round: Mia, Robo",
+  "kid_screen": "You are number 1!\n\nYou got 3 words right, 1725 points. 好棒!\n\n1\nMiayou\n1725 points · 3 right\n\nRobo players (ranked on their own)\n\n1\nRoboAI\n448 points · 1 right",
+  "demo": {
+    "mp4": "stroke-reveal-demo.mp4",
+    "mp4_bytes": 842328,
+    "gif": "stroke-reveal-demo.gif",
+    "gif_bytes": 3015192,
+    "gif_width": 820,
+    "gif_fps": 8
+  },
+  "finished_at": "2026-09-28T21:30:14.073326+00:00"
+}
