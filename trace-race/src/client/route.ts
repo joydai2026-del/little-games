@@ -14,3 +14,15 @@ export function screenFor(hash: string, hasSeat: (code: string) => boolean): Scr
   if (parts[0] === 'join' && code.length === 4 && hasSeat(code)) return { screen: 'room', code };
   return { screen: 'home', code: parts[0] === 'join' ? code : '' };
 }
+
+/**
+ * Goes to `hash` and re-runs routing even when the page is already there.
+ * Setting location.hash to its current value fires no hashchange, which left
+ * "Join again" on a stale seat as a dead link: the phone already sat on
+ * #/join/CODE (rendered as the room because of the old seat).
+ */
+export function goTo(hash: string, win: { location: { hash: string }; dispatchEvent(e: Event): boolean }, makeEvent: () => Event): void {
+  const next = hash.startsWith('#') ? hash : `#${hash}`;
+  if (win.location.hash === next) win.dispatchEvent(makeEvent());
+  else win.location.hash = next;
+}

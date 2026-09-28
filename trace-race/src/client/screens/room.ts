@@ -5,6 +5,8 @@ import { GAME, OPTION_LIMITS } from '../../shared/config';
 import type { PublicState, StrokeResult } from '../../shared/types';
 import { startTrace, type TraceHandle } from '../tracer';
 import { brand, credits, h, momo } from '../ui';
+import { goTo } from '../route';
+import { HICCUP_TEXT, kidStatusText } from '../status';
 import { board } from './board';
 
 interface Ctx {
@@ -110,7 +112,9 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         // The saved seat is for a room that is gone (codes are reused): forget it, so the
         // join link works again instead of looping back here.
         clearSeat(code);
-        root.replaceChildren(brand('This room has ended.'), h('p', {}, [h('a', { href: `#/join/${code}`, text: 'Join again' })]));
+        const again = h('button', { class: 'btn', text: 'Join again' });
+        again.addEventListener('click', () => goTo(`#/join/${code}`, window, () => new HashChangeEvent('hashchange')));
+        root.replaceChildren(brand('This room has ended.'), h('p', {}, [again]));
         stopped = true;
         return;
       }
@@ -298,6 +302,7 @@ class KidRace {
   private cheering = false;
   private pending = 0;
   private hiccupUntil = 0;
+  private errorText: string | null = null;
   private gaveUp = false;
   /** Only states at least this new may be used to reconcile (drops a stale poll that crossed a send). */
   private minVersion = 0;
@@ -347,8 +352,8 @@ class KidRace {
     delete this.stage.dataset.fin;
     this.gaveUp = false;
     this.adoptServer();
-    this.status.textContent = 'Oops, the internet hiccuped. Keep going from here!';
     this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
+    this.status.textContent = HICCUP_TEXT;
   }
 
   update(): void {
@@ -362,8 +367,15 @@ class KidRace {
     this.tick();
   }
 
+  /** Writes the help line; called on every tick so the hiccup notice clears itself on time. */
+  private showStatus(): void {
+    const text = kidStatusText({ hints: this.state.options.hints, hiccupUntil: this.hiccupUntil, now: Date.now(), error: this.errorText });
+    if (this.status.textContent !== text) this.status.textContent = text;
+  }
+
   tick(): void {
     const s = this.state;
+    if (this.tracer) this.showStatus();
     if (s.goAt != null && Date.now() + this.ctx.offset < s.goAt) {
       const n = Math.max(1, Math.ceil((s.goAt - Date.now() - this.ctx.offset) / 1000));
       if (this.stage.dataset.count !== String(n)) {
@@ -394,7 +406,8 @@ class KidRace {
     const index = this.charIndex;
     this.strokesDone = this.startStroke;
     this.renderDots();
-    if (Date.now() >= this.hiccupUntil) this.status.textContent = this.state.options.hints ? 'Trace the strokes in order. Stuck? Try once, the hint will show you.' : 'Trace the strokes in order.';
+    this.errorText = null;
+    this.showStatus();
     const handle = startTrace(char, { size: this.size(), hints: this.state.options.hints, startStroke: this.startStroke }, {
       onCorrect: (i) => {
         if (this.tracer !== handle) return;
@@ -404,7 +417,10 @@ class KidRace {
       },
       onMistake: (i) => this.tracer === handle && this.send(index, i, 'mistake'),
       onComplete: () => this.tracer === handle && this.cheer(),
-      onError: (msg) => (this.status.textContent = msg),
+      onError: (msg) => {
+        this.errorText = msg;
+        this.showStatus();
+      },
     });
     this.tracer = handle;
     this.stage.replaceChildren(handle.root);
