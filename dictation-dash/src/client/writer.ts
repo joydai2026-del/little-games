@@ -98,7 +98,7 @@ export function startWrite(
   cb: WriteCallbacks
 ): WriteHandle {
   const rule = LEVEL_RULES[opts.level];
-  const writerEl = h('div', { class: 'writer', 'data-char': char, 'data-level': opts.level });
+  const writerEl = h('div', { class: 'writer', 'data-char': char, 'data-level': opts.level, 'data-stroke': opts.startStroke });
   const root = h('div', { class: `pad-wrap pad-${opts.level}`, style: `width:${opts.size}px;height:${opts.size}px` }, [writerEl]);
   root.prepend(grid(opts.size));
   let writer: WriterInstance | null = null;
@@ -127,7 +127,11 @@ export function startWrite(
         markStrokeCorrectAfterMisses: GAME.giveStrokeAfterMisses,
         highlightOnComplete: true,
         quizStartStrokeNum: opts.startStroke,
-        onCorrectStroke: (d: StrokeInfo) => !dead && cb.onCorrect(d.strokeNum),
+        onCorrectStroke: (d: StrokeInfo) => {
+          if (dead) return;
+          writerEl.dataset.stroke = String(d.strokeNum + 1); // next stroke expected (read by the live run)
+          cb.onCorrect(d.strokeNum);
+        },
         onMistake: (d: StrokeInfo) => {
           if (dead) return;
           root.classList.remove('wiggle');

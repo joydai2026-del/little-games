@@ -14,7 +14,7 @@ export interface AgentClient {
   create(name: string, text: string, options?: Record<string, unknown>, mode?: 'class' | 'solo'): Promise<any>;
   join(code: string, name: string): Promise<any>;
   state(code: string, version?: number): Promise<any>;
-  hear(code: string, index: number): Promise<{ bytes: Uint8Array; type: string | null; cache: string | null }>;
+  hear(code: string, round: number, index: number): Promise<{ bytes: Uint8Array; type: string | null; cache: string | null }>;
   stroke(code: string, move: Omit<Move, 'word'> & { word?: string }): Promise<any>;
   skip(code: string, race: number, seq: number, wordIndex: number): Promise<any>;
   options(code: string, options: Record<string, unknown>): Promise<any>;

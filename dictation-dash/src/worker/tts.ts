@@ -110,12 +110,14 @@ export function ttsCacheKey(requestUrl: string, model: string, text: string): Re
   return new Request(url.toString(), { method: 'GET' });
 }
 
-export function audioResponse(bytes: Uint8Array, cacheSeconds: number, cache: 'HIT' | 'MISS'): Response {
+export function audioResponse(bytes: Uint8Array, _cacheSeconds: number, cache: 'HIT' | 'MISS'): Response {
   return new Response(bytes as BodyInit, {
     headers: {
       'Content-Type': sniffAudioType(bytes),
       'Content-Length': String(bytes.byteLength),
-      'Cache-Control': `private, max-age=${cacheSeconds}`,
+      // Never cached by the browser: the same URL means a different word next
+      // round (live bug 2026-09-28). The room's storage is the cache.
+      'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
       'X-Tts-Cache': cache,
     },

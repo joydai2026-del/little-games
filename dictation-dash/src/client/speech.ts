@@ -233,7 +233,8 @@ async function speakNow(key: string, url: string, seat: Seat, onEnded: () => voi
  */
 export async function sayWord(code: string, seat: Seat, round: number, index: number, onEnded: () => void): Promise<SpeakResult> {
   const key = `${code}:${round}:${index}`;
-  const url = `/api/rooms/${code}/say?w=${index}`;
+  // The round is in the URL too, so no cache can ever answer round 2's word 0 with round 1's.
+  const url = `/api/rooms/${code}/say?r=${round}&w=${index}`;
   const attempt = speakNow(key, url, seat, onEnded).catch((err: unknown) => {
     if (err instanceof Cancelled) return soundOff() ? ('silenced' as const) : ('cancelled' as const);
     // A pause() from a mute or a newer word interrupts play() with AbortError.

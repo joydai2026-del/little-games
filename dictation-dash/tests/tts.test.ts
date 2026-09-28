@@ -71,7 +71,7 @@ describe('speakWord', () => {
   });
   it('config comes from vars with safe defaults', () => {
     expect(ttsConfig({ TTS_MODEL: '@cf/other', TTS_MAX_ATTEMPTS: '99' } as never)).toMatchObject({ model: '@cf/other', maxAttempts: 5 });
-    expect(audioResponse(WAV, 60, 'HIT').headers.get('cache-control')).toBe('private, max-age=60');
+    expect(audioResponse(WAV, 60, 'HIT').headers.get('cache-control')).toBe('no-store');
   });
 });
 
@@ -99,6 +99,10 @@ describe('GET /api/rooms/:code/say through the Worker', () => {
     expect(ai.run).toHaveBeenCalledTimes(1);
     expect((await w.fetch(`/api/rooms/${made.code}/say?w=0`)).status).toBe(403);
     expect((await w.fetch(`/api/rooms/${made.code}/say?w=1`, { headers: h(kid) })).status).toBe(409);
+    // The round is checked: a URL from another round never gets this round's word.
+    expect((await w.fetch(`/api/rooms/${made.code}/say?r=1&w=0`, { headers: h(kid) })).status).toBe(200);
+    expect((await w.fetch(`/api/rooms/${made.code}/say?r=2&w=0`, { headers: h(kid) })).status).toBe(409);
+    expect((await w.fetch(`/api/rooms/${made.code}/say?r=x&w=0`, { headers: h(kid) })).status).toBe(400);
   });
 });
 

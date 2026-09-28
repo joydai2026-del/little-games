@@ -29,7 +29,8 @@ async function req(method, path, body, seat, rawBody) {
 const seatOf = (d) => ({ playerId: d.playerId, playerSecret: d.playerSecret });
 
 async function hearAndSave(code, seat, w, label) {
-  const r = await req('GET', `/api/rooms/${code}/say?w=${w}`, undefined, seat);
+  const round = (await req('GET', `/api/rooms/${code}`, undefined, seat)).json.state.round;
+  const r = await req('GET', `/api/rooms/${code}/say?r=${round}&w=${w}`, undefined, seat);
   const type = r.headers.get('content-type') ?? '';
   const magic = r.buf.subarray(0, 4).toString('latin1');
   let file = null;
@@ -92,6 +93,12 @@ async function runRound(action, level, players, duringRound = async () => {}) {
   const ahead = await req('GET', `/api/rooms/${code}/say?w=1`, undefined, seatOf(players[0].joined));
   note(`${level}: nobody can listen ahead`, ahead.status === 409, { status: ahead.status, body: ahead.json });
   const tSay = await req('GET', `/api/rooms/${code}/say?w=0`, undefined, teacher);
+  if (st.round > 1) {
+    const old = await req('GET', `/api/rooms/${code}/say?r=${st.round - 1}&w=0`, undefined, seatOf(players[0].joined));
+    note(`${level}: a URL from the last round never gets this round's word`, old.status === 409, { status: old.status, body: old.json });
+    const cc = await req('GET', `/api/rooms/${code}/say?r=${st.round}&w=0`, undefined, seatOf(players[0].joined));
+    note(`${level}: clips are never browser-cached`, cc.headers.get('cache-control') === 'no-store', { cacheControl: cc.headers.get('cache-control') });
+  }
   note(`${level}: the teacher's board never speaks`, tSay.status === 403, { status: tSay.status });
   await duringRound(st);
   const results = await Promise.all(

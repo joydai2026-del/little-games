@@ -56,9 +56,9 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
     state(code, version) {
       return call('GET', `${room(code)}${version === undefined ? '' : `?v=${version}`}`);
     },
-    /** The clip of word `index` as bytes, plus its content type. Never played. */
-    async hear(code, index) {
-      const res = await fetchImpl(`${root}${room(code)}/say?w=${index}`, { headers: headers(), signal: AbortSignal.timeout(timeoutMs) });
+    /** The clip of word `index` of round `round` as bytes, plus its content type. Never played. */
+    async hear(code, round, index) {
+      const res = await fetchImpl(`${root}${room(code)}/say?r=${round}&w=${index}`, { headers: headers(), signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const err = new Error(data.error || `HTTP ${res.status}`);
@@ -139,7 +139,7 @@ export async function playRound({
     }
     if (listen && plan.charIndex === 0 && plan.strokeIndex === 0 && !heard.some((h) => h.wordIndex === plan.wordIndex)) {
       try {
-        const clip = await client.hear(code, plan.wordIndex);
+        const clip = await client.hear(code, plan.race, plan.wordIndex);
         heard.push({ wordIndex: plan.wordIndex, bytes: clip.bytes.byteLength, type: clip.type, cache: clip.cache });
       } catch (err) {
         // The word did not play: a kid would skip it, and so does the agent.

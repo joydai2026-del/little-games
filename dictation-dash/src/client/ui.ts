@@ -95,5 +95,5 @@ export function levelPicker(current: Level, onPick: (level: Level) => void): HTM
 /** The level as a badge on the kid's screen and the board. */
 export function levelBadge(level: Level): HTMLElement {
   const rule = LEVEL_RULES[level];
-  return h('span', { class: `level-badge level-${level}`, text: `${rule.label}: ${rule.blurb.toLowerCase()}` });
+  return h('span', { class: `level-badge level-${level}`, text: `${rule.label}: ${rule.blurb}` });
 }

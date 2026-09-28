@@ -137,6 +137,7 @@ h3 { font-size: 1.15rem; margin: 16px 0 8px; }
   background-size: 2px 100%, 100% 2px; background-position: center; background-repeat: no-repeat; }
 .box.now { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-soft); }
 .box.done { border-color: var(--mascot-2); }
+.pad-wrap { box-sizing: content-box; } /* the grid is exactly the writing area; the border sits outside it */
 .pad-hard { border-color: var(--pink-deep); }
 .pad-locked { text-align: center; padding: 24px 0; font-weight: 800; font-size: 1.2rem; }
 .problem { background: var(--butter-soft); border: 3px dashed var(--pink); border-radius: var(--radius); padding: 16px; margin: 12px 0; font-weight: 700; }

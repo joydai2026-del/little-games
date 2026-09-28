@@ -3,7 +3,7 @@
 //   POST /api/rooms                 { name?, text, mode?: "class" | "solo", options? } -> { code, playerId, playerSecret, state }
 //   POST /api/rooms/:code/join      { name, agent? }          -> { playerId, playerSecret, state }
 //   GET  /api/rooms/:code?v=N       -> { state } or { unchanged, nextPollMs }
-//   GET  /api/rooms/:code/say?w=N   the audio clip of word N of this round (players of the round only)
+//   GET  /api/rooms/:code/say?r=R&w=N  the audio clip of word N of round R (players of that round only)
 //   POST /api/rooms/:code/stroke    { race, seq, wordIndex, charIndex, strokeIndex, result: "correct" | "mistake" }
 //                                   race = state.round; seq = this player's send counter (1, 2, 3...)
 //   POST /api/rooms/:code/skip      { race, seq, wordIndex }  move on without writing the word
@@ -98,8 +98,9 @@ async function limited(request: Request, env: Env): Promise<Response | null> {
 /** GET /api/rooms/:code/say?w=N: the room checks the player and the word, and answers with the clip. */
 function sayRoute(env: Env, code: string, request: Request, url: URL): Promise<Response> {
   const w = url.searchParams.get('w') ?? '';
-  if (!/^\d{1,3}$/.test(w)) return Promise.resolve(json({ error: 'say which word: ?w=0, 1, 2...' }, 400));
-  return forward(env, code, `say?w=${w}`, request);
+  const r = url.searchParams.get('r');
+  if (!/^\d{1,3}$/.test(w) || (r !== null && !/^\d{1,6}$/.test(r))) return Promise.resolve(json({ error: 'say which word: ?r=<round>&w=0, 1, 2...' }, 400));
+  return forward(env, code, `say?w=${w}${r === null ? '' : `&r=${r}`}`, request);
 }
 
 async function createRoomRoute(request: Request, env: Env): Promise<Response> {

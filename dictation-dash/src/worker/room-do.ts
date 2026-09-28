@@ -185,7 +185,9 @@ export class RoomDO implements DurableObject {
         const index = Number(url.searchParams.get('w'));
         const prog = this.room.progress[playerId];
         const word = wordToSay(this.room, index);
-        if (!prog) response = json({ error: 'only players of this round can hear its words' }, 403);
+        const round = url.searchParams.get('r');
+        if (round !== null && Number(round) !== this.room.round) response = json({ error: 'that was for a different round' }, 409);
+        else if (!prog) response = json({ error: 'only players of this round can hear its words' }, 403);
         else if (word === null) response = json({ error: 'no such word in this round' }, 404);
         else if (prog.finishedAt == null && index > prog.wordIndex) response = json({ error: 'that word is still coming' }, 409);
         else response = await this.clip(word, request);
