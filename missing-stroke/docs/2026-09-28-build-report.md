@@ -11,26 +11,34 @@ tests or read in source, not live, **C** = assumed.
 | 2 | The missing stroke's number reached every phone | Phones get `turn.visible` (the other strokes, unlabelled) and `turn.answer` only after the close, once right, or as their own earned hint; `state.hidden` and `turn.hidden` are gone from every view, before and after GO. No third-party script runs on the page any more | A (live gate: start payload has 2 of 3 strokes and no "hidden" anywhere; Bo sees no answer while open; answer shown after close) + B (test: no field, no path, no median of the hidden stroke in the view) |
 | 3 | One-stroke characters gave a blank pad | `minStrokesToPlay: 2`; skipped with the note "一 has only one stroke, so we skipped it"; `state.list.skipped` in the API | A (live gate: 一 in `skipped`) + B (test) |
 | 4 | Header link stayed for a late kid | Plain text for any kid while a game is live | B (test) |
-| 5 | Joins unlimited | 40 joins per room per minute (`joinsPerRoomPerWindow`, plain message) and a per-IP limit (`JOIN_LIMITER`, namespace 1052, 60/min, a class shares one IP) | B (test for the room limit; the IP limit is a Cloudflare binding, seen in the deploy output) |
+| 5 | Joins unlimited; (round 2) a flood could still fill the 200 stored seats | 40 joins per room per minute (`joinsPerRoomPerWindow`, plain message), 40 per IP per minute (`JOIN_LIMITER`, namespace 1052), caps count ACTIVE seats, and seats of kids who left are reclaimed when the 200 stored seats run out | B (tests: the room limit, and an 8-minute flood after which a real kid still joins; the IP limit is a Cloudflare binding, seen in the deploy output) |
 | 6 | Local checks graded A | Regraded below: local tests and static checks are B | n/a |
 | 7 | "Change the list" tap target | `summary` is 64 px tall with a focus ring | B |
 | 8 | Two tabs / lost response | A same-number send from a second tab is not graded (`duplicate`), the tab resyncs its number and draws again; a lost answer's retry reads "right" back from the room; tests for both, and the pad follows the room's word (`strokeOutcome`) | B (tests) |
 | 9 | A missing middle stroke crossed by later strokes | 我 stroke 2 and 十 stroke 1 (crossed) are accepted when drawn, also as a shaky offset copy; tracing the crossing stroke is refused | B (tests on real data); live runs drew hidden strokes 0 and 3 |
 | C1 | Board chips showed the current character whole | Only finished characters show; the current and upcoming ones are "?" | A (still `missing-stroke-board-live.png` and the demo, looked at) |
+| R2 | Solo never explained a skipped one-stroke character in a mixed list (一山) | The class notice ("一 has only one stroke, so we skipped it") shows on the solo countdown screen | A (live solo check, see below) |
+| R3-1 | Matcher cost: a stroke that returns to its own centre (near-zero scale) could hold a room for seconds | Points per stroke capped at 200 (`maxStrokePoints`), finite numbers checked, strokes smaller than `minStrokeSpan` refused, and the normalized length capped at 10 units (all 112,617 real strokes in hanzi-writer-data 2.0.1 measure 4.78 or less) with at most 250 subdivided points | B (tests: crafted figure-eights at 4 sizes and a 200-point zigzag each grade in under 20 ms; every fixture stroke is under the guard) |
+| R3-2 | A list or settings change during Start's stroke-data wait could start characters never loaded | After the wait the room re-reads the character set and loads again if it moved (`startLoadAttempts`), else asks to tap Start again | B (test: a list change lands mid-wait; the game starts with the new character loaded and its strokes are graded, not 503) |
+| R3-3 | A drag far off the pad got a 400 and "internet hiccuped" | The phone does not send a drag that wanders off the pad (`padOutsideMargin`) and says "Draw inside the box!" | B (tests) |
 | C3 | Old notices lingered | The hiccup and "draw again" lines clear on the next confirmed answer; the hint line clears on a right answer or the next character | B |
 
 ## Final live receipt
 
-Deployed version `f3a155ff-a967-4913-9c19-c2f98c960f68` (commit `3fadd4c`) on
+Deployed version `f97a2e90-e40f-4810-b58a-a6e654f9c66d` (commit `4ad8235`) on
 https://missing-stroke.joyd-ai-2026.workers.dev. Live gate, run 15 s after the deploy:
 **23 of 23 checks pass** (`docs/evidence/2026-09-28-live-gate.json`). The clock check,
-quoted: closedAt `1790630570902` = expected `1790630570902` (first right + 6000 ms), endedAt
-`1790630574402` = expected `1790630574402` (+ 3500 ms reveal), with nobody polling.
+quoted from the receipt: closedAt `1790632496913` = expected `1790632496913` (first right + 6000 ms), endedAt
+`1790632500413` = expected `1790632500413` (+ 3500 ms reveal), with nobody polling.
 
 Also live on this version (A): a headless class run on a 390 px phone with real pointer drags
 (the backwards stroke was graded wrong and the pad wiggled; the kid then drew all 3 missing
 strokes right; in this take the AI player won all 3 characters, a real result), and a solo run
-(5 of 5). 0 console errors in both. Demo re-recorded on this version.
+(5 of 5, on `f3a155ff`). 0 console errors in both. The class run was repeated on `f97a2e90` (backwards stroke wiggled,
+3 of 3 drawn right, 0 console errors). The solo skip note ("一 has only one stroke, so we skipped it")
+was checked live on `f4dd55e2` (still `docs/demo/missing-stroke-solo-skip-note.png`). The demo video
+was recorded on `f3a155ff`; the changes since (the skip note, "Draw inside the box!", seat reuse,
+grading guards) do not show in a normal game.
 
 ## What shipped (first pass; see the review table above for what changed)
 
@@ -56,9 +64,9 @@ strokes right; in this take the AI player won all 3 characters, a real result), 
 
 ## Checks (final)
 
-- `npm test`: 78 vitest tests in 8 files + 5 node agent tests, all green (B: local).
+- `npm test`: 84 vitest tests in 8 files + 5 node agent tests, all green (B: local).
 - `npm run typecheck`, `check:xss`, `check:palette`, `check:brand`: all pass (B: local).
-- Live gate: 23 of 23 checks pass on the final version (A).
+- Live gate: 23 of 23 checks pass on the final version `f97a2e90` (A).
 - Solo run on the final version: 5 of 5, 0 console errors (A).
 
 ## Codex review (3 rounds, read-only, adversarial)
