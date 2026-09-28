@@ -42,7 +42,7 @@ export function momo(extraClass = ''): HTMLImageElement {
 export function brand(subtitle: string): HTMLElement {
   return h('div', { class: 'brand' }, [
     h('img', { src: '/momo.png', srcset: MOMO_SRCSET, alt: '' }),
-    h('div', {}, [h('h1', { text: 'Trace Race 笔顺比赛' }), h('p', { class: 'sub', text: subtitle })]),
+    h('div', {}, [h('h1', {}, ['Trace Race ', h('span', { class: 'nowrap', text: '笔顺比赛' })]), h('p', { class: 'sub', text: subtitle })]),
   ]);
 }
 

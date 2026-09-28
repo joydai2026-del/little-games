@@ -12,6 +12,7 @@ a { color: var(--ink); }
 
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand img { width: 64px; height: 64px; object-fit: contain; flex: none; }
+.nowrap { white-space: nowrap; } /* a Chinese word never splits across lines */
 .brand .sub { color: var(--ink-soft); margin: 0; }
 
 .card { background: var(--card); border-radius: var(--radius); padding: 20px; margin: 16px 0; box-shadow: 0 2px 0 var(--ink-faint); }

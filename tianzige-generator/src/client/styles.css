@@ -11,6 +11,7 @@ body {
 .momo { flex: none; width: 72px; height: 72px; object-fit: contain; transform-origin: 50% 90%; animation: bob 3s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
 @media (prefers-reduced-motion: reduce) { .momo { animation: none; } }
+.nowrap { white-space: nowrap; } /* a Chinese word never splits across lines */
 h1 { font-size: 1.6rem; line-height: 1.2; margin: 4px 0 6px; }
 .bubble {
   margin: 0; padding: 10px 14px; border-radius: 16px 16px 16px 4px;
