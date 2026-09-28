@@ -1,19 +1,19 @@
 {
   "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
-  "deployedVersion": "31eff58e-d242-485d-aa09-07267e1aeed7",
-  "deployedCommit": "ffe98f1",
-  "startedAt": "2026-09-28T20:53:48.555Z",
+  "deployedVersion": "f3a155ff-a967-4913-9c19-c2f98c960f68",
+  "deployedCommit": "3fadd4c",
+  "startedAt": "2026-09-28T21:22:38.198Z",
   "checks": [
     {
       "name": "home page",
       "pass": true,
-      "at": "2026-09-28T20:53:48.861Z",
+      "at": "2026-09-28T21:22:38.755Z",
       "status": 200
     },
     {
       "name": "stroke proxy returns manifest bytes for 我",
       "pass": true,
-      "at": "2026-09-28T20:53:49.083Z",
+      "at": "2026-09-28T21:22:38.867Z",
       "status": 200,
       "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
       "contentType": "application/json; charset=utf-8",
@@ -23,7 +23,7 @@
     {
       "name": "stroke proxy rejects ..%2Fx",
       "pass": true,
-      "at": "2026-09-28T20:53:49.208Z",
+      "at": "2026-09-28T21:22:38.899Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -32,7 +32,7 @@
     {
       "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
       "pass": true,
-      "at": "2026-09-28T20:53:49.299Z",
+      "at": "2026-09-28T21:22:39.105Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -41,7 +41,7 @@
     {
       "name": "stroke proxy rejects %F0%A0%AE%B7",
       "pass": true,
-      "at": "2026-09-28T20:53:49.332Z",
+      "at": "2026-09-28T21:22:39.132Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -50,14 +50,14 @@
     {
       "name": "licence served",
       "pass": true,
-      "at": "2026-09-28T20:53:49.373Z",
+      "at": "2026-09-28T21:22:39.176Z",
       "status": 200,
       "firstLine": "ARPHIC PUBLIC LICENSE"
     },
     {
       "name": "malformed room code is 400",
       "pass": true,
-      "at": "2026-09-28T20:53:49.405Z",
+      "at": "2026-09-28T21:22:39.200Z",
       "status": 400,
       "body": {
         "error": "that is not a room code"
@@ -66,7 +66,7 @@
     {
       "name": "oversized body is 413 with a plain message",
       "pass": true,
-      "at": "2026-09-28T20:53:49.477Z",
+      "at": "2026-09-28T21:22:39.276Z",
       "status": 413,
       "body": {
         "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
@@ -75,24 +75,27 @@
     {
       "name": "over-long paste is 400 with a plain message",
       "pass": true,
-      "at": "2026-09-28T20:53:49.759Z",
+      "at": "2026-09-28T21:22:39.546Z",
       "status": 400,
       "body": {
         "error": "That paste is too long. Paste a shorter list (up to 4000 characters)."
       }
     },
     {
-      "name": "room made, missing character noted",
+      "name": "room made: no-data character noted, one-stroke character skipped",
       "pass": true,
-      "at": "2026-09-28T20:53:50.023Z",
+      "at": "2026-09-28T21:22:40.485Z",
       "status": 200,
-      "code": "WT3T",
+      "code": "D3Y2",
       "list": {
         "chars": [
           "山"
         ],
         "missing": [
           "𠮷"
+        ],
+        "skipped": [
+          "一"
         ],
         "strokeCounts": {
           "山": 3
@@ -106,22 +109,25 @@
       }
     },
     {
-      "name": "race started: one character with one hidden stroke",
+      "name": "race started: the phones get 2 of 3 strokes and never the missing number",
       "pass": true,
-      "at": "2026-09-28T20:53:50.259Z",
+      "at": "2026-09-28T21:22:40.956Z",
       "status": 200,
       "round": 1,
-      "goAt": 1790628833185,
-      "turn": {
-        "index": 0,
-        "char": "山",
-        "hidden": 1,
-        "opensAt": 1790628833185,
-        "closesAt": 1790628845185,
-        "closedAt": null,
-        "firstRightAt": null,
-        "winners": []
-      },
+      "goAt": 1790630563882,
+      "turnKeys": [
+        "index",
+        "char",
+        "opensAt",
+        "closesAt",
+        "closedAt",
+        "firstRightAt",
+        "winners",
+        "visible",
+        "answer",
+        "hint"
+      ],
+      "visibleCount": 2,
       "rules": {
         "secondsPerChar": 12,
         "hintAfterMisses": 3,
@@ -131,43 +137,58 @@
       }
     },
     {
+      "name": "a bare \"correct\" without a drawing is refused (400)",
+      "pass": true,
+      "at": "2026-09-28T21:22:41.325Z",
+      "status": 400,
+      "body": {
+        "error": "send race, seq, turn and points (the stroke you drew, as [x, y] pairs)"
+      }
+    },
+    {
       "name": "an answer before GO is refused",
       "pass": true,
-      "at": "2026-09-28T20:53:50.382Z",
+      "at": "2026-09-28T21:22:41.507Z",
       "status": 409,
       "body": {
         "error": "wait for GO",
-        "serverTime": 1790628830363
+        "serverTime": 1790630561364
       }
     },
     {
       "name": "pace floor: a right stroke right after GO is refused (429)",
       "pass": true,
-      "at": "2026-09-28T20:53:53.449Z",
+      "at": "2026-09-28T21:22:44.124Z",
       "status": 429,
       "body": {
         "error": "too fast, slow down a little",
-        "serverTime": 1790628833428
+        "serverTime": 1790630564097
       },
-      "goAt": 1790628833185,
+      "goAt": 1790630563882,
       "minAnswerMs": 700
     },
     {
       "name": "late joiner waits for the next race",
       "pass": true,
-      "at": "2026-09-28T20:53:53.505Z",
+      "at": "2026-09-28T21:22:44.168Z",
       "status": 409,
       "body": {
         "error": "this race started before you joined, you are in the next one",
-        "serverTime": 1790628833490
+        "serverTime": 1790630564142
       }
     },
     {
-      "name": "Bo: one wrong stroke, retried, counts once",
+      "name": "Bo: the missing stroke drawn BACKWARDS is graded wrong by the room; the retry counts once",
       "pass": true,
-      "at": "2026-09-28T20:53:53.636Z",
-      "first": 200,
-      "retry": 200,
+      "at": "2026-09-28T21:22:44.448Z",
+      "first": [
+        200,
+        "mistake"
+      ],
+      "retry": [
+        200,
+        true
+      ],
       "bo": {
         "wins": 0,
         "rights": 0,
@@ -180,37 +201,35 @@
       }
     },
     {
-      "name": "Ava: right stroke wins the character",
+      "name": "Ava: the missing stroke drawn along its median is graded right and wins the character",
       "pass": true,
-      "at": "2026-09-28T20:53:54.301Z",
+      "at": "2026-09-28T21:22:44.982Z",
       "status": 200,
-      "turn": {
-        "index": 0,
-        "char": "山",
-        "hidden": 1,
-        "opensAt": 1790628833185,
-        "closesAt": 1790628845185,
-        "closedAt": null,
-        "firstRightAt": 1790628834228,
-        "winners": [
-          "a21eb911-5e9d-4438-8c16-32c3f19d066c"
-        ]
-      },
+      "verdict": "correct",
+      "winners": [
+        "d5433bd7-c5bf-4caf-bf49-8f5e08126fa4"
+      ],
       "ava": {
         "wins": 1,
         "rights": 1,
         "mistakes": 0,
-        "totalMs": 1043,
+        "totalMs": 1020,
         "seq": 1,
         "turn": 0,
-        "rightAt": 1790628834228,
+        "rightAt": 1790630564902,
         "turnMistakes": 0
       }
     },
     {
+      "name": "Bo still cannot see the answer while the character is open",
+      "pass": true,
+      "at": "2026-09-28T21:22:45.015Z",
+      "boAnswer": null
+    },
+    {
       "name": "late joiner not on this race board",
       "pass": true,
-      "at": "2026-09-28T20:53:54.302Z",
+      "at": "2026-09-28T21:22:45.015Z",
       "board": [
         "Ava",
         "Bo"
@@ -219,24 +238,25 @@
     {
       "name": "the room clock closed the character (grace after the first right) and ended the race by itself",
       "pass": true,
-      "at": "2026-09-28T20:54:06.884Z",
+      "at": "2026-09-28T21:22:58.436Z",
       "phase": "done",
-      "expectedCloseAt": 1790628840228,
-      "closedAt": 1790628840228,
-      "expectedEndAt": 1790628843728,
-      "endedAt": 1790628843728,
+      "expectedCloseAt": 1790630570902,
+      "closedAt": 1790630570902,
+      "expectedEndAt": 1790630574402,
+      "endedAt": 1790630574402,
       "results": [
         {
           "char": "山",
-          "hidden": 1,
+          "hidden": 0,
           "winners": [
-            "a21eb911-5e9d-4438-8c16-32c3f19d066c"
+            "d5433bd7-c5bf-4caf-bf49-8f5e08126fa4"
           ],
           "times": {
-            "a21eb911-5e9d-4438-8c16-32c3f19d066c": 1043
+            "d5433bd7-c5bf-4caf-bf49-8f5e08126fa4": 1020
           }
         }
       ],
+      "answerShownAfterClose": true,
       "standings": [
         {
           "name": "Ava",
@@ -257,28 +277,28 @@
     {
       "name": "an answer after the race is refused",
       "pass": true,
-      "at": "2026-09-28T20:54:06.920Z",
+      "at": "2026-09-28T21:22:58.489Z",
       "status": 409,
       "body": {
         "error": "the race is not on right now",
-        "serverTime": 1790628846907
+        "serverTime": 1790630578468
       }
     },
     {
       "name": "an answer from an earlier race is refused",
       "pass": true,
-      "at": "2026-09-28T20:54:07.375Z",
+      "at": "2026-09-28T21:22:58.755Z",
       "status": 409,
       "body": {
         "error": "that answer was for a different race",
-        "serverTime": 1790628847310
+        "serverTime": 1790630578744
       },
       "race2": 2
     },
     {
       "name": "late joiner plays the next race",
       "pass": true,
-      "at": "2026-09-28T20:54:07.375Z",
+      "at": "2026-09-28T21:22:58.755Z",
       "lateProgress": {
         "wins": 0,
         "rights": 0,
@@ -291,7 +311,10 @@
       }
     }
   ],
-  "room": "WT3T",
-  "finishedAt": "2026-09-28T20:54:07.375Z",
+  "room": "D3Y2",
+  "readTheCharacter": {
+    "missingStroke": 0
+  },
+  "finishedAt": "2026-09-28T21:22:58.755Z",
   "allPass": true
 }

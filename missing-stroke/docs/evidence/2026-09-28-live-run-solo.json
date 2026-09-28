@@ -4,30 +4,30 @@
   "moves": [
     {
       "char": "人",
-      "hidden": 1,
-      "pad_turned_right": false
+      "stroke_read": 0,
+      "pad_turned_right": true
     },
     {
       "char": "口",
-      "hidden": 1,
-      "pad_turned_right": false
+      "stroke_read": 0,
+      "pad_turned_right": true
     },
     {
       "char": "大",
-      "hidden": 2,
-      "pad_turned_right": false
+      "stroke_read": 1,
+      "pad_turned_right": true
     },
     {
       "char": "小",
-      "hidden": 2,
-      "pad_turned_right": false
+      "stroke_read": 1,
+      "pad_turned_right": true
     },
     {
       "char": "日",
-      "hidden": 3,
-      "pad_turned_right": false
+      "stroke_read": 0,
+      "pad_turned_right": true
     }
   ],
   "console_errors": [],
-  "result_screen": "You found 5 of 5!\n\nYour fastest stroke: 1.4 s. 好棒!\n\n2.0 s\n1.6 s\n1.4 s\n2.2 s\n1.4 s\nPlay again (next characters)\n\nNew list"
+  "result_screen": "You found 5 of 5!\n\nYour fastest stroke: 1.2 s. 好棒!\n\n6.9 s\n1.4 s\n2.0 s\n3.0 s\n1.2 s\nPlay again (next characters)\n\nNew list"
 }

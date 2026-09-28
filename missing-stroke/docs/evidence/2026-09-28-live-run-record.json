@@ -1,7 +1,7 @@
 {
   "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
-  "deployed_version": "71b4ed9b-0cbd-475a-92a3-6d85098486fe",
-  "deployed_commit": "0ae615d",
+  "deployed_version": "f3a155ff-a967-4913-9c19-c2f98c960f68",
+  "deployed_commit": "3fadd4c",
   "args": {
     "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
     "record": true,
@@ -9,78 +9,78 @@
     "no_agent": false,
     "solo": false
   },
-  "started_at": "2026-09-28T20:48:21.727327+00:00",
+  "started_at": "2026-09-28T21:22:42.061483+00:00",
   "kid_moves": [
     {
       "char": "山",
-      "hidden": 1,
+      "stroke_read": 0,
       "move": "backwards (wrong)",
       "pad_wiggled": true
     },
     {
       "char": "山",
-      "hidden": 1,
+      "stroke_read": 0,
       "move": "right",
-      "pad_turned_right": false
+      "pad_turned_right": true
     },
     {
       "char": "水",
-      "hidden": 0,
+      "stroke_read": 0,
       "move": "right",
-      "pad_turned_right": false
+      "pad_turned_right": true
     },
     {
       "char": "火",
-      "hidden": 0,
+      "stroke_read": 3,
       "move": "right",
       "pad_turned_right": true
     }
   ],
   "console_errors": [],
-  "code": "WV3S",
+  "code": "KGY2",
   "missing_note": "We do not have strokes for 𠮷 yet, so we left it out.",
   "agent_output": [
-    "joined WV3S as Robo",
-    "missed stroke 2 of 山",
-    "drew stroke 2 of 山",
-    "drew stroke 1 of 水",
-    "drew stroke 1 of 火",
-    "{\"rights\":3,\"mistakes\":1,\"wins\":2,\"place\":1,\"phase\":\"done\"}"
+    "joined KGY2 as Robo",
+    "drew stroke 1 of 山 backwards: mistake",
+    "drew stroke 1 of 山: right",
+    "drew stroke 1 of 水: right",
+    "drew stroke 4 of 火: right",
+    "{\"rights\":3,\"mistakes\":1,\"wins\":3,\"place\":1,\"phase\":\"done\"}"
   ],
   "final": {
     "phase": "done",
     "standings": [
       {
-        "playerId": "7f4b8dfa-31b2-4692-ba51-7d6c58d1c83a",
+        "playerId": "2dfb3318-e12f-4703-b1a1-9eff7d6da7c7",
         "name": "Robo",
         "agent": true,
-        "wins": 2,
+        "wins": 3,
         "rights": 3,
         "mistakes": 1,
         "now": "right",
-        "nowMs": 3389,
+        "nowMs": 3268,
         "place": 1
       },
       {
-        "playerId": "d1d1b367-8c03-4f0e-80e7-ef414e01fc47",
+        "playerId": "7727d4ff-f725-4d73-a3bc-75d07ede149f",
         "name": "Mia",
         "agent": false,
-        "wins": 1,
+        "wins": 0,
         "rights": 3,
         "mistakes": 1,
         "now": "right",
-        "nowMs": 2505,
+        "nowMs": 4892,
         "place": 2
       }
     ],
     "results": [
       {
         "char": "山",
-        "hidden": 1,
+        "hidden": 0,
         "winners": 1,
         "times": [
-          6615,
-          6594
+          9032,
+          8323
         ]
       },
       {
@@ -88,30 +88,30 @@
         "hidden": 0,
         "winners": 1,
         "times": [
-          3483,
-          3274
+          7686,
+          3418
         ]
       },
       {
         "char": "火",
-        "hidden": 0,
+        "hidden": 3,
         "winners": 1,
         "times": [
-          2505,
-          3389
+          4892,
+          3268
         ]
       }
     ]
   },
-  "board_text": "1\nRoboAI★★won 2 · 3 of 3 right · 1 oops\n2\nMia★won 1 · 3 of 3 right · 1 oops",
-  "kid_screen": "You are number 2!\n\nYou won 1 and got 3 of 3 right. 好棒!\n\n1\nRoboAI★★won 2 · 3 of 3 right · 1 oops\n2\nMiayou★won 1 · 3 of 3 right · 1 oops",
+  "board_text": "1\nRoboAI★★★won 3 · 3 of 3 right · 1 oops\n2\nMiawon 0 · 3 of 3 right · 1 oops",
+  "kid_screen": "You are number 2!\n\nYou won 0 and got 3 of 3 right. 好棒!\n\n1\nRoboAI★★★won 3 · 3 of 3 right · 1 oops\n2\nMiayouwon 0 · 3 of 3 right · 1 oops",
   "demo": {
     "mp4": "missing-stroke-demo.mp4",
-    "mp4_bytes": 1046913,
+    "mp4_bytes": 1615960,
     "gif": "missing-stroke-demo.gif",
-    "gif_bytes": 3599895,
+    "gif_bytes": 4621975,
     "gif_width": 820,
     "gif_fps": 8
   },
-  "finished_at": "2026-09-28T20:50:13.976887+00:00"
+  "finished_at": "2026-09-28T21:28:45.158664+00:00"
 }
