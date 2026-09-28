@@ -6,6 +6,8 @@ import './theme.css';
 import './styles.css';
 import { renderHome } from './screens/home';
 import { renderRoom } from './screens/room';
+import { loadSeat } from './api';
+import { screenFor } from './route';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 let cleanup: (() => void) | undefined;
@@ -14,10 +16,8 @@ function route(): void {
   cleanup?.();
   cleanup = undefined;
   root.className = '';
-  const parts = window.location.hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean);
-  const code = (parts[1] ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-  if (parts[0] === 'room' && code.length === 4) cleanup = renderRoom(root, code);
-  else cleanup = renderHome(root, parts[0] === 'join' ? code : '');
+  const target = screenFor(window.location.hash, (code) => loadSeat(code) !== null);
+  cleanup = target.screen === 'room' ? renderRoom(root, target.code) : renderHome(root, target.code);
 }
 
 window.addEventListener('hashchange', route);

@@ -12,6 +12,7 @@ import {
   standings,
   startRace,
   submitStroke,
+  touch,
 } from '../src/shared/race';
 import { GAME } from '../src/shared/config';
 import type { CharList, RoomState, StrokeResult } from '../src/shared/types';
@@ -26,6 +27,12 @@ function lobby(): RoomState {
   let s = createRoom('ABCD', { id: 't', name: 'Ms. Li' }, { charsPerRound: 2, secondsPerChar: 20 }, LIST, T0);
   s = join(s, { id: 'k1', name: 'Mia' }, T0).state;
   s = join(s, { id: 'k2', name: 'Leo' }, T0).state;
+  return s;
+}
+
+/** Every kid polls at `at` (so they count as present for the next race). */
+function seen(s: RoomState, at: number): RoomState {
+  for (const p of s.players) s = touch(s, p.id, at);
   return s;
 }
 
@@ -117,9 +124,25 @@ describe('race', () => {
     expect(retriedCorrect.duplicate).toBe(true);
   });
 
+  it('refuses an absurd sequence number instead of locking the racer out', () => {
+    const s = racing();
+    const r = submitStroke(s, 'k1', { race: 1, seq: 1e300, charIndex: 0, strokeIndex: 0, result: 'correct' }, GO + 1000);
+    expect(r.status).toBe(400);
+    expect(stroke(s, 'k1', 0, 0, 'correct', GO + 1000).error).toBeUndefined();
+  });
+
+  it('a kid who left (not seen for a while) is not in the next race', () => {
+    const done = advanceIfDue(racing(), T0 + 10 ** 7);
+    const onlyMia = touch(done, 'k1', T0 + 10 ** 7);
+    const next = startRace(onlyMia, 't', T0 + 10 ** 7 + GAME.rosterActiveMs).state;
+    expect(Object.keys(next.progress)).toEqual(['k1']);
+    expect(standings(next).map((r) => r.name)).toEqual(['Mia']);
+    expect(startRace(done, 't', T0 + 10 ** 7).error).toMatch(/kid/);
+  });
+
   it('a stroke from an earlier race is refused and changes nothing', () => {
     const done = advanceIfDue(racing(), T0 + 10 ** 7);
-    const race2 = startRace(done, 't', T0 + 10 ** 7).state;
+    const race2 = startRace(seen(done, T0 + 10 ** 7), 't', T0 + 10 ** 7).state;
     const goAt = race2.goAt!;
     const stale = submitStroke(race2, 'k1', { race: 1, seq: 1, charIndex: 0, strokeIndex: 0, result: 'correct' }, goAt + 1000);
     expect(stale.status).toBe(409);
@@ -131,6 +154,7 @@ describe('race', () => {
     expect(stroke(s, 'k1', 0, 0, 'correct', GO).status).toBe(429);
     s = stroke(s, 'k1', 0, 0, 'correct', GO + GAME.minStrokeMs).state;
     expect(stroke(s, 'k1', 0, 1, 'correct', GO + 2 * GAME.minStrokeMs - 1).status).toBe(429);
+    expect(stroke(s, 'k1', 0, 1, 'correct', GO + 2 * GAME.minStrokeMs).error).toBeUndefined();
     // A burst after a slow network is fine as long as the average pace holds.
     s = racing();
     s = stroke(s, 'k1', 0, 0, 'correct', GO + 5000).state;
@@ -162,7 +186,7 @@ describe('race', () => {
     expect(charsForRound(['人', '口', '大'], 1, 2)).toEqual(['大', '人']);
     expect(charsForRound(['人'], 3, 5)).toEqual(['人']);
     const done = advanceIfDue(racing(), T0 + 10 ** 7);
-    const again = startRace(done, 't', T0 + 10 ** 7).state;
+    const again = startRace(seen(done, T0 + 10 ** 7), 't', T0 + 10 ** 7).state;
     expect(again.round).toBe(2);
     expect(again.roundChars).toEqual(['大', '人']);
     expect(again.progress.k1.charsDone).toBe(0);
@@ -177,7 +201,7 @@ describe('race', () => {
     s = trace(s, 'k2', 0, 2, GO + 1000);
     s = trace(s, 'k2', 1, 3, GO + 6000);
     expect(s.phase).toBe('done');
-    const next = startRace(s, 't', GO + 20_000).state;
+    const next = startRace(seen(s, GO + 20_000), 't', GO + 20_000).state;
     expect(next.progress.k3).toBeDefined();
   });
 });
@@ -197,6 +221,16 @@ describe('scoring', () => {
     const board = standings(s);
     expect(board.map((r) => r.name)).toEqual(['Leo', 'Mia', 'Ava']);
     expect(board.map((r) => r.place)).toEqual([1, 2, 3]);
+  });
+
+  it('at zero progress a miss does not rank a kid below kids who never tried', () => {
+    let s = racing();
+    s = stroke(s, 'k2', 0, 0, 'mistake', GO + 500).state;
+    expect(standings(s).map((r) => r.place)).toEqual([1, 1]);
+    // Once kids make progress, fewer mistakes wins again.
+    s = trace(s, 'k2', 0, 1, GO + 1000);
+    s = trace(s, 'k1', 0, 1, GO + 2000);
+    expect(standings(s).map((r) => r.name)).toEqual(['Mia', 'Leo']);
   });
 
   it('exact ties share a place, and place uses the same key as the order', () => {

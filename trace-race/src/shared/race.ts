@@ -118,10 +118,13 @@ export function startRace(state: RoomState, byId: string, now: number): Result {
   if (state.phase === 'racing') return fail(state, 'the race is already on', 409);
   if (state.list.chars.length === 0) return fail(state, 'the list has no characters we can trace yet', 409);
   if (kids(state).length === 0) return fail(state, 'wait for at least one kid to join', 409);
+  // Only kids seen recently race: a kid who closed the tab is not a ghost at 0 on the board.
+  const active = kids(state).filter((k) => now - k.lastSeenAt <= GAME.rosterActiveMs);
+  if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
   const roundChars = charsForRound(state.list.chars, state.round, state.options.charsPerRound);
   const goAt = now + GAME.countdownSeconds * 1000;
   const progress: Record<string, Progress> = {};
-  for (const kid of kids(state)) progress[kid.id] = freshProgress();
+  for (const kid of active) progress[kid.id] = freshProgress();
   return {
     state: bump({
       ...state,
@@ -197,6 +200,7 @@ export function submitStroke(
   const prog = state.progress[playerId];
   if (!prog) return fail(state, 'this race started before you joined, you are in the next one', 409);
   if (input.seq <= prog.seq || prog.finishedAt != null) return { state, duplicate: true };
+  if (input.seq > prog.seq + GAME.maxSeqJump) return fail(state, 'that stroke number is too far ahead', 400);
 
   const { charIndex, strokeIndex, result } = input;
   if (charIndex !== prog.charIndex) return fail(state, 'that is not the character you are on', 409);
@@ -224,10 +228,13 @@ export function submitStroke(
 /**
  * The ranking key, used for BOTH the order and the place number: characters
  * finished (more first), strokes into the current character (more first),
- * mistakes (fewer first), then who reached that spot first.
+ * mistakes (fewer first), then who reached that spot first. Mistakes only
+ * count once a kid has made progress: a kid who tried and missed is never
+ * ranked below a kid who has not touched the pad.
  */
 function rankKey(p: Progress): [number, number, number, number] {
-  return [-p.charsDone, -p.strokeIndex, p.mistakes, p.lastProgressAt ?? Number.MAX_SAFE_INTEGER];
+  const progressed = p.strokesDone > 0;
+  return [-p.charsDone, -p.strokeIndex, progressed ? p.mistakes : 0, p.lastProgressAt ?? Number.MAX_SAFE_INTEGER];
 }
 
 function compareKeys(a: number[], b: number[]): number {

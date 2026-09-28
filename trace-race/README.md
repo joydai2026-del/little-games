@@ -38,8 +38,14 @@ Live evidence: [`docs/evidence/2026-09-28-live-receipt.md`](docs/evidence/2026-0
    characters in your list.
 
 Scoring: most characters finished wins, then most strokes into the current character, then
-fewer mistakes, then who got there first. Nothing is ever taken away. A kid who joins after Start
-watches that race and races the next one.
+fewer mistakes, then who got there first. Mistakes only count once a kid has traced at least one
+stroke, so trying and missing never ranks a kid below someone who has not started. Nothing is
+ever taken away.
+
+Who races: a kid who joins after Start watches that race and races the next one. A kid whose
+phone has not checked in for 45 seconds (`rosterActiveMs`) is left out of the next race, so a kid
+who went home is not stuck at 0 on the board. A kid who reopens the teacher's link on the same
+phone goes straight back to their own seat.
 
 Fair play: the room checks stroke ORDER and a pace floor (no faster than one correct stroke per
 250 ms on average since GO, `minStrokeMs` in `src/shared/config.ts`). Beyond that, scoring is
@@ -81,7 +87,7 @@ Strokes must go in order (`strokeIndex` is the next stroke of the character you 
 `charIndex` is the character in `state.roundChars`). `result` is `"correct"` or `"mistake"`.
 `race` is `state.round` (a stroke for another race gets 409). `seq` is your own stroke counter
 for the race: 1, 2, 3... (start from `state.progress[you].seq + 1`); a `seq` already applied is
-accepted and changes nothing, so retries are safe. Strokes before GO (`state.goAt`) get 409, and
+accepted and changes nothing, so retries are safe (a `seq` more than 1000 ahead gets 400). Strokes before GO (`state.goAt`) get 409, and
 correct strokes faster than the pace floor get 429 (wait and resend). Stroke counts are in
 `state.list.strokeCounts`.
 

@@ -117,7 +117,7 @@ export class RoomDO implements DurableObject {
 
   /** Applies a reducer result: an error becomes JSON, a change is saved. */
   private async apply(result: Result, viewerId: string): Promise<Response> {
-    if (result.error) return json({ error: result.error }, result.status ?? 409);
+    if (result.error) return json({ error: result.error, serverTime: Date.now() }, result.status ?? 409);
     if (result.state !== this.room) {
       this.room = result.state;
       await this.save();

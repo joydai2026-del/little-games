@@ -1,5 +1,6 @@
 // The phone's side of the HTTP API, plus where this phone keeps its seat.
 import type { PublicState, StrokeResult } from '../shared/types';
+import { GAME } from '../shared/config';
 
 export interface Seat {
   playerId: string;
@@ -15,6 +16,15 @@ export function saveSeat(code: string, seat: Seat): void {
     localStorage.setItem(seatKey(code), JSON.stringify(seat));
   } catch {
     // private mode or blocked storage: the in-memory seat still works
+  }
+}
+
+export function clearSeat(code: string): void {
+  memory.delete(code);
+  try {
+    localStorage.removeItem(seatKey(code));
+  } catch {
+    // ignore
   }
 }
 
@@ -44,12 +54,19 @@ async function call<T>(method: string, path: string, body?: unknown, seat?: Seat
     headers['x-player-secret'] = seat.playerSecret;
   }
   let res: Response;
+  let data: { error?: string };
   try {
-    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    // A deadline on the whole request, body included: a hung request on weak
+    // classroom Wi-Fi must fail, so the retry and resync logic can run.
+    const signal = AbortSignal.timeout(GAME.requestTimeoutMs);
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
+    data = (await res.json().catch((err: unknown) => {
+      if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) throw err;
+      return {};
+    })) as { error?: string };
   } catch {
     throw new ApiError('No internet right now. Trying again...', 0);
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) throw new ApiError(data.error ?? 'Something went wrong', res.status);
   return data as T;
 }

@@ -3,7 +3,8 @@
 //   POST /api/rooms                 { name?, text, options? } -> { code, playerId, playerSecret, state }
 //   POST /api/rooms/:code/join      { name, agent? }          -> { playerId, playerSecret, state }
 //   GET  /api/rooms/:code?v=N       -> { state } or { unchanged, nextPollMs }
-//   POST /api/rooms/:code/stroke    { charIndex, strokeIndex, result: "correct" | "mistake" }
+//   POST /api/rooms/:code/stroke    { race, seq, charIndex, strokeIndex, result: "correct" | "mistake" }
+//                                   race = state.round; seq = this racer's stroke counter (1, 2, 3...)
 //   POST /api/rooms/:code/start     teacher only (lobby -> racing)
 //   POST /api/rooms/:code/next      teacher only (done -> racing, next characters)
 //   POST /api/rooms/:code/list      teacher only { text }

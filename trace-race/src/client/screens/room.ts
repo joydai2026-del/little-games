@@ -1,6 +1,6 @@
 // One room. Polls the Worker and shows the right screen for this phone:
 // teacher (lobby, race board, results) or kid (waiting, tracing pad, results).
-import { ApiError, act, loadSeat, poll, sendStroke, setList, setOptions, type Seat } from '../api';
+import { ApiError, act, clearSeat, loadSeat, poll, sendStroke, setList, setOptions, type Seat } from '../api';
 import { GAME, OPTION_LIMITS } from '../../shared/config';
 import type { PublicState, StrokeResult } from '../../shared/types';
 import { startTrace, type TraceHandle } from '../tracer';
@@ -107,7 +107,10 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
       wait = res.nextPollMs ?? GAME.pollMs[ctx.state?.phase ?? 'lobby'];
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
-        root.replaceChildren(brand('This room has ended.'), h('p', {}, [h('a', { href: '#/', text: 'Start again' })]));
+        // The saved seat is for a room that is gone (codes are reused): forget it, so the
+        // join link works again instead of looping back here.
+        clearSeat(code);
+        root.replaceChildren(brand('This room has ended.'), h('p', {}, [h('a', { href: `#/join/${code}`, text: 'Join again' })]));
         stopped = true;
         return;
       }
@@ -294,6 +297,7 @@ class KidRace {
   private tracer: TraceHandle | null = null;
   private cheering = false;
   private pending = 0;
+  private hiccupUntil = 0;
   /** Only states at least this new may be used to reconcile (drops a stale poll that crossed a send). */
   private minVersion = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -342,6 +346,7 @@ class KidRace {
     delete this.stage.dataset.fin;
     this.adoptServer();
     this.status.textContent = 'Oops, the internet hiccuped. Keep going from here!';
+    this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
   }
 
   update(): void {
@@ -387,7 +392,7 @@ class KidRace {
     const index = this.charIndex;
     this.strokesDone = this.startStroke;
     this.renderDots();
-    this.status.textContent = this.state.options.hints ? 'Trace the strokes in order. Stuck? Try once, the hint will show you.' : 'Trace the strokes in order.';
+    if (Date.now() >= this.hiccupUntil) this.status.textContent = this.state.options.hints ? 'Trace the strokes in order. Stuck? Try once, the hint will show you.' : 'Trace the strokes in order.';
     const handle = startTrace(char, { size: this.size(), hints: this.state.options.hints, startStroke: this.startStroke }, {
       onCorrect: (i) => {
         if (this.tracer !== handle) return;

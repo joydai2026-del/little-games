@@ -101,6 +101,32 @@ for (const stopAt = Date.now() + 8000; Date.now() < stopAt; ) {
 }
 const firstPastGo = probe.at(-1);
 note('pace floor probe (first stroke right after GO)', firstPastGo.status === 429, { goAt: goAt2, attempts: probe.length, firstPastGo });
+
+// Two-stroke boundary: keep sending stroke 1, then stroke 2, as fast as the
+// network allows. The server's own clock (serverTime on every answer) must show
+// stroke 1 refused before GO+250 and accepted at or after it, and stroke 2
+// refused before GO+500 and accepted at or after it. The exact 499/500 ms edge
+// is pinned by tests/race.test.ts; live, the network decides how close we land.
+const MIN = 250;
+async function hammer(seq, strokeIndex) {
+  const tries = [];
+  for (const stopAt = Date.now() + 8000; Date.now() < stopAt; ) {
+    const r = await req('POST', `/api/rooms/${code}/stroke`, { race: round2, seq, charIndex: 0, strokeIndex, result: 'correct' }, late);
+    tries.push({ status: r.status, serverTime: r.json?.serverTime ?? null, error: r.json?.error ?? null });
+    if (r.status === 200) break;
+  }
+  const refused = tries.filter((t) => t.status === 429);
+  return { attempts: tries.length, lastRefused: refused.at(-1) ?? null, accepted: tries.find((t) => t.status === 200) ?? null };
+}
+const p1 = await hammer(probe.length + 1, 0);
+const p2 = await hammer(probe.length + 2 + p1.attempts, 1);
+const edgeOk = (p, n) =>
+  p.accepted && p.accepted.serverTime >= goAt2 + n * MIN && (!p.lastRefused || p.lastRefused.serverTime < goAt2 + n * MIN);
+note('pace floor boundary: stroke 1 at GO+250, stroke 2 at GO+500 (server clock)', edgeOk(p1, 1) && edgeOk(p2, 2) && Boolean(p2.lastRefused), {
+  goAt: goAt2,
+  stroke1: { ...p1, lastRefusedAtMs: p1.lastRefused && p1.lastRefused.serverTime - goAt2, acceptedAtMs: p1.accepted && p1.accepted.serverTime - goAt2 },
+  stroke2: { ...p2, lastRefusedAtMs: p2.lastRefused && p2.lastRefused.serverTime - goAt2, acceptedAtMs: p2.accepted && p2.accepted.serverTime - goAt2 },
+});
 note('late joiner races the next one', Boolean(lateNow), { lateProgress: lateNow });
 
 receipt.finishedAt = new Date().toISOString();

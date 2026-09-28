@@ -58,6 +58,14 @@ export const GAME = {
   minStrokeMs: 250,
   /** Largest request body the Worker reads, in bytes. */
   maxBodyBytes: 32_768,
+  /** Deadline on every request the phone makes (ms). A hung send then fails, and the back-off and resync take over. */
+  requestTimeoutMs: 8000,
+  /** How long "the internet hiccuped" stays on the kid's screen after a resync (ms). */
+  hiccupNoticeMs: 3500,
+  /** Largest jump in a racer's stroke sequence number accepted in one stroke. */
+  maxSeqJump: 1000,
+  /** A kid who has not been seen for this long (ms) is left out of the next race (they rejoin the one after by coming back). */
+  rosterActiveMs: 45_000,
   /** Room codes tried before giving up on a create. */
   roomCodeAttempts: 5,
   /** How stale a player's lastSeenAt may get on disk before a plain poll writes it. */
