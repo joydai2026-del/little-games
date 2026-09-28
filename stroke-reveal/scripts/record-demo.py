@@ -93,6 +93,7 @@ def main():
              "--patience", "0.7", "--mistakes", "0", "--seed", "5", "--poll-ms", "400"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         t.wait_for_function("document.body.innerText.includes('Kids here (2)')", timeout=20000)
+        t.evaluate("window.scrollTo(0, 0)")
         t.screenshot(path=str(OUT / "stroke-reveal-lobby.png"))
         t.click("text=Start the game")
 

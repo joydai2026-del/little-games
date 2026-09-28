@@ -71,7 +71,10 @@ input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900;
 button.word-card { cursor: pointer; }
 .word-card.open:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink-faint); }
 .word-card.off { opacity: 0.5; }
-.word-card.tried { background: var(--paper-deep); color: var(--ink-soft); border-color: var(--ink-faint); text-decoration: line-through; }
+/* Never strike through a Chinese word: a line across 人 reads as 大. A tried card fades and gets a corner badge. */
+.word-card { position: relative; }
+.word-card.tried { background: var(--paper-deep); color: var(--ink-soft); border-color: var(--ink-faint); opacity: 0.6; }
+.word-card.tried::after { content: "\2715"; position: absolute; top: 6px; right: 10px; font-family: var(--font-ui); font-size: 1.1rem; font-weight: 800; color: var(--ink); }
 .word-card.right { background: var(--sage-soft); border-color: var(--sage); animation: pop 0.4s ease-out; }
 .prompt { text-align: center; font-weight: 800; font-size: 1.25rem; min-height: 3em; margin: 12px 0 0; }
 .momo.small { width: 88px; height: 88px; }
