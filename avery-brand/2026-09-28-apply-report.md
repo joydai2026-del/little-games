@@ -49,3 +49,10 @@ Grades: A = checked live or by a command run in this session; B = read from code
 - Pre-existing, not touched: Trace Race "Done!" and the kid cheer text are mint-deep on white/cream (about 2.9:1).
 - live-run.py leaves deployed_version null unless TRACE_RACE_VERSION is set; filled by hand in docs/evidence/2026-09-28-live-run-record.json.
 - Remote feat/trace-race had a new personal-info commit (982d9f5); merged, not rebased.
+
+## Follow-up fixes (coordinator round 2, demos not re-recorded)
+- Trace Race: the header link is dropped (no href) while a rostered kid races; restored on every route change. Live probe on a8cf8769: kid lobby href "/", kid racing href null, tapping the header mid-race stays on #/room/<code>, teacher board keeps "/" (A).
+- Trace Race: "Done!" is ink on a mint chip, the cheer text and body links are ink. Live computed colours: cheer rgb(45,52,54); Done! rgb(45,52,54) on rgb(191,232,216) (A).
+- Tianzige equivalent found: the page keeps nothing between loads, so the header link to "/" wiped the pasted list. It now scrolls to the top instead; live probe: text survives the tap (A). Tianzige has no mint-deep text.
+- Kit README: header link disabled where leaving loses progress; mint-deep is a fill colour, never small text on white or cream.
+- Live: Tianzige bca9834e-532c-4490-85c2-b83bea73131c (receipt exit 0, 0 FAIL rows); Trace Race a8cf8769-b0f7-41ac-8f56-dab6a7814fcf (gate 20/20). Tests 79/79 and 55/55 + 3/3.
