@@ -6,21 +6,22 @@ Plants a seat with a wrong secret for a real, live room, opens the teacher's joi
 form with the code filled in. Headless, silent. Prints JSON.
   python3 scripts/stale-seat-check.py [--url ...]
 """
-import argparse, json, urllib.request
+import argparse, json
 from playwright.sync_api import sync_playwright
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--url", default="https://trace-race.joyd-ai-2026.workers.dev")
 base = ap.parse_args().url.rstrip("/")
-req = urllib.request.Request(f"{base}/api/rooms", data=json.dumps({"text": "人 口"}).encode(), headers={"content-type": "application/json"}, method="POST")
-code = json.load(urllib.request.urlopen(req))["code"]
-out = {"code": code}
+out = {}
 with sync_playwright() as pw:
     b = pw.chromium.launch(headless=True, args=["--mute-audio"])
     ctx = b.new_context(viewport={"width": 390, "height": 844})
     ctx.add_init_script("HTMLMediaElement.prototype.play = function () { return Promise.resolve(); }; window.speechSynthesis && (window.speechSynthesis.speak = () => {});")
     p = ctx.new_page()
     p.goto(f"{base}/?silent=1#/")
+    # A real, live room made from the page itself (a teacher elsewhere); this phone has no seat in it.
+    code = p.evaluate("async () => (await (await fetch('/api/rooms', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({text: '人 口'})})).json()).code")
+    out["code"] = code
     p.evaluate("([c]) => localStorage.setItem('trace-race:seat:' + c, JSON.stringify({playerId: 'stale', playerSecret: 'stale'}))", [code])
     p.goto(f"{base}/?silent=1#/join/{code}")
     p.wait_for_selector("text=This room has ended.", timeout=15000)

@@ -1,12 +1,12 @@
-# Live receipt, Trace Race (2026-09-28, after review round 2 fixes)
+# Live receipt, Trace Race (2026-09-28, after review round 3 fixes)
 
 - Live URL: https://trace-race.joyd-ai-2026.workers.dev (workers.dev only)
-- Deployed commit: `307491a7da8f36872ae5e3dcc3a388b535d13edb` (branch `feat/trace-race`, clean tree, deployed with `npm run deploy`)
-- Deployed version: `6e1f420e-d1e5-42fd-9dd6-cc5237b9f6f3`, created 2026-09-28T15:35:13.400Z, 100% of traffic.
+- Deployed commit: `4d7b75771df3e96f0272a1b29d90174f8e29b7a4` (branch `feat/trace-race`, clean tree, deployed with `npm run deploy`)
+- Deployed version: `d59a95e2-1f55-4ca9-bf82-5b337dc57890`, 100% of traffic.
   Raw output: [`2026-09-28-wrangler-deployments-status.txt`](2026-09-28-wrangler-deployments-status.txt)
 
 ## 1. API gate: `node scripts/live-gate.mjs`
-Run 2026-09-28T15:35:29.396Z to 15:36:00.828Z against the version above. Raw JSON with every
+Run 2026-09-28T15:48:37.300Z to 15:49:08.546Z against the version above. Raw JSON with every
 status, body and timestamp: [`2026-09-28-live-gate.json`](2026-09-28-live-gate.json). 20 of 20 checks passed.
 
 | Check | Result on the live site (from the JSON) |
@@ -17,15 +17,21 @@ status, body and timestamp: [`2026-09-28-live-gate.json`](2026-09-28-live-gate.j
 | `/licenses/ARPHICPL.TXT` | 200 |
 | `/api/rooms/%E0` | 400 |
 | 40,000-character body / 4,001-character paste | 413 / 400, plain messages |
-| Room UYQR from `1. 山 shān / 2. 水 shuǐ / 3. 𠮷` | chars 山 水, missing 𠮷 |
+| Room VKG2 from `1. 山 shān / 2. 水 shuǐ / 3. 𠮷` | chars 山 水, missing 𠮷 |
 | Late joiner strokes during the race | 409, not on the board; has progress in race 2 |
 | Same stroke twice / same mistake twice | no-op / mistakes = 1 |
-| **Race ended on the clock, nobody polling** | endsAt 1790609753995, endedAt 1790609753996 (1 ms), expiresAt = endedAt + 2 h |
+| **Race ended on the clock, nobody polling** | endsAt 1790610541760, endedAt 1790610541762 (2 ms), expiresAt = endedAt + 2 h |
 | Race-1 stroke sent into race 2 | 409 "that stroke was for a different race" |
 | Pace floor, first stroke right after GO | 429 |
-| **Pace boundary on the server clock** | stroke 2: last 429 at GO+451 ms, accepted at GO+575 ms (floor GO+500); the exact 499/500 ms edge is pinned in `tests/race.test.ts` |
+| **Pace boundary on the server clock** | stroke 2: last 429 at GO+426 ms, accepted at GO+527 ms (floor GO+500); the exact 499/500 ms edge is pinned in `tests/race.test.ts` |
 
-## 2. Browser + agent run with a HUNG network: `python3 scripts/live-run.py --blip --cut hang --cut-seconds 14`
+## 1b. Stale seat recovery (round 3): `python3 scripts/stale-seat-check.py`
+Raw JSON: [`2026-09-28-live-stale-seat.json`](2026-09-28-live-stale-seat.json) (room TQHQ, on version `d59a95e2`).
+A phone with a stale saved seat opens `#/join/TQHQ`, sees "This room has ended.", taps
+"Join again" while the page is still on `#/join/TQHQ`, and gets the join form with TQHQ filled
+in; the stale seat is gone from storage. `pass: true`.
+
+## 2. Browser + agent run with a HUNG network (round 2, version `6e1f420e`): `python3 scripts/live-run.py --blip --cut hang --cut-seconds 14`
 Raw JSON: [`2026-09-28-live-run-hang-cut.json`](2026-09-28-live-run-hang-cut.json) (room U37B).
 Every stroke request from the kid's phone got NO answer for 14 s (never answered, not failed),
 starting at the first stroke of 水, while the kid kept tracing.
@@ -46,5 +52,6 @@ deployed version `79ed1713` (round 1). The round 2 changes are not visible in a 
 ## Not verified live
 - A real phone's touch screen (only headless Chromium mouse events).
 - A full classroom of phones polling at once.
-- Resuming a saved seat by reopening the join link: unit-tested (`tests/route.test.ts`), B.
+- Resuming a VALID saved seat by reopening the join link: unit-tested (`tests/route.test.ts`), B.
+- The hiccup notice clearing after 3.5 s: unit-tested (`tests/route.test.ts`, `kidStatusText`), B.
 - Leaving a gone kid out of the next race: unit-tested (`tests/race.test.ts`), B.
