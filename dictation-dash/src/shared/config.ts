@@ -97,11 +97,12 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-export function normalizeOptions(input?: Partial<Record<keyof DashOptions, unknown>> | null): DashOptions {
+/** Clamps every setting; a missing or junk value keeps `base` (the room's current setting, or the default). */
+export function normalizeOptions(input?: Partial<Record<keyof DashOptions, unknown>> | null, base: DashOptions = DEFAULT_OPTIONS): DashOptions {
   const src = input ?? {};
   return {
-    level: LEVELS.includes(src.level as Level) ? (src.level as Level) : DEFAULT_OPTIONS.level,
-    secondsPerWord: clampInt(src.secondsPerWord, OPTION_LIMITS.secondsPerWord.min, OPTION_LIMITS.secondsPerWord.max, DEFAULT_OPTIONS.secondsPerWord),
-    wordsPerRound: clampInt(src.wordsPerRound, OPTION_LIMITS.wordsPerRound.min, OPTION_LIMITS.wordsPerRound.max, DEFAULT_OPTIONS.wordsPerRound),
+    level: LEVELS.includes(src.level as Level) ? (src.level as Level) : base.level,
+    secondsPerWord: clampInt(src.secondsPerWord, OPTION_LIMITS.secondsPerWord.min, OPTION_LIMITS.secondsPerWord.max, base.secondsPerWord),
+    wordsPerRound: clampInt(src.wordsPerRound, OPTION_LIMITS.wordsPerRound.min, OPTION_LIMITS.wordsPerRound.max, base.wordsPerRound),
   };
 }

@@ -50,7 +50,7 @@ export async function buildRoom(env: Env = {} as Env, storage = new FakeStorage(
 }
 
 /** A whole Worker with an in-memory Durable Object namespace. */
-export function buildWorker(): { env: Env; fetch: (input: string, init?: RequestInit) => Promise<Response>; rooms: Map<string, Built> } {
+export function buildWorker(extra: Partial<Env> = {}): { env: Env; fetch: (input: string, init?: RequestInit) => Promise<Response>; rooms: Map<string, Built> } {
   const rooms = new Map<string, Built>();
   const namespace = {
     idFromName: (name: string) => name,
@@ -68,6 +68,7 @@ export function buildWorker(): { env: Env; fetch: (input: string, init?: Request
   const env = {
     ROOMS: namespace as unknown as DurableObjectNamespace,
     ASSETS: { fetch: async () => new Response('static') } as unknown as Fetcher,
+    ...extra,
   } as Env;
   const fetchFn = (input: string, init?: RequestInit) =>
     worker.fetch(new Request(new URL(input, 'https://dash.test').toString(), init) as never, env);

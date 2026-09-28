@@ -20,7 +20,7 @@ const ttlMs = () => GAME.roomTtlMinutes * 60_000;
 
 export function cleanName(raw: unknown): string {
   return String(raw ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f​-‏ -‮⁦-⁩]/g, '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, GAME.maxNameLength)
@@ -124,7 +124,7 @@ export function setList(state: RoomState, byId: string, list: WordList): Result 
 export function setOptions(state: RoomState, byId: string, input: Partial<Record<keyof DashOptions, unknown>>): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can change settings', 403);
   if (state.phase === 'racing') return fail(state, 'wait for this round to end', 409);
-  return { state: bump({ ...state, options: normalizeOptions({ ...state.options, ...input }) }) };
+  return { state: bump({ ...state, options: normalizeOptions(input, state.options) }) };
 }
 
 /** The words for round number `round` (0-based): the next chunk of the list, wrapping, never repeating inside one round. */
