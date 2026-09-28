@@ -2,6 +2,15 @@
 export const HICCUP_TEXT = 'Oops, the internet hiccuped. Keep going from here!';
 
 /**
+ * What the pad says after the last character: "sending" (Almost there...) while
+ * strokes are in flight OR after a give-up that has not been reconciled yet,
+ * "done" (You finished!) only when the room has everything.
+ */
+export function finishState(pending: number, gaveUp: boolean): 'sending' | 'done' {
+  return pending > 0 || gaveUp ? 'sending' : 'done';
+}
+
+/**
  * `stage`: 'countdown' before GO, 'tracing' while a character is on the pad,
  * 'finished' after the last one. The page calls this on EVERY tick, whatever
  * the stage, so the hiccup notice always clears on time (even when a kid

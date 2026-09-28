@@ -7,7 +7,7 @@ import { startTrace, type TraceHandle } from '../tracer';
 import { brand, credits, h, momo } from '../ui';
 import { goTo } from '../route';
 import { StrokeSender } from '../sender';
-import { HICCUP_TEXT, kidStatusText } from '../status';
+import { HICCUP_TEXT, finishState, kidStatusText } from '../status';
 import { board } from './board';
 
 interface Ctx {
@@ -72,8 +72,14 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         return;
       }
       teacherCounting = s.phase === 'racing' && s.goAt != null && serverNow(ctx) < s.goAt;
-      root.replaceChildren(teacherRace(ctx));
-      lastKey = key;
+      // Same change key as the lobby: rebuild only when something visible
+      // changed, so a "Race again" error (and its re-enabled button) is not
+      // wiped by the next poll.
+      const raceKey = `${key}:${s.version}:${s.present.join(',')}:${teacherCounting}`;
+      if (raceKey !== lastKey) {
+        root.replaceChildren(teacherRace(ctx));
+        lastKey = raceKey;
+      }
       return;
     }
     if (s.phase === 'racing' && !s.progress[s.you]) {
@@ -413,7 +419,7 @@ class KidRace {
     }
     if (!this.tracer && !this.cheering && this.charIndex < s.roundChars.length) this.mount();
     // Never say "You finished!" while strokes are still on their way to the room.
-    const fin = this.sender.pending > 0 ? 'sending' : 'done';
+    const fin = finishState(this.sender.pending, this.sender.gaveUp);
     if (this.charIndex >= s.roundChars.length && !this.cheering && this.stage.dataset.fin !== fin) {
       this.stage.dataset.fin = fin;
       this.stage.replaceChildren(

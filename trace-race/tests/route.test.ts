@@ -57,3 +57,13 @@ describe('kid status line, every stage', () => {
     expect(kidStatusText({ hints: true, hiccupUntil: 0, now: 5, error: 'no stroke data', stage: 'finished' })).toBe('');
   });
 });
+
+import { finishState } from '../src/client/status';
+
+describe('finish screen', () => {
+  it('says "Almost there" while strokes are in flight or after an unreconciled give-up', () => {
+    expect(finishState(2, false)).toBe('sending');
+    expect(finishState(0, true)).toBe('sending');
+    expect(finishState(0, false)).toBe('done');
+  });
+});
