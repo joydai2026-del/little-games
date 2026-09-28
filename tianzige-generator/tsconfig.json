@@ -14,5 +14,5 @@
   },
   "include": ["src/client/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts"],
   // Worker tests name Cloudflare's ambient types, so tsconfig.worker.json checks them.
-  "exclude": ["tests/worker.test.ts"]
+  "exclude": ["tests/worker.test.ts", "tests/raw.d.ts"]
 }

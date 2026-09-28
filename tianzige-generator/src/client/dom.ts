@@ -1,4 +1,4 @@
-// SvgNode tree -> real DOM. createElementNS + text nodes only, never innerHTML,
+// SvgNode tree -> real DOM. createElementNS + text nodes only, never raw markup,
 // so nothing a teacher pastes can ever become markup.
 
 import type { SvgNode } from '../shared/svg';

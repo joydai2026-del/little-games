@@ -1,5 +1,5 @@
 // A tiny element tree. The sheet renderer builds one of these; the browser
-// turns it into real DOM nodes (createElementNS, never innerHTML) and the
+// turns it into real DOM nodes (createElementNS, never raw markup) and the
 // Worker turns it into an escaped string for the agent API. One renderer, two
 // outputs, so the printed sheet and the API sheet cannot drift apart.
 
