@@ -24,7 +24,7 @@ from playwright.sync_api import sync_playwright
 URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige-generator.joyd-ai-2026.workers.dev"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = json.load(open(os.path.join(ROOT, "src", "worker", "stroke-manifest.json"), encoding="utf-8"))["files"]
-INK_CHECK = "/Users/joyd/Avery Studio Product Factory/scripts/hanzi/check_pdf_ink.py"
+INK_CHECK = os.environ.get("INK_CHECK", os.path.expanduser("~/Avery Studio Product Factory/scripts/hanzi/check_pdf_ink.py"))
 SHOW_HEADERS = ("content-type", "cache-control", "x-content-type-options", "content-security-policy", "retry-after")
 lines: list[str] = []
 
@@ -61,7 +61,9 @@ def strokes(char: str) -> None:
 
 def deployment() -> str:
     dep = subprocess.run(["npx", "wrangler", "deployments", "status"], cwd=ROOT, capture_output=True, text=True)
-    return (dep.stdout or dep.stderr).strip()
+    out = (dep.stdout or dep.stderr).strip()
+    # The Author line is the deploying account's email; keep it out of the public receipt.
+    return "\n".join("Author:      <owner email redacted>" if ln.startswith("Author:") else ln for ln in out.splitlines())
 
 
 def git(*args: str) -> str:
