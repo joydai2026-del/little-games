@@ -131,6 +131,7 @@ def main() -> None:
         ("glossary with colons", "学校：\nschool\n老师：\nteacher"),
         ("textbook layout, numbered colon labels", "一、生字：\n大 小 多\n二、词语：\n学校 老师"),
         ("enclosed numbers on their own lines", "㊀\n㊁\n㊂"),
+        ("parenthesised numbers on their own lines", "㈠\n小\n㈡\n大"),
         ("enclosed ideographs mid-line", "我爱㊀ ㊊ ㊥"),
     ):
         s, h, b = req("POST", "/api/sheet", json.dumps({"chars": chars}).encode(), j)

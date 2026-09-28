@@ -80,6 +80,9 @@ describe('parseChars edges', () => {
     expect(parseChars('㈠ 大 ㈡ 小').chars.join('')).toBe('大二小');
     // Line breaks are not "content after": each ㊀ on its own line is the character.
     expect(parseChars('㊀\n㊁\n㊂').chars.join('')).toBe('一二三');
+    expect(parseChars('㈠\n小').chars.join('')).toBe('一小');
+    expect(parseChars('㈡\n大').chars.join('')).toBe('二大');
+    expect(parseChars('（三）\n山').chars.join('')).toBe('三山');
     expect(parseChars('㊀大\n㊁小').words.map((w) => w.text)).toEqual(['大', '小']);
     expect(parseChars('一 二 三').chars.join('')).toBe('一二三');
   });

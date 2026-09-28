@@ -61,7 +61,9 @@ const NUMERAL_MARKER = /^\s*[一二三四五六七八九十]+\s*[、．.]\s*/u;
 
 function listMarker(line: string): RegExpMatchArray | null {
   const plain = line.match(LIST_MARKER);
-  if (plain) return plain;
+  // A bracketed Chinese numeral with nothing after it on the line ("(一)", which is also
+  // what NFKC makes of ㈠) is the character itself, not a marker.
+  if (plain) return HAN.test(plain[0]) && line.slice(plain[0].length).trim() === '' ? null : plain;
   const numeral = line.match(NUMERAL_MARKER);
   if (!numeral) return null;
   const rest = line.slice(numeral[0].length);
