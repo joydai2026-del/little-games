@@ -8,6 +8,7 @@ import { renderHome } from './screens/home';
 import { renderRoom } from './screens/room';
 import { loadSeat } from './api';
 import { screenFor } from './route';
+import { setHeaderLink } from './ui';
 
 const root = document.querySelector<HTMLDivElement>('#app')!;
 let cleanup: (() => void) | undefined;
@@ -16,6 +17,7 @@ function route(): void {
   cleanup?.();
   cleanup = undefined;
   root.className = '';
+  setHeaderLink(true);
   const target = screenFor(window.location.hash, (code) => loadSeat(code) !== null);
   cleanup = target.screen === 'room' ? renderRoom(root, target.code) : renderHome(root, target.code);
 }

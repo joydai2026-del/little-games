@@ -43,6 +43,20 @@ export function brand(subtitle: string): HTMLElement {
   ]);
 }
 
+/** The Avery header links home, except on screens where leaving loses progress
+ *  (a kid mid-race): there it is plain text, so a stray tap cannot pull a kid out. */
+export function setHeaderLink(on: boolean): void {
+  const a = document.querySelector<HTMLAnchorElement>('.avery-header a');
+  if (!a) return;
+  if (on) {
+    a.setAttribute('href', '/');
+    a.setAttribute('aria-label', 'Avery Studio home');
+  } else {
+    a.removeAttribute('href');
+    a.removeAttribute('aria-label');
+  }
+}
+
 /** Reads a colour token from theme.css so no colour literal lives in TS. */
 export function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
