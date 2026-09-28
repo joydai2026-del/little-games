@@ -16,13 +16,13 @@ reviews answered: /Users/joyd/lg-scans/review-pr18-plan-claude.md, /Users/joyd/l
 - **Paid:** $39 a year or $6.99 a month, run as a pricing test with written keep-or-change rules. Money goes through the existing **Ownly Network LLC** Stripe account; bank statements say **AVERY STUDIO**.
 - **Kids** never sign in, never see a paywall, and never load analytics. They type only a nickname to join a room, as today.
 - **One new service, avery-hub**, owns sign-in, the teacher database, Stripe and the answer to "may this teacher do this?". Games stay their own Workers and ask the hub.
-- **Schedule (with 20% contingency):** about 27 days of work including reviews and fix rounds. About 21 working days from start to live if slices run in parallel sessions, about 27 with one session at a time, plus JJ-side waits (legal page wording, Google consent-screen publishing, tax registrations).
+- **Schedule (with 20% contingency):** about 27 days of work including reviews and fix rounds (22.5 base). About 20 working days from start to live if slices run in parallel sessions (16.5 base), about 27 with one session at a time, plus JJ-side waits (legal page wording, Google consent-screen publishing, tax registrations).
 
 ## For JJ first
 
 | # | Item | What you can do |
 |---|---|---|
-| 1 | **Teachers can paste and play the free mode without signing in** (rooms included; nothing saved, no class codes). Sign-in is needed only to save a list, use class codes, or subscribe. Decided by the commander under JJ's standing rule "no feedback = go with your recommendation" (2026-09-28); JJ can overturn. | Say "require sign-in for free play" to overturn; the gate then treats anonymous visitors as having no free mode. |
+| 1 | **CHANGE from the board's default: teachers can paste and play the free mode without signing in, with no round limit** (rooms included; nothing saved, no class codes). Sign-in is needed only to save a list, use class codes, or subscribe. The board's default, which stood because JJ left no note on it, was "One-tap sign-in to save; before that, anyone can paste a list and play one round" (A, board open-questions row "Free tier and sign-in"). The commander changed it on 2026-09-28 under JJ's standing rule "Where she gave no feedback, the board's existing recommendation stands" (JJ, chat, 2026-09-28, as relayed to this session by the coordinator), because one round would shrink today's free, no-sign-in classroom game. JJ can overturn. | Say "one round only" (the board default) or "require sign-in for free play"; both are config (`ANON_FREE_ROUNDS`, default unlimited). Also in Open questions. |
 | 2 | **The long-term class ranking is blocked** until a school and parent consent path exists; the 1-hour board uses a room-only id instead of a device id (section "Rankings"). | Nothing now; the unblock list is written out. |
 
 Claim grades: **A** = read today in the named source, **B** = standard platform behaviour not re-read today, **C** = estimate or judgement.
@@ -37,7 +37,7 @@ Claim grades: **A** = read today in the named source, **B** = standard platform 
 | 4 | Free mode may switch, with a nudge toward subscribing (14-day cooldown + one taste round a day). | JJ, 2026-09-28 | S2b |
 | 5 | Teacher-side product analytics matter. Teacher screens only, never kid screens, no child data. AEO is a separate later track. | JJ, 2026-09-28 | S4a, S4b |
 | 6 | Student rankings students can see. | JJ, 2026-09-28 | S3 (see the COPPA change below) |
-| 7 | **Teachers can paste and play the free mode without signing in** (nothing saved, no class codes). Sign-in is required only to save a list, use class codes, or subscribe. | Decided by the commander under JJ's standing rule "no feedback = go with your recommendation" (2026-09-28); JJ can overturn (see "For JJ first") | S2b |
+| 7 | **Teachers can paste and play the free mode without signing in** (nothing saved, no class codes). Sign-in is required only to save a list, use class codes, or subscribe. | **Change from the board's default ("play one round")**, made by the commander on 2026-09-28; JJ's standing rule, "Where she gave no feedback, the board's existing recommendation stands" (JJ, chat, 2026-09-28), would have kept the board default, so this needs JJ's yes and she can overturn it (see "For JJ first" and Open questions) | S2b |
 | 8 | **The paid gate moves ahead of the brief's order.** The pickup brief lists the soft $39/yr gate at build priority 5 (A, `docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md` line 50). JJ moved it up on 2026-09-28 by asking for this plan. | JJ, 2026-09-28 | whole plan |
 
 **One change to decision 6, for the law, surfaced here rather than done quietly.** JJ asked for a nickname plus a device id, remembered for 1 hour or long term. A device id that lives in the browser's storage links a child across rooms and days, which the FTC treats as personal information unless it is used only to run the service (A, FTC COPPA FAQ). So: the 1-hour board uses a **room-only participant id** (made when the child joins, gone with the room). The **long-term class ranking is BLOCKED**, not just off by default, until a school and parent notice and consent path exists (section "Rankings"). JJ's long-term wish stays in scope and is listed as blocked; it is not dropped.
@@ -73,7 +73,9 @@ These are the board's proposals that JJ accepted on 2026-09-28. They live in `av
 
 ### The internal API is RPC only (never public)
 
-- avery-hub's default `fetch` handler serves only public routes: `/auth/*`, `/me`, `/billing/*`, `/stripe/webhook`, `/admin/*` (behind Cloudflare Access). It has **no** `/internal/*` route at all.
+- avery-hub's default `fetch` handler serves only public routes: `/auth/*`, `/me`, `/billing/*`, `/stripe/webhook`, and `/admin/*` (see "Admin routes"). It has **no** `/internal/*` route at all.
+
+**Admin routes.** Hostnames: production `hub.averystudio.org` only; staging `avery-hub-staging.joyd-ai-2026.workers.dev`. The production hub sets `workers_dev: false` and `preview_urls: false`, because Cloudflare says a `workers.dev` URL is public when enabled and that turning it off does not turn off version or preview URLs (per the Claude round-2 review, citing developers.cloudflare.com/workers/configuration/routing/workers-dev/; B, not re-read here). A Cloudflare Access application covers `/admin/*` on every hub hostname, staging included. The hub does not trust Access alone: every `/admin/*` request must carry a `Cf-Access-Jwt-Assertion` that the hub itself verifies (signature against the team's Access certificates, issuer, and `aud` equal to that application's AUD tag, from config), else 403. Test: every `/admin/*` path returns 403 without a valid token on every hostname the hub answers, including a version preview URL in staging.
 - Everything a game needs is a typed method on a **named** `WorkerEntrypoint` class, `HubService`. A game reaches it only through a service binding that names that entrypoint (`"entrypoint": "HubService"` in the game's `wrangler.jsonc`), the pattern Cloudflare documents for named entrypoints (A, https://developers.cloudflare.com/workers/runtime-apis/rpc/). A named entrypoint does not receive internet traffic; only the default export does (B).
 - Each game gets its own binding with a `GAME_ID` and a per-game key: every HubService method takes `{ gameId, gameKey }` as its first argument. The hub checks the pair against `GAME_REGISTRY` (config: game id, allowed return URLs, hashed game key, allowed methods). So one game cannot act as another, and a game can only call the methods listed for it.
 - **Audience check:** every game session and every room pass records the game id it was minted for. A method called by game X with a session or pass minted for game Y is refused.
@@ -108,7 +110,7 @@ HubService methods (first version):
 | Lifetimes | Hub session: idle `SESSION_IDLE_DAYS` (30), absolute `SESSION_MAX_DAYS` (90), id rotated on sign-in and every `SESSION_ROTATE_DAYS` (7) of use. Game session: absolute `GAME_SESSION_HOURS` (12), idle `GAME_SESSION_IDLE_HOURS` (4), id rotated on each hand-off. |
 | CSRF on actions | Every state-changing route (hub and game) is POST only, checks the `Origin` header against the allowlist, and requires SameSite=Lax cookies; hub forms also carry a per-session CSRF token. |
 | Rate limits | `/auth/start` and `redeemHandoff` are rate-limited with Cloudflare's rate-limiting binding (B); keys are the binding hash and game id, not stored IP addresses. `AUTH_START_PER_MINUTE` (20), `REDEEM_PER_MINUTE` (20). |
-| Key rotation | Overlapping keys: `SESSION_HASH_KEY_V1`, `SESSION_HASH_KEY_V2`, with `SESSION_HASH_KEY_CURRENT` in config. New values use the current key; lookups try the recorded version. Rotation never logs everyone out. |
+| Key rotation | Overlapping keys: `SESSION_HASH_KEY_V1`, `SESSION_HASH_KEY_V2`, with `SESSION_HASH_KEY_CURRENT` in config. New values use the current key; the key version travels in the cookie or token value (`v2.<random>`), so a lookup knows which key to hash with. Rotation never logs everyone out. |
 
 ### Sign-in and hand-off flow
 
@@ -151,7 +153,7 @@ Rule: anything that saves, spends or unlocks **fails closed**. Anonymous free pl
 | Hand-off redemption | same message | no game session is made |
 | Saving a list | "Can't reach your lists right now. Your list is still here; try again in a minute." | draft stays in the browser's session storage; nothing is written |
 | Starting a paid round, taste round, mode switch or class action (no room pass) | the free mode only | `authorizeRound` unreachable, so the round is refused unless it is the anonymous free mode |
-| Room already open with a paid room pass | nothing changes | the Room DO allows modes on its pass until the pass expires (`ROOM_PASS_HOURS` 4); after that, only the free mode |
+| Room already open with a paid room pass | nothing changes | the Room DO allows modes on its pass until the pass expires (`ROOM_PASS_HOURS` 4); after that, only the free mode. **4 hours is a deliberate change from the board's 8:** it bounds how long a room keeps paid modes after a refund or cancel while the hub cannot be reached, and rooms today are deleted 2 hours after creation (A, `room-do.ts` lines 69-70), so 4 hours never cuts a lesson short. If the room lifetime config ever exceeds `ROOM_PASS_HOURS`, a "valid" answer from `checkRoomPass` extends the pass, so a paid room never drops to free mid-lesson while the hub is up. |
 | Room pass re-check at round start | nothing changes | if the hub answers "revoked", the room drops to the free mode; if the hub does not answer, the stored pass decides until it expires |
 | Checkout return | "We're confirming your payment; it can take a minute." | the one-time checkout code stays valid for `CHECKOUT_CODE_MINUTES` (60); reconciliation finishes it if needed |
 | Stripe webhook | nothing | Stripe retries live events for up to 3 days (A, board source docs.stripe.com/webhooks); reconciliation also catches it |
@@ -169,15 +171,17 @@ Tests: for each row, the HubService binding is replaced with one that throws, an
 | `teachers` | `id` PK; `google_sub` UNIQUE NOT NULL; `stripe_customer_id` UNIQUE; `analytics_id` UNIQUE | `email`, `display_name`, `free_mode`, `free_mode_locked_until`, `taste_day`, `taste_used`, `entitlement_version`, `created_at`, `last_seen_at`, `deleted_at` |
 | `sessions` (hub) | `id_hash` PK; FK `teacher_id` to `teachers(id)` ON DELETE CASCADE; **`UNIQUE(teacher_id, id_hash)`** so child tables can reference the pair | `key_version`, `browser_label`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
 | `game_sessions` | `id_hash` PK; columns `teacher_id`, `hub_session_id_hash`; composite FK (`teacher_id`, `hub_session_id_hash`) REFERENCES `sessions(teacher_id, id_hash)` ON DELETE CASCADE. Chosen over keying on `hub_session_id_hash` alone because the database itself then refuses a game session whose teacher differs from its hub session's teacher. Migration test: inserting a game session with a mismatched teacher fails. | `game_id`, `key_version`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
-| `lists` | PK (`teacher_id`, `id`); FK `teacher_id` | `title`, `level`, `items_json`, `hidden`, `created_at`, `updated_at` |
-| `classes` | PK (`teacher_id`, `id`); UNIQUE `class_code`; composite FK (`teacher_id`, `list_id`) to `lists(teacher_id, id)` | `name`, `created_at` |
-| `round_history` | PK (`teacher_id`, `id`); composite FKs to her `lists` and `classes` | `game_id`, `mode`, `started_at`, `player_count_band` |
-| `subscriptions` | PK `stripe_subscription_id`; FK `teacher_id`; index on `teacher_id` | `price_id`, `status`, `current_period_end`, `cancel_at_period_end`, `latest_charge_id`, `refunded_full`, `dispute_state`, `access_until`, `synced_at` |
+| `lists` | PK (`teacher_id`, `id`); FK `teacher_id` ON DELETE CASCADE | `title`, `level`, `items_json`, `hidden`, `created_at`, `updated_at` |
+| `classes` | PK (`teacher_id`, `id`); UNIQUE `class_code`; composite FK (`teacher_id`, `list_id`) to `lists(teacher_id, id)` ON DELETE SET NULL (list_id only); FK `teacher_id` ON DELETE CASCADE | `name`, `created_at` |
+| `round_history` | PK (`teacher_id`, `id`); composite FKs to her `lists` and `classes` ON DELETE SET NULL (the list or class id only); FK `teacher_id` ON DELETE CASCADE | `game_id`, `mode`, `started_at`, `player_count_band` |
+| `subscriptions` | PK `stripe_subscription_id`; FK `teacher_id` ON DELETE RESTRICT (a teacher is tombstoned, never hard-deleted, while billing rows exist); index on `teacher_id` | `price_id`, `status`, `current_period_end`, `cancel_at_period_end`, `latest_charge_id`, `refunded_full`, `dispute_state`, `access_until`, `synced_at` |
 | `stripe_events` | PK `event_id` | `type`, `customer_id`, `object_id`, `status` (received, processed, failed), `attempts`, `last_error`, `received_at`, `processed_at` |
-| `billing_ops` | PK `op_id`; FK `teacher_id` | `kind` (refund, cancel), `step`, `idempotency_key`, `status`, `attempts`, `last_error` |
-| `checkout_codes` | PK `code_hash` | `teacher_id`, `checkout_session_id`, `expires_at`, `used_at` |
-| `seat_grants` | PK (`email`, `school_ref`) | `access_until`, `granted_by`, `attached_teacher_id` (school purchase-order seats) |
+| `billing_ops` | PK `op_id`; FK `teacher_id` ON DELETE RESTRICT | `kind` (refund, cancel), `step`, `idempotency_key`, `status`, `attempts`, `last_error` |
+| `checkout_codes` | PK `code_hash`; FK `teacher_id` ON DELETE CASCADE | `teacher_id`, `checkout_session_id`, `expires_at`, `used_at` |
+| `seat_grants` | PK (`email`, `school_ref`); FK `attached_teacher_id` ON DELETE SET NULL | `access_until`, `granted_by`, `attached_teacher_id` (school purchase-order seats) |
 | `admin_log` | PK `id` | `actor`, `action`, `target_teacher_id`, `reason`, `at` |
+
+Every foreign key has an explicit delete rule; a migration test deletes a teacher and checks each child table. **Deleting a teacher means a tombstone:** the row keeps only `id`, `stripe_customer_id` and `deleted_at`; email, name, Google `sub`, `analytics_id` and free-mode fields are set to null, and her lists, classes, history, sessions and game sessions are deleted. Billing rows stay (Ownly Network LLC needs them for tax) and point at the tombstone.
 
 No kid data is stored in D1. Room rankings live only in each Room DO (section "Rankings"). A `class_rankings` table is reserved for the blocked long-term ranking and is not created in v1.
 
@@ -188,7 +192,7 @@ D1 enforces foreign keys, and a failed statement in a batch rolls back the whole
 1. All SQL lives in `avery-hub/src/db/`. No route, RPC method or Durable Object calls `env.DB` directly.
 2. Teacher data is reached only through `forTeacher(db, teacherId)`. Every statement inside it binds `teacher_id = ?1`, including joins (both sides), counts and pagination.
 3. `teacherId` comes only from a hub session resolved by the hub or a game session resolved by the hub. No body, query string, header or RPC argument can set it.
-4. Admin actions live in `avery-hub/src/admin/`, reachable only from `/admin/*` behind Cloudflare Access with a service token (agent-callable with that token, B), every action written to `admin_log`. A test fails if any teacher route or HubService method imports from `src/admin/`.
+4. Admin actions live in `avery-hub/src/admin/`, reachable only from `/admin/*` with an Access token the hub verifies itself (see "Admin routes"; agent-callable with an Access service token, B), every action written to `admin_log`. A test fails if any teacher route or HubService method imports from `src/admin/`.
 
 ### Atomic writes
 
@@ -236,7 +240,7 @@ A **saved list** is a list stored in the hub under her teacher id and shown in "
 | Classes and class codes | no | no | yes |
 | History | no | yes | yes |
 
-Config (hub `wrangler.jsonc` vars): `ANON_FREE_MODE` (default `race`, a room-capable mode, C), `FREE_MODE_COUNT` (1), `FREE_MODE_CHOICES` (modes a free teacher may pick; default all), `FREE_LIST_LIMIT`, `FREE_TASTE_ROUNDS_PER_DAY`, `FREE_MODE_SWITCH_COOLDOWN_DAYS`, `TRIAL_DAYS` (0). The game reads `ANON_FREE_MODE` from its own config so anonymous play works with the hub down.
+Config (hub `wrangler.jsonc` vars): `ANON_FREE_MODE` (default `race`, a room-capable mode, C), `ANON_FREE_ROUNDS` (default unlimited; 1 restores the board default, counted in the browser only because anonymous visitors have no server identity), `FREE_MODE_COUNT` (1), `FREE_MODE_CHOICES` (modes a free teacher may pick; default all), `FREE_LIST_LIMIT`, `FREE_TASTE_ROUNDS_PER_DAY`, `FREE_MODE_SWITCH_COOLDOWN_DAYS`, `TRIAL_DAYS` (0). The game reads `ANON_FREE_MODE` from its own config so anonymous play works with the hub down.
 
 ### Every paid action is decided on the server
 
@@ -245,7 +249,7 @@ Config (hub `wrangler.jsonc` vars): `ANON_FREE_MODE` (default `race`, a room-cap
 | Round start (single screen or room) | The game's new `POST /api/round/start {mode, list}` calls `authorizeRound`. The response is a round grant **and the round's questions, built on the server** from the shared quiz code (`src/shared/quiz.ts`, `round.ts`, A). The client needs that response to start a round. Anonymous rounds in `ANON_FREE_MODE` are authorized by the game Worker itself, without the hub. |
 | Room creation | Every room-creation path, including the legacy `POST /api/rooms {set, questions, perQuestionMs}` path (A, `src/worker/index.ts` lines 12-13 and 942-945), gets a room pass: `anon` pass (free mode only) or a hub-minted pass. |
 | Round inside a room | The round route (today it accepts `race`, `climb`, `dash`, `tower` from a host key or a player id, A, `src/worker/index.ts` lines 16 and 813) must also find the mode on the room's pass. A kid's player id can start only a mode already on the pass. |
-| Taste round | `useTaste` (atomic); host only; the teacher-only upgrade card follows it |
+| Taste round | `useTaste` (atomic); host only; returns a **one-round grant id**, never a mode added to the room pass, so kids cannot replay the locked mode; the teacher-only upgrade card follows it |
 | Mode switch | `switchFreeMode` (atomic) |
 | List save | `saveList` (atomic free-list limit) |
 | Class action | paid check inside `saveClass` and `deleteClass` |
@@ -258,15 +262,17 @@ Repo `joydai2026-del/bilingual-vocab-game`, paths read today (A):
 
 | File | Change | Slice |
 |---|---|---|
-| `src/worker/index.ts` | new `/auth/finish`, `/api/round/start`, `/api/me/*` routes calling HubService; room creation (all paths) makes a room pass; the round route checks the pass | S2b |
+| `src/worker/index.ts` (part 1) | new `/auth/finish` and `/api/me/*` routes calling HubService (sign-in, My lists) | S1 |
+| `src/worker/index.ts` (part 2) | new `/api/round/start`; room creation (all paths) makes a room pass; the round route checks the pass | S2b, after S1 merges |
 | `src/worker/room-do.ts`, `src/worker/persist.ts` | store the room pass in its own slot; move the hard-coded `ROOM_TTL_MS` (2 hours, `room-do.ts` line 70) into `policy.ts` | S2b |
 | `src/worker/policy.ts`, `wrangler.jsonc` | `GAME_ID`, HubService binding, `ANON_FREE_MODE`, `ROOM_PASS_HOURS`, `GAME_SESSION_*` | S2b |
 | `src/client/screens/set.ts` | mode cards: locked, taste available, cooldown date (extends the `skyTowerDisabledReason` pattern, A) | S2b |
 | `src/client/router.ts` | play routes ask `/api/round/start` before starting | S2b |
 | `src/client/state.ts` | "Save to my lists", "Open my lists" through the game Worker | S1 |
-| new `src/client/screens/upgrade.ts` | upgrade card, "Signed in as", sign-in button; teacher screens only | S2b |
+| new `src/client/screens/account.ts` | sign-in button, "Signed in as", My lists; teacher screens only | S1 |
+| new `src/client/screens/upgrade.ts` | upgrade card (shows "Signed in as" from `account.ts`); teacher screens only | S2b |
 | room join and ranking screens | room-only participant id; cumulative board | S3 |
-| new `src/client/analytics.ts` | teacher-only loader | S4a |
+| new `src/client/analytics.ts` | teacher-only loader; listens for `hashchange` itself to shut down on kid routes, so it does not edit `router.ts` (owned by S2b) | S4a |
 
 ## Stripe
 
@@ -299,16 +305,16 @@ So a teacher will see Ownly Network LLC on receipts. That follows from decision 
 | One Stripe customer per teacher | at first checkout, create the customer with `metadata.teacher_id` and idempotency key `customer:<teacher_id>`; store `stripe_customer_id` (UNIQUE) on the teacher; reuse it for every later checkout |
 | Mapping in every object | Checkout Session with `customer`, `client_reference_id` = teacher id (A, the parameter exists on the create page), `subscription_data.metadata.teacher_id`, `metadata.app=avery` |
 | Event order does not matter | `customer.subscription.created` can arrive before `checkout.session.completed`; both carry the teacher id in metadata, and both lead to the same fetch-latest write |
-| No double purchase | `/billing/checkout` refuses when she already has access, or when an unexpired Checkout Session from her is still open (it returns that session instead) |
+| No double purchase | `/billing/checkout` runs inside her BillingDO, so two tabs cannot race. It refuses and sends her to the Customer Portal while **any** of her subscriptions is not `canceled` or `incomplete_expired` (so also while it is past_due, unpaid, paused, disputed or incomplete), and it returns an unexpired open Checkout Session instead of creating a second one. Test: two concurrent checkout requests create one session; a paused and a disputed subscriber are both refused. |
 | Two active subscriptions anyway | reconciliation alerts JJ; the admin runbook refunds and cancels the newer one |
-| Outgoing idempotency keys | every mutating Stripe call carries one: `checkout:<teacher_id>:<checkout_code>`, `customer:<teacher_id>`, `refund:<charge_id>:<op_id>`, `cancel:<subscription_id>:<reason>:<op_id>` |
+| Outgoing idempotency keys | every mutating Stripe call carries one: `checkout:<teacher_id>:<open-checkout sequence number kept in the BillingDO>` (so a retry reuses the key), `customer:<teacher_id>`, `refund:<charge_id>:<op_id>`, `cancel:<subscription_id>:<reason>:<op_id>` |
 
 ### Webhook processing (serialized per customer)
 
 Events handled: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`.
 
 1. Verify the signature on the raw body with the CRM verifier. Failure is 401, never 500.
-2. Ignore anything that is not Avery's (no `app=avery` metadata and no Avery price): record it and return 200.
+2. Decide whether the event is Avery's **by customer**, not by metadata or price: Stripe does not copy metadata to related objects, a Charge has no price, and a Dispute has no customer field (per the Claude round-2 review, citing docs.stripe.com/metadata and docs.stripe.com/api/disputes/object; B, not re-read here). So: for a subscription, invoice or checkout event, take its `customer`; for `charge.refunded`, the charge's `customer`; for a dispute event, retrieve the dispute's `charge` from Stripe and use that charge's `customer`. The event is Avery's when that customer id matches a `teachers.stripe_customer_id` (UNIQUE, tombstones included). The resolved customer id is saved on the `stripe_events` row, so retries and the hourly backstop can route it. Anything else is recorded as `not_avery` and answered 200. Tests: a Dashboard full refund on a test subscription charge leaves the teacher on free after that one event; a test dispute (Stripe's dispute test card) pauses access; a refund on a non-Avery Ownly customer is ignored.
 3. `INSERT OR IGNORE` the event with status `received`. If it already exists with status `processed`, return 200.
 4. Call `enqueue(eventId)` on the **BillingDO** for that Stripe customer. The DO writes the event id into a queue in **its own durable storage** and sets an alarm, and `enqueue` returns only after that write is committed. Only then does the route return 200.
 5. The DO processes its stored queue one event at a time (started right away and again by the alarm), so two events for one teacher never race (B: a Durable Object does not interleave its own storage operations). For each event it fetches the latest Subscription, its latest invoice's charge (amount refunded) and any dispute from Stripe; computes `accessFor`; then writes the subscription row, bumps `entitlement_version` if access dropped, and marks the event `processed`, all in one `db.batch()`. Only after that batch succeeds does it remove the event from its storage queue.
@@ -351,8 +357,8 @@ The CRM's exactly-once claim runs inside a Postgres transaction (A, per the Clau
 
 ### Reconciliation (daily, `RECONCILE_HOUR_UTC`)
 
-- Lists **Stripe's** subscriptions for both Avery prices (all statuses), not just the ones in D1, and maps each by `metadata.teacher_id`. An Avery subscription with no known teacher raises an alert.
-- Lists refunds and disputes from the last 35 days on Avery charges.
+- Lists **Stripe's** subscriptions for both Avery prices (all statuses), not just the ones in D1, and maps each by `metadata.teacher_id`. An Avery subscription with no known teacher raises an alert. A subscription whose teacher is a tombstone is expected: no alert if it is `canceled` or `incomplete_expired`; an alert only if it is still billing, once, not daily (alert dedupe key per subscription).
+- Lists refunds and disputes from the last 35 days and resolves each to a customer the same way as step 2 (a dispute through its charge); only those whose customer is a known teacher are processed.
 - Runs each customer through its BillingDO, so reconciliation and webhooks never race.
 - Alerts when it fixed anything, when a teacher has two active subscriptions, or when it did not run by `RECONCILE_HOUR_UTC` + 2 hours (checked by the hourly cron).
 
@@ -395,7 +401,7 @@ Copy `front-desk/src/payments/webhook-verify.ts` from `joydai2026-del/crm` (last
 
 | Item | Rule |
 |---|---|
-| 1-hour class board (builds in S3) | The nickname the child types to join (as today) plus a **room-only participant id**: random, made when she joins, kept in session storage so a reload rejoins the same room, gone when the room closes. No id in local storage, nothing that links her across rooms or days, nothing read about the device. |
+| 1-hour class board (builds in S3) | The nickname the child types to join (as today) plus a **room-only participant id**: random, made when she joins, kept in session storage **under that room's code** so a reload rejoins the same room, and cleared by the page when the room ends or expires or the teacher resets it (the room tells every tablet). Test: two rooms in one tab get different ids, and the id is gone after the room ends. No id in local storage, nothing that links her across rooms or days, nothing read about the device. |
 | Where it lives | Only in the game's Room Durable Object, which already keeps a live ranking (A, `src/client/room/ranking.ts`) and deletes the room after its time to live. Nothing about kids goes to D1 or to the hub. |
 | What the class sees | a cumulative board by points across every round in that room, on the teacher's screen and every tablet; participant ids are never sent to tablets |
 | How long | `RANKING_KEEP_MINUTES` (60) of inactivity, then the board starts over; the room itself follows `ROOM_TTL_MS`, moved to config |
@@ -414,7 +420,7 @@ Copy `front-desk/src/payments/webhook-verify.ts` from `joydai2026-del/crm` (last
 | Where it loads | teacher screens only. The app is a single page that does not reload between screens, so the loader also **shuts PostHog down and drops it** whenever the route changes to a kid screen (join, play on a tablet, room board). |
 | Server events | money events are sent by the hub after Stripe confirms. |
 | Retention and deletion | PostHog retention set to the shortest plan window. Deleting a teacher deletes her `analytics_id` mapping, so her past events can no longer be tied to anyone (C). |
-| Privacy notice | the averystudio.org privacy policy (S0) describes teacher analytics. joydong.org's analytics file says its privacy page must change in the same commit as any analytics change (A); the Avery pages follow the same rule. |
+| Privacy notice | the averystudio.org privacy policy (S0b) describes teacher analytics **and the kid-side data**: the nickname, the room-only id and the scores, kept only inside the room and deleted with it; plus the teacher data retention numbers (90 and 400 days). joydong.org's analytics file says its privacy page must change in the same commit as any analytics change (A); the Avery pages follow the same rule. |
 | Tests | (1) opening every kid route fresh: no request to a PostHog host, no `window.posthog`; (2) navigating from a teacher screen into a kid route: PostHog is shut down and no further request is sent; (3) a word list in the URL fragment never appears in any request; (4) deleting a teacher removes her `analytics_id`. |
 
 Events:
@@ -442,9 +448,9 @@ AEO (answer engine optimisation) for the games marketing page is a separate, lat
 | Two Google accounts | two separate teachers; merge only by JJ with the admin `moveTeacher` tool after checking the Stripe receipt | none |
 | Lost school account | she signs in with a new Google account and writes to the support address; JJ checks the receipt number and old email, runs `moveTeacher` (lists, classes, history, subscription, Stripe customer metadata), every old session is revoked, and `admin_log` records it | none |
 | Export | "Download my data" on the profile page: JSON of lists, classes, history and a subscription summary | none |
-| Delete my account | profile button, confirmed twice: cancels any Stripe subscription immediately (no refund outside the refund window), revokes every session, deletes lists, classes, history, game sessions and the teacher row, drops the analytics mapping. Stripe keeps its own invoices and payments, which Ownly Network LLC needs for tax (B). | none |
+| Delete my account | profile button, confirmed twice: cancels any Stripe subscription immediately (no refund outside the refund window), revokes every session, deletes lists, classes, history and game sessions, tombstones the teacher row (above), drops the analytics mapping. Stripe keeps its own invoices and payments, which Ownly Network LLC needs for tax (B). | none |
 | After paid access ends | extra lists and classes hidden, not deleted, for 90 days, then deleted | `KEEP_AFTER_END_DAYS` (90) |
-| Unused free profile | deleted after a long gap without sign-in; long enough to cover summer break, so a teacher returning in September still has her list | `INACTIVE_DELETE_DAYS` (400, C) |
+| Unused free profile | deleted (full delete path, tombstone) after a long gap without sign-in; long enough to cover summer break, so a teacher returning in September still has her list. **Never** runs for a teacher with any subscription that is not `canceled` or `incomplete_expired` (so never for active, trialing, past_due, unpaid, paused or disputed), nor for one with an unexpired seat grant. The privacy policy states the number. Test: a paused, a disputed and a live subscriber past 400 days are all kept. | `INACTIVE_DELETE_DAYS` (400, C) |
 | Deleted Google account | she can no longer sign in; the profile ages out under the rules above or JJ deletes it on request | none |
 
 ## School invoice and purchase-order route
@@ -461,7 +467,7 @@ Proposed, narrowly:
 
 The agent-native rule (line 13) stays exactly as it is. How it holds: an agent still joins rooms through the same HTTP API as kids, unchanged, and can host anonymous free-mode rooms and rounds through the same routes a teacher uses. A paid agent path (a teacher-issued API key through the hub) is a known gap per the house agent-native rule and is listed under follow-ups, not built here.
 
-This ships as its own reviewed PR in S0, not inside a code slice.
+This ships as its own reviewed PR in S0b, not inside a code slice, and merges before S1 merges, because S1 adds the teacher accounts today's rule forbids.
 
 ## Environments and release operations
 
@@ -491,18 +497,19 @@ This ships as its own reviewed PR in S0, not inside a code slice.
 
 ## Slices
 
-Effort counts one working day of one build session. "Review" is the reviews the house rules require and their fix rounds: the full 4-reviewer panel (three Claude lenses plus Codex, no round cap) for S1, S2a, S2b and S5; the default panel (one Claude reviewer plus Codex) for S0, S3, S4a and S4b. Estimates are judgement (C).
+Effort counts one working day of one build session. "Review" is the reviews the house rules require and their fix rounds: the full 4-reviewer panel (three Claude lenses plus Codex, no round cap) for S1, S2a, S2b and S5; the default panel (one Claude reviewer plus Codex) for S0b, S3, S4a and S4b. Estimates are judgement (C).
 
 | Slice | Work | Build | Review | Total | Parallel with | Depends on | Files it owns |
 |---|---|---|---|---|---|---|---|
-| **S0** Legal, accounts, rule | Draft privacy policy, terms and refund policy pages for averystudio.org (JJ approves the wording); support address (JJ creates); Google Cloud staging and production projects and consent screens; hub custom domain; house-rule reword PR | 1 | 0.5 | 1.5 | S2a | JJ approvals | `joydong.org` legal pages, `CLAUDE.md`, `AGENTS.md` |
-| **S1** Hub core | `avery-hub/` Worker, staging env, D1 migrations, `forTeacher` layer, HubService RPC with game registry, token protocol and TokenDO, hub and game sessions, device limit, sign-out, lists and classes, profile, export and delete, admin module behind Access, isolation and concurrency tests, Time Travel rehearsal; vocab app sign-in and "My lists" | 4.5 | 1.5 | 6 | S2a | S0 (the staging Google client) | `avery-hub/src/{db,rpc,auth,admin}`, vocab `state.ts`, vocab `/auth/finish` |
-| **S2a** Stripe setup and state model | webhook inventory; idempotent setup script with readback (staging); `accessFor` with a test per row; CRM verifier and tests copied | 1.5 | 0.5 | 2 | S0, S1 | JJ-issued **test** restricted key | `avery-hub/src/stripe/`, `scripts/stripe-setup.ts` |
-| **S2b** Billing and gate | Checkout (customer reuse, idempotency, branding, auto-renew text), return check, BillingDO webhooks, reconciliation, alert channel, refund-then-cancel tool and runbooks, seat grants; server-side gate: `authorizeRound` with server-built questions, room passes on every room path, round route checks, taste, switch, list limit; anonymous free path; hub-down tests; full test-mode run on staging | 4.5 | 1.5 | 6 | S4a | S1, S2a | `avery-hub/src/billing/`, vocab `index.ts`, `room-do.ts`, `persist.ts`, `policy.ts`, `set.ts`, `router.ts`, `upgrade.ts` |
+| **S0a** Google Cloud (JJ only, day 1) | JJ creates the staging and production Google Cloud projects, consent screens and OAuth clients from the account that holds the Stripe login (agents cannot reach that account); an agent writes the click-by-click guide and the exact callback URIs | 0.5 | 0 | 0.5 | S2a, S0b | nothing | none (JJ's console) |
+| **S0b** Legal and rule | privacy policy (teacher data, kid-side data, analytics, retention numbers), terms and refund policy pages for averystudio.org (JJ approves the wording); support address (JJ creates); hub custom domain (the averystudio.org zone must sit in the same Cloudflare account as the Workers, checked here); house-rule reword PR, **merged before S1 merges** | 0.5 | 0.5 | 1 | S1, S2a | JJ approvals | `joydong.org` legal pages, `CLAUDE.md`, `AGENTS.md` |
+| **S1** Hub core | `avery-hub/` Worker, staging env, D1 migrations, `forTeacher` layer, HubService RPC with game registry, token protocol and TokenDO, hub and game sessions, device limit, sign-out, lists and classes, profile, export and delete, admin module behind Access, isolation and concurrency tests, Time Travel rehearsal; vocab app sign-in and "My lists" | 4.5 | 1.5 | 6 | S2a, S0b | S0a (the staging Google client); merges after S0b's house-rule change | `avery-hub/src/{db,rpc,auth,admin}`, vocab `state.ts`, `account.ts`, `index.ts` part 1 |
+| **S2a** Stripe setup and state model | webhook inventory; idempotent setup script with readback (staging); `accessFor` with a test per row; CRM verifier and tests copied | 1.5 | 0.5 | 2 | S0a, S0b, S1 | JJ-issued **test** restricted key | `avery-hub/src/stripe/`, `scripts/stripe-setup.ts` |
+| **S2b** Billing and gate | Checkout (customer reuse, idempotency, branding, auto-renew text), return check, BillingDO webhooks, reconciliation, alert channel, refund-then-cancel tool and runbooks, seat grants; server-side gate: `authorizeRound` with server-built questions, room passes on every room path, round route checks, taste, switch, list limit; anonymous free path; hub-down tests; full test-mode run on staging | 4.5 | 1.5 | 6 | S4a | S1, S2a | `avery-hub/src/billing/`, vocab `index.ts` part 2, `room-do.ts`, `persist.ts`, `policy.ts`, `set.ts`, `router.ts`, `upgrade.ts` |
 | **S3** Rankings | room-only participant id, cumulative 1-hour board, config for keep minutes and room TTL, tests that no id reaches tablets or local storage, and that the room-only id and nicknames are cleared on room close, expiry and teacher reset | 1.5 | 0.5 | 2 | S4b | S2b (room pass, same room files) | vocab room join and ranking screens, `ranking.ts`, `room-do.ts` ranking slot |
-| **S4a** Analytics base | loader with teacher-only rule and route-change shutdown, server events for sign-in and lists, the four analytics tests, privacy wording hand-off to S0 | 1 | 0.5 | 1.5 | S2b | S1 | new vocab `analytics.ts`, `avery-hub/src/analytics/` |
+| **S4a** Analytics base | loader with teacher-only rule and route-change shutdown, server events for sign-in and lists, the four analytics tests, privacy wording hand-off to S0b | 1 | 0.5 | 1.5 | S2b | S1 | new vocab `analytics.ts`, `avery-hub/src/analytics/` |
 | **S4b** Gate events | the seven gate and money events; pricing-test report script | 1 | 0.5 | 1.5 | S3 | S2b, S4a | event calls in `set.ts`, `router.ts`, `upgrade.ts` (after S2b merges) |
-| **S5** Live | live key, live provisioning and readback, live portal, live webhook, automatic receipt proven on the first live purchase, one real purchase, cancel and refund on the live site, real fee lines recorded, demo re-recorded on the live site, six-month checklist items set up | 1.5 | 0.5 | 2 | none | S2b, S3, S4b, S0 (pages live, consent screen published), tax gate, staging acceptance | ops docs |
+| **S5** Live | live key, live provisioning and readback, live portal, live webhook, automatic receipt proven on the first live purchase, one real purchase, cancel and refund on the live site, real fee lines recorded, demo re-recorded on the live site, six-month checklist items set up | 1.5 | 0.5 | 2 | none | S2b, S3, S4b, S0b (pages live), S0a consent screen published, tax gate, staging acceptance | ops docs |
 
 **Totals:** build 16.5 days, review and fix rounds 6 days: 22.5 days of work, **about 27 with 20% contingency**.
 
@@ -510,15 +517,16 @@ Effort counts one working day of one build session. "Review" is the reviews the 
 
 | Way of working | Path | Days |
 |---|---|---|
-| Parallel sessions (S2a beside S0 and S1; S4a beside S2b; S3 beside S4b) | S0 (1.5) then S1 (6) then S2b (6) then S3 or S4b (2) then S5 (2) = 17.5 | **about 21 working days with contingency** (17.5 base) |
+| Parallel sessions (S2a and S0b beside S1; S4a beside S2b; S3 beside S4b) | S0a (0.5) then S1 (6) then S2b (6) then S3 or S4b (2) then S5 (2) = 16.5 | **about 20 working days with contingency** (16.5 base x 1.2 = 19.8) |
 | One session at a time | every slice in a row, 22.5 | **about 27 working days with contingency** (22.5 base) |
 | Plus, outside our control | JJ approving legal wording, publishing the consent screen and Google's brand review (can take days, B), issuing Stripe keys, the tax gate | added on top |
 
 The 20% contingency (for a first Google and Stripe integration in this stack, C) is already in the headline numbers above.
 
 ```
-S0 --> S1 --+--> S2b --+--> S3 ---+
-S2a --------+          +--> S4b --+--> S5 (after tax gate, S0 pages live, consent screen published)
+S0a --> S1 --+--> S2b --+--> S3 ---+
+S0b (merges before S1) |
+S2a ---------+          +--> S4b --+--> S5 (after tax gate, S0b pages live, consent screen published)
 S1 --> S4a (beside S2b) --> S4b
 ```
 
@@ -545,14 +553,14 @@ S1 --> S4a (beside S2b) --> S4b
 | Risk | Grade | What we do |
 |---|---|---|
 | A district blocks outside apps on teacher Google accounts | B | test with a real school account in S1; email magic link (board option B2) is the fallback, about 1 more day |
-| Consent screen stays in Testing (100-user cap) because legal pages or domain verification are late | B | S0 starts on day 1, beside S1 |
+| Consent screen stays in Testing (100-user cap) because legal pages or domain verification are late | B | S0a (JJ's Google Cloud setup) and S0b start on day 1, beside S1 |
 | Receipts show Ownly Network LLC, not Avery | A | stated on the pricing card: "Billed by Ownly Network LLC as AVERY STUDIO" |
 | Bank shows a different name than AVERY STUDIO | A (Stripe warns banks vary) | checked on the first test and live charge |
 | Someone rewrites our JavaScript to play a single-screen mode offline | B | accepted; no rooms, lists, classes or history that way |
 | Hub outage | C | failure matrix above; anonymous free play does not depend on the hub |
 | Refund later re-granted by reconciliation | B | `accessFor` reads charges and disputes; reconciliation never clears `refunded_full` |
 | Long-term ranking stays blocked | C | listed as blocked with its unblock list; not silently dropped |
-| Tax registrations take longer than the build | C | S0 to S4 run in test mode meanwhile; S5 waits |
+| Tax registrations take longer than the build | C | S0a to S4 run in test mode meanwhile; S5 waits |
 | `admin@ownly.network` domain lapses and the Stripe account's public support email dies | A | check the renewal date or change the public support email before S5 |
 
 ## QA bar (before anything reaches JJ)
@@ -573,6 +581,7 @@ S1 --> S4a (beside S2b) --> S4b
 | Devices per teacher | 3, with a "which device to sign out" picker at the limit |
 | Who owns the Google Cloud projects | the same Google account that holds the Stripe login |
 | Support address shown on receipts, Checkout and the consent screen | a new averystudio.org address that reaches JJ |
+| Without signing in: unlimited free-mode play, rooms included (plan), or one round (board default)? | Unlimited (plan); `ANON_FREE_ROUNDS` switches it to 1 |
 | Which mode anonymous teachers get | `race` (config `ANON_FREE_MODE`) |
 
 ## Follow-ups (not in this plan)
@@ -599,7 +608,13 @@ S1 --> S4a (beside S2b) --> S4b
 | Pricing thresholds in the plan | "Pricing test" |
 | Narrow house-rule reword, agent-native kept | "House-rule rewording" |
 | Brief priority 5 moved up | Decisions, row 8 |
-| Anonymous free play decision | Decisions, row 7; "Who may do what" |
+| Anonymous free play decision | Decisions, row 7 (labelled as a change from the board default); "For JJ first"; Open questions |
+| Claude round 2: Avery events found by customer, disputes through their charge | "Webhook processing", step 2 |
+| Claude round 2: admin hostnames, `workers_dev` and `preview_urls` off, Access token verified in the hub | "Admin routes" |
+| Claude round 2: 400-day cleanup skips live, paused and disputed subscribers; FK delete rules; tombstones; no daily alert for deleted teachers | "Tables", "Teacher data lifecycle", "Reconciliation" |
+| Claude round 2: second Checkout blocked while any subscription is not terminal | "Customer mapping and no double purchase" |
+| Claude round 2: 4-hour room pass as a deliberate default; taste as a one-round grant; participant id cleared at room end; kid data in the privacy policy | "When the hub is down", "Every paid action", "Rankings", "Analytics" |
+| Claude round 2: S0 split (JJ-only Google setup on day 1; rule change merges before S1); file ownership; contingency in headlines | "Slices" |
 | Codex 7 (recovery), 10 (refund economics), 12 (school route), 14 (ops checklist) | "Teacher data lifecycle", "Refund policy and economics", "School invoice", "Six-month operations checklist" |
 
 ## Sources read for this plan
