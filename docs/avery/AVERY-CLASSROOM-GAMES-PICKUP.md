@@ -46,6 +46,8 @@ Related live demos (may live outside this repo today):
 5. Soft **$39/yr** gate after free forever works (1 list + 1 mode).
 6. Caption Wars stays secondary for classroom until it is clearly labeled, or until a classroom mode exists.
 
+**Tianzige Generator** (田字格练习生成器) is a first-class classroom tool, not a new game. JD approved it on 2026-09-28. Build it after Vocab Generator polish, together with List Lab (they can share stroke data). It does not replace Trace Race as the next standalone game. Spec is under Classroom tools.
+
 ### Deprioritize / clarify
 
 - Do **not** build Sound Sprint as its own repo or folder. It is a Vocab Generator mode only.
@@ -60,10 +62,32 @@ Small utilities that feed games or help a teacher get through the day. Same desi
 | Tool | What it is in plain English |
 |---|---|
 | **List Lab** | Paste or upload a word list (or rough TPT vocab text) and get a clean 中文 + pinyin + English deck that every game can load. |
+| **Tianzige Generator** (田字格练习生成器) | Paste characters or words and get printable stroke-order 田字格 rows right away. Spec below. |
 | **Parent Night Lite** | Teacher sends one link. The kid plays the **same list** at home in 8 minutes and gets a “done” stamp to screenshot. |
 | **Randomizer+** | Fair name picker that also flashes today’s target 字. Opens every morning. |
 | **Sub Plan Generator** | Emergency slides and a printable from one list when a sub walks in. |
 | **Progress postcard** | Cute “words we learned this week” card for folders. |
+
+### Tianzige Generator (田字格练习生成器)
+
+First-class Avery tool. JD approved 2026-09-28. Docs only until a build task says to start. Same Avery site and design system, not a new brand or domain.
+
+A teacher pastes their own characters or words. Messy formatting is fine: spaces, line breaks, punctuation, mixed 中文 and notes. The sheet appears immediately. No account, no setup steps on screen.
+
+**Lists are always the teacher’s paste.** Never Avery’s fixed character bank.
+
+One character per printable row, in paste order. A repeated character stays repeated. The reference sheet for 好好学习天天向上 is eight rows: 好, 好, 学, 习, 天, 天, 向, 上. Each row, left to right:
+
+1. **Bold reference 字** in the first 田字格 (black, full weight).
+2. **Stroke-by-stroke buildup** in light gray. Each next cell adds one stroke until the character is complete.
+3. **Gray full-character trace cells.** The finished character sits in gray so a child can trace it.
+4. **Empty 田字格** for free practice.
+
+Reference UX: [an2.net Tianzige worksheet](https://www.an2.net/tools/worksheet/tianzige), in the 好好学习天天向上 style above (bold model, gray stroke steps, gray trace copies, blank grids).
+
+**When to build:** after Vocab Generator polish, with List Lab. Tianzige can share stroke data with List Lab and with Trace Race. It is not its own product, and it is not a substitute for Trace Race.
+
+**Later, not the first slice:** a red-and-black practice variant, and print to PDF.
 
 ---
 
@@ -84,4 +108,4 @@ Keep Caption Wars rules. Avery classroom products should still pass the grandma 
 - Cold email to random teachers
 - Publishing averystudio.org/games without JD’s demo OK
 - Replacing the TPT printables cash path (games ride the same teachers)
-- Implementing any game from this brief until a build task says to start
+- Implementing any game or tool from this brief until a build task says to start (including Tianzige Generator)

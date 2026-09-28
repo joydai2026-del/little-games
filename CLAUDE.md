@@ -28,3 +28,4 @@ Locked product shape:
 - Paid is **$39/year**. Free forever is **1 saved list** (one vocab deck) and **1 play mode** on that list.
 - **Sound Sprint** (听一听) is a **vocab mode** inside Vocab Generator, not a standalone game or folder.
 - **Trace Race** (笔顺) is the **next standalone** game after Vocab Generator is polished for the classroom.
+- **Tianzige Generator** (田字格练习生成器) = paste → stroke-order 田字格 sheets. Teacher’s own characters only. Build after Vocab Generator polish, with List Lab.
