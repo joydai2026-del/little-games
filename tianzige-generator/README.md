@@ -12,7 +12,7 @@ heading is pasted, the heading is dropped, options change, and the sheet scrolls
 
 ![Tianzige Generator demo: paste a messy list, get a practice sheet](docs/demo/tianzige-generator-demo.gif)
 
-<!-- mp4 user-attachments URL: pending, commander adds -->
+<!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Source files: [mp4](docs/demo/tianzige-generator-demo.mp4), [gif](docs/demo/tianzige-generator-demo.gif).
 Stills: [phone](docs/demo/tianzige-phone.png), [phone preview](docs/demo/tianzige-phone-preview.png),
@@ -123,5 +123,5 @@ Where things live:
 | Paste parsing | `src/shared/parse.ts` |
 | The locked grid rules | `src/shared/layout.ts` |
 | Sheet to SVG (used by browser and API) | `src/shared/render.ts` |
-| Momo (placeholder art, copied unedited from `avery-brand/momo.svg`) | `public/momo.svg` |
+| Momo, the official mint puppy (locked 2026-09-24), copied unedited from `avery-brand/` | `public/momo.png` (speech line), `public/momo-icon.png` (header, favicon) |
 | Cache times, size caps, rate limit, Retry-After | `wrangler.jsonc` |

@@ -15,11 +15,11 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 3. **Demo recorded live**: `docs/demo/trace-race-demo.mp4` and `.gif` (1.8 MB), embedded in both
    READMEs. The playable mp4 link (GitHub attachment upload) is pending, done by the coordinator.
 4. **Tests green**: 55 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
-5. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
+5. **Momo is the official puppy, locked 2026-09-24** (`public/momo.png`, `public/momo-icon.png`; rebrand 2026-09-28).
 
 ## Recommended action
 1. Watch the demo gif and play one room on a real phone.
-2. Decide on real Momo art (swap `public/momo.svg`).
+2. ~~Decide on real Momo art~~ Done: official Momo, locked 2026-09-24.
 3. Upload the mp4 to a GitHub attachment and replace the pending comment in both READMEs.
 
 ## Verified live vs assumed (final, deployed version 7fc83969, commit 751a7ca)

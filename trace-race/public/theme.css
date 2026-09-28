@@ -1,26 +1,48 @@
 /* Avery Studio brand kit: tokens + shared components.
+   Law: docs/avery/brand/AVERY-BRAND-GUIDE.md (locked 2026-09-24).
    Canonical copy: little-games/avery-brand/theme.css. Every Avery tool ships an
    IDENTICAL copy at public/theme.css (npm run check:brand fails on any diff).
    Game-specific tokens and rules live in the game's own CSS, never here. */
 :root {
-  /* Palette. The only brand colours. */
-  --cream: #FFF7E8;     /* page */
-  --mint: #BFE8D8;      /* light fill, borders */
-  --mint-deep: #3FA88A; /* primary buttons (with INK text) */
-  --coral: #FF7B6B;     /* accent */
-  --ink: #2D3436;       /* text */
+  /* The locked palette (guide section 3). The only brand colours. */
+  --paper: #FDF6EC;       /* page background, theme-color */
+  --paper-deep: #F6E9D8;  /* deeper paper bands */
+  --card: #FFFCF6;        /* cards, raised surfaces */
+  --ink: #42291D;         /* text: deep cocoa, never black */
+  --ink-soft: #6B5142;    /* secondary text (6.8:1 on paper) */
+  --pink: #F4869C;        /* CTAs, accents (with INK text, 5.6:1) */
+  --pink-deep: #C85B73;   /* CTA hover, large emphasis */
+  --pink-soft: #FBDCE3;   /* soft pink fills */
+  --sage: #A9D3B8;        /* calm UI */
+  --sage-soft: #DEEFE4;   /* soft sage fills */
+  --butter: #F4D894;      /* warm cards, tags */
+  --butter-soft: #FBEECB;
+  --sky: #A5C9E8;         /* cool cards, tags */
+  --sky-soft: #DDEAF7;
+  --mascot: #BEE1D4;      /* Momo mint */
+  --mascot-2: #9CCEBC;    /* Momo outline, secondary mint */
 
-  /* Derived. */
-  --muted: #636E72;     /* secondary text, 4.9:1 on cream */
-  --line: #B2BEC3;      /* dividers, rules */
-  --card: #FFFFFF;      /* cards, paper */
+  /* Aliases so older game CSS keeps resolving. New code uses the names above. */
+  --cream: var(--paper);
+  --mint: var(--mascot);
+  --mint-deep: var(--mascot-2);
+  --coral: var(--pink);
+  --muted: var(--ink-soft);
+  --line: var(--paper-deep);
 
-  /* Local CJK faces cover Chinese when Google Fonts is blocked. */
-  --font-ui: "DM Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
-  --tap: 64px;          /* minimum tap target */
+  /* Fonts: Baloo 2 for headings and titles, Quicksand for UI. Local CJK faces
+     cover Chinese when Google Fonts is blocked. */
+  --font-cjk: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC";
+  --font-head: "Baloo 2", var(--font-cjk), system-ui, sans-serif;
+  --font-ui: "Quicksand", var(--font-cjk), system-ui, sans-serif;
+  --tap: 64px;            /* minimum tap target */
 }
 
-/* Header: Momo + wordmark, the whole thing links to the tool's home. */
+h1, h2, h3 { font-family: var(--font-head); font-weight: 700; }
+
+/* Header: the L4 lockup in HTML. Momo icon + "Avery Studio" (Baloo 2, cocoa,
+   thin coral underline) + optional "with 墨墨 Momo". Links home except on
+   screens where leaving loses progress. */
 .avery-header {
   display: flex; align-items: center; min-height: 64px;
   max-width: 1100px; margin: 0 auto; padding: 0 16px;
@@ -30,17 +52,22 @@
   display: inline-flex; align-items: center; gap: 10px; min-height: 64px;
   color: var(--ink); text-decoration: none;
 }
-.avery-header img { width: 40px; height: 40px; flex: none; }
-.avery-header .avery-wordmark { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; }
-.avery-header .avery-sub { color: var(--muted); font-weight: 500; font-size: 1rem; }
-.avery-header a:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; border-radius: 8px; }
+.avery-header img { width: 44px; height: 44px; flex: none; object-fit: contain; }
+.avery-lockup { display: flex; flex-direction: column; line-height: 1.05; }
+.avery-header .avery-wordmark {
+  font-family: var(--font-head); font-weight: 700; font-size: 1.35rem; color: var(--ink);
+  padding-bottom: 1px; border-bottom: 2px solid var(--pink); align-self: flex-start;
+}
+.avery-header .avery-tagline { color: var(--ink-soft); font-weight: 600; font-size: 0.85rem; margin-top: 3px; }
+.avery-header a:focus-visible { outline: 3px solid var(--pink-deep); outline-offset: 2px; border-radius: 8px; }
 
 /* Footer: one brand line, per-tool credits under it. */
 .avery-footer {
   max-width: 760px; margin: 32px auto 0; padding: 16px 16px 24px;
-  text-align: center; font-family: var(--font-ui); font-size: 0.85rem; color: var(--muted);
+  text-align: center; font-family: var(--font-ui); font-size: 0.85rem; color: var(--ink-soft);
 }
-.avery-footer .avery-line { margin: 0 0 4px; font-weight: 500; }
+.avery-footer .avery-line { margin: 0 0 4px; font-weight: 600; }
+.avery-footer .avery-line b { font-family: var(--font-head); font-weight: 700; color: var(--ink); }
 /* Footer links are real 64px targets, even when the link text wraps. */
 .avery-footer a {
   color: inherit; display: inline-flex; align-items: center; min-height: var(--tap);
@@ -48,17 +75,20 @@
 }
 .avery-footer .avery-credits { margin: 0; line-height: 1.6; }
 
-/* Buttons. White on mint-deep fails contrast (2.9:1), so primary uses INK text
-   (4.3:1), which passes only as LARGE text: keep button labels 19px+ bold. */
+/* Buttons. Primary = pink fill + cocoa text (5.6:1, passes at any size).
+   Hover = pink-deep + card text (3.9:1, LARGE text only: labels stay 19px bold).
+   White on pink fails (2.4:1), so never put white text on --pink. */
 .btn-primary, .btn-secondary {
   display: inline-flex; align-items: center; justify-content: center;
   min-height: var(--tap); min-width: var(--tap); padding: 0 24px;
   border-radius: 999px; font-family: var(--font-ui); font-size: 19px; font-weight: 700;
   cursor: pointer;
 }
-.btn-primary { background: var(--mint-deep); color: var(--ink); border: 0; }
-.btn-secondary { background: var(--cream); color: var(--ink); border: 3px solid var(--mint); }
-.btn-primary:focus-visible, .btn-secondary:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+.btn-primary { background: var(--pink); color: var(--ink); border: 0; }
+.btn-primary:hover:not(:disabled) { background: var(--pink-deep); color: var(--card); }
+.btn-secondary { background: var(--card); color: var(--ink); border: 3px solid var(--mascot-2); }
+.btn-secondary:hover:not(:disabled) { background: var(--sage-soft); }
+.btn-primary:focus-visible, .btn-secondary:focus-visible { outline: 3px solid var(--pink-deep); outline-offset: 2px; }
 .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.45; cursor: default; }
 
 /* The brand chrome never prints; printed pages keep their own footer. */

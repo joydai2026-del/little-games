@@ -33,12 +33,12 @@ export function svg(tag: string, attrs: Record<string, string | number> = {}, ch
 }
 
 export function momo(extraClass = ''): HTMLImageElement {
-  return h('img', { class: `momo ${extraClass}`.trim(), src: '/momo.svg', alt: 'Momo the ink drop' });
+  return h('img', { class: `momo ${extraClass}`.trim(), src: '/momo.png', alt: 'Momo the puppy' });
 }
 
 export function brand(subtitle: string): HTMLElement {
   return h('div', { class: 'brand' }, [
-    h('img', { src: '/momo.svg', alt: '' }),
+    h('img', { src: '/momo.png', alt: '' }),
     h('div', {}, [h('h1', { text: 'Trace Race 笔顺比赛' }), h('p', { class: 'sub', text: subtitle })]),
   ]);
 }

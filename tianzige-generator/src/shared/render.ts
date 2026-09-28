@@ -200,7 +200,7 @@ export function renderPages(sheet: Sheet, strokes: StrokeMap, layout = LAYOUT): 
     }
 
     const footY = H - footer + footer * g.footBaseline;
-    children.push(h('text', { x: 0, y: r2(footY), 'font-size': r2(footSize), class: 'sheet-foot' }, [SHEET_TEXT.brand]));
+    children.push(h('text', { x: 0, y: r2(footY), 'font-size': r2(footSize), class: 'sheet-foot sheet-brand' }, [SHEET_TEXT.brand]));
     children.push(
       h('text', { x: W, y: r2(footY), 'font-size': r2(footSize), 'text-anchor': 'end', class: 'sheet-foot' }, [
         `${pageIndex + 1} / ${sheet.pages.length}`,

@@ -1,10 +1,9 @@
 /* Trace Race tokens. Brand colours live in public/theme.css (the Avery Studio
    kit, identical to avery-brand/theme.css; never edited here). This file holds
    the game-only tokens and is, with theme.css, the only place a colour literal
-   may appear (npm run check:palette). */
+   may appear (npm run check:palette). Never redefine a kit token here
+   (--paper, --ink-soft...): use the kit's names directly. */
 :root {
-  --paper: var(--card);
-  --ink-soft: var(--muted);
   --ink-faint: #DCD6CC;
   --grid: #F2B8AE;
   --gold: #F4C04E;

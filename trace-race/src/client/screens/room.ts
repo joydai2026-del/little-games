@@ -290,7 +290,7 @@ function kidLobby(ctx: Ctx): HTMLElement {
 
 function kidLate(ctx: Ctx): HTMLElement {
   return h('div', {}, [
-    momo('bounce'),
+    momo('tilt'),
     h('h1', { text: 'You will race next round', style: 'text-align:center' }),
     h('p', { class: 'notice', text: 'This race started without you. Watch the board, and keep this screen on!' }),
     board(ctx.state!),
