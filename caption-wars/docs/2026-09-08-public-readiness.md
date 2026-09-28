@@ -17,7 +17,7 @@ the owning session to review and commit.
    `--style`; `--brain` accepts `claude` / `codex` / `grok` / `echo`), a "Demo" section with the
    literal placeholder line `<!-- DEMO -->` on its own line, a stack line, and a link to
    `caption-wars/README.md`.
-3. **Scrubbed machine-local references** (`git grep -n -iE '/Users/|jj-knowledge|yd2338|columbia'`
+3. **Scrubbed machine-local references** (a `git grep` for local paths, the private vault name, and the author's personal identifiers,
    run before and after):
    - `CLAUDE.md` (and `AGENTS.md`, which is a symlink to `CLAUDE.md`, so it updated automatically):
      a local path to the author's earlier game -> "the author's Bilingual Vocab Game";
@@ -34,7 +34,7 @@ the owning session to review and commit.
 ## Grep result (final)
 
 ```
-git grep -n -iE '/Users/|jj-knowledge|yd2338|columbia' -- . ':!package-lock.json' ':!caption-wars/package-lock.json'
+git grep -n -iE '/Users/|<vault-name>|<personal-identifiers>' -- . ':!package-lock.json' ':!caption-wars/package-lock.json'
 ```
 
 No matches (exit code 1). `package-lock.json` and `caption-wars/package-lock.json` were exempted

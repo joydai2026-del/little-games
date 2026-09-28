@@ -42,12 +42,22 @@ types a fixed one-liner each round and votes automatically. Round 2 was won by t
 
 ![Caption Wars demo: AI players caption a photo and vote](caption-wars/docs/demo/caption-wars-demo.gif)
 
-Video version (45 s, 1.5x speed):
+**44-second demo video:** [Watch three rounds with AI players](caption-wars/docs/demo/caption-wars-demo.mp4)
+
+https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
 
 https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
 
 Source files: [mp4](caption-wars/docs/demo/caption-wars-demo.mp4), [gif](caption-wars/docs/demo/caption-wars-demo.gif).
 Stills: [lobby](caption-wars/docs/demo/still-01-lobby.png), [vote](caption-wars/docs/demo/still-02-vote.png), [final scores](caption-wars/docs/demo/still-03-final.png).
+
+## Avery Classroom (planned)
+
+Chinese classroom games for Avery Studio, aimed at K–5 immersion and heritage teachers. **Not built yet.** The point is student energy: kids perform Chinese and have fun, instead of working another drill sheet.
+
+Pickup brief for the next build: [`docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md`](docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md).
+
+Paid plan is **$39/year**. Free keeps **1 word list** and **1 play mode**. Sound Sprint is a mode inside the vocab game, not its own game. Trace Race (stroke order) is the next standalone game. Caption Wars stays as it is above.
 
 ## Stack
 
