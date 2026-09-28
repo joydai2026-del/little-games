@@ -54,7 +54,7 @@ export function gridCell(diagonals: boolean, layout = LAYOUT): SvgNode[] {
   if (diagonals) parts.push(...dashedDiagonal(0, 0, s, s, layout), ...dashedDiagonal(s, 0, 0, s, layout));
   parts.push(h('line', { x1: 0, y1: s / 2, x2: s, y2: s / 2, ...guide }));
   parts.push(h('line', { x1: s / 2, y1: 0, x2: s / 2, y2: s, ...guide }));
-  parts.push(h('rect', { x: 0, y: 0, width: s, height: s, class: 'g-border', 'stroke-width': layout.borderWidth }));
+  parts.push(h('rect', { x: 0, y: 0, width: s, height: s, fill: 'none', class: 'g-border', 'stroke-width': layout.borderWidth }));
   return parts;
 }
 

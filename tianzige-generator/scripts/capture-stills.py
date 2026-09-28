@@ -5,7 +5,8 @@ Opens the deployed app on a phone-size viewport, pastes a real messy teacher
 list, waits for the grid to render, and saves:
   docs/demo/tianzige-phone.png          the app as a teacher sees it
   docs/demo/tianzige-print-letter.png   page 1 of the printed PDF (Letter)
-  docs/demo/tianzige-print-a4.png       page 1 of the printed PDF (A4)
+  docs/demo/tianzige-phone-preview.png  the live preview on the phone
+  docs/demo/tianzige-print-a4.png       page 1 of the printed PDF (A4, 米字格)
 The PDFs are printed by Chromium from the same page (print stylesheet) and
 rasterized with pdftoppm, so the PNGs show what a printer receives.
 
@@ -22,8 +23,7 @@ URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige-generator.joyd-ai-
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "docs", "demo")
 
-PASTE = """第三课 生字
-1. 大 dà big
+PASTE = """1. 大 dà big
 2. 小 xiǎo small
 3. 学校 xuéxiào school
 4. 山 shān, 水 shuǐ
@@ -51,12 +51,18 @@ def main() -> None:
         page.evaluate("document.querySelector('#preview').scrollIntoView()")
         page.screenshot(path=os.path.join(OUT, "tianzige-phone-preview.png"), full_page=False)
 
-        for paper in ("letter", "a4"):
+        # Letter with the default 田字格, A4 with 米字格, so both grids get printed.
+        for paper, grid in (("letter", "tian"), ("a4", "mi")):
             page.check(f"input[name=paper][value={paper}]", force=True)
+            page.check(f"input[name=grid][value={grid}]", force=True)
             page.wait_for_timeout(600)
             with tempfile.TemporaryDirectory() as tmp:
                 pdf = os.path.join(tmp, "sheet.pdf")
                 page.pdf(path=pdf, prefer_css_page_size=True, print_background=True)
+                keep = os.environ.get("KEEP_PDF_DIR")
+                if keep:  # for vector checks, e.g. Avery Studio's check_pdf_ink.py
+                    import shutil
+                    shutil.copy(pdf, os.path.join(keep, f"tianzige-{paper}.pdf"))
                 info = subprocess.run(["pdfinfo", pdf], capture_output=True, text=True).stdout
                 size = [l for l in info.splitlines() if l.startswith(("Pages", "Page size"))]
                 print(paper, size)

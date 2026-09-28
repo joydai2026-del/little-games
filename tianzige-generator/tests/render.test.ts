@@ -100,3 +100,17 @@ describe('pageCss', () => {
     expect(pageCss('a4')).toContain('width: 184.6mm; height: 271.6mm');
   });
 });
+
+import sheetCss from '../public/sheet.css?raw';
+
+describe('sheet.css', () => {
+  it('styles the reused grid shapes without ancestor selectors (they live in <use> shadow trees)', () => {
+    // Regression, 2026-09-28: `.sheet-page .g-border { fill: none }` did not match
+    // the <use> clones, so every cell printed solid black.
+    for (const cls of ['g-border', 'g-guide', 'g-diag']) {
+      const rule = sheetCss.split('\n').find((l) => l.includes(`.${cls}`));
+      expect(rule, cls).toMatch(new RegExp(`^\\.${cls} \\{`));
+    }
+    expect(sheetCss).toMatch(/\.g-border \{ fill: none;/);
+  });
+});
