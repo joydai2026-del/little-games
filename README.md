@@ -7,6 +7,7 @@ README, tests, and build docs.
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
+| 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
 
 ## Trace Race 笔顺比赛
 
@@ -76,3 +77,17 @@ One Cloudflare Worker (static assets + API) per game, a Durable Object per room,
 the AI players (Cloudflare Workers AI as the fallback), vitest for the game logic.
 
 Agent rules: `CLAUDE.md` (also `AGENTS.md`).
+
+## 田字格 Writing Sheets
+
+Live at: **https://tianzige-generator.joyd-ai-2026.workers.dev**. Paste Chinese characters (messy is
+fine), print a stroke-order practice sheet. AI agents get the same sheet from `POST /api/sheet`.
+Details in [`tianzige-generator/README.md`](tianzige-generator/README.md).
+
+Demo, recorded on the live site with `tianzige-generator/scripts/record-demo.py` (2026-09-28):
+
+![Tianzige Generator demo: paste a messy list, get a practice sheet](tianzige-generator/docs/demo/tianzige-generator-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, commander adds -->
+
+Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [gif](tianzige-generator/docs/demo/tianzige-generator-demo.gif).
