@@ -6,6 +6,10 @@
 **Audience:** Chinese K–5 immersion and heritage teachers (US school calendar)  
 **Site hub (draft):** [averystudio.org/games](https://averystudio.org/games) — not live until JD says the demo is OK.
 
+## Brand
+
+Follow [`docs/avery/brand/AVERY-BRAND-GUIDE.md`](brand/AVERY-BRAND-GUIDE.md). Locked assets: official **Momo brush** and the **L4 lockup** (JD, 2026-09-24).
+
 ## North star
 
 **Student energy. Make it fun.**
