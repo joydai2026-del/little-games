@@ -39,9 +39,13 @@ describe('renderPages', () => {
   it('puts 米字格 diagonals on the model cell only when the teacher picks 田字格', () => {
     const tian = all(renderPages(buildSheet(words, strokes, { ...DEFAULT_OPTIONS, grid: 'tian' }), strokes)[0]);
     const mi = all(renderPages(buildSheet(words, strokes, { ...DEFAULT_OPTIONS, grid: 'mi' }), strokes)[0]);
-    const diag = (ns: SvgNode[]) => ns.filter((n) => n.attrs.class === 'g-diag').length;
-    expect(diag(tian)).toBeGreaterThan(0);
-    expect(diag(mi)).toBeGreaterThan(diag(tian) * 10);
+    const uses = (ns: SvgNode[], kind: string) => ns.filter((n) => n.tag === 'use' && String(n.attrs.href).endsWith(`-${kind}`)).length;
+    const cells = (ns: SvgNode[]) => uses(ns, 'mi') + uses(ns, 'tian');
+    // 田字格 sheet: only the one model cell per character gets the 米字格.
+    expect(uses(tian, 'mi')).toBe(1);
+    expect(uses(tian, 'tian')).toBe(cells(tian) - 1);
+    expect(uses(mi, 'tian')).toBe(0);
+    expect(uses(mi, 'mi')).toBe(cells(mi));
   });
 
   it('never draws diagonals as stroked lines (the Chromium PDF black-cross bug)', () => {

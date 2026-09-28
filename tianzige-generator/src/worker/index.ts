@@ -13,8 +13,8 @@ import { parseChars } from '../shared/parse';
 import { renderPages } from '../shared/render';
 import { readStrokes, type StrokeMap } from '../shared/strokes';
 import { escapeXml, toMarkup } from '../shared/svg';
-import { cacheSeconds, type Env } from './env';
-import { fetchVerified, inManifest, LICENSE_URL } from './strokes';
+import { cacheSeconds, maxBytes, type Env } from './env';
+import { fetchVerified, inManifest, LICENSE_PATH } from './strokes';
 
 export type { Env } from './env';
 
@@ -42,7 +42,7 @@ async function handleStrokes(raw: string, env: Env, fetcher: typeof fetch): Prom
     return json({ error: single ? 'no stroke data for this character' : 'one character, please' }, single ? 404 : 400, single ? { 'Cache-Control': 'public, max-age=86400' } : {});
   }
   const seconds = cacheSeconds(env);
-  const got = await fetchVerified(char, seconds, fetcher);
+  const got = await fetchVerified(char, seconds, fetcher, maxBytes(env));
   if (!got.ok) return json({ error: got.reason }, got.status);
   return new Response(got.bytes, {
     status: 200,
@@ -59,7 +59,7 @@ async function loadStrokes(chars: string[], env: Env, fetcher: typeof fetch): Pr
   const seconds = cacheSeconds(env);
   await Promise.all(
     [...new Set(chars)].map(async (c) => {
-      const got = await fetchVerified(c, seconds, fetcher);
+      const got = await fetchVerified(c, seconds, fetcher, maxBytes(env));
       if (!got.ok) {
         map.set(c, null);
         return;
@@ -128,7 +128,7 @@ main { max-width: 820px; margin: 0 auto; padding: 16px; display: grid; gap: 16px
 <main>
 ${pages}
 </main>
-<p class="credits">Character stroke data: <a href="${escapeXml(LICENSE_URL)}">Make Me a Hanzi / Arphic Technology, Arphic Public License</a></p>
+<p class="credits">Character stroke data: <a href="${escapeXml(new URL(LICENSE_PATH, request.url).href)}">Make Me a Hanzi / Arphic Technology, Arphic Public License</a></p>
 </body>
 </html>
 `;

@@ -5,7 +5,7 @@ import shan from './fixtures/山.json?raw';
 import xue from './fixtures/学.json?raw';
 import xiao from './fixtures/校.json?raw';
 import { makeHandler, type Env } from '../src/worker/index';
-import { STROKES_UPSTREAM } from '../src/worker/strokes';
+import { STROKES_UPSTREAM, validShape } from '../src/worker/strokes';
 
 const RAW: Record<string, string> = { 大: da, 人: ren, 山: shan, 学: xue, 校: xiao };
 const fixture = (c: string) => {
@@ -89,6 +89,33 @@ describe('GET /api/strokes/:char', () => {
     expect(await res.text()).not.toContain('M 0 0');
   });
 
+  it('refuses an upstream body over the size cap, even when the hash would match', async () => {
+    const { fetcher } = upstream();
+    const small = { ...env, STROKES_MAX_BYTES: '100' } as Env; // 大.json is 1,034 bytes
+    const res = await makeHandler(fetcher)(get(`/api/strokes/${encodeURIComponent('大')}`), small);
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toContain('too large');
+  });
+
+  it('refuses a declared Content-Length over the cap before reading the body', async () => {
+    const fetcher = (async () =>
+      new Response('{}', { status: 200, headers: { 'Content-Length': '999999' } })) as unknown as typeof fetch;
+    const res = await makeHandler(fetcher)(get(`/api/strokes/${encodeURIComponent('大')}`), env);
+    expect(res.status).toBe(502);
+  });
+
+  it('checks the JSON shape: strokes are strings, medians are arrays, one per stroke', () => {
+    expect(validShape(JSON.parse(da))).toBe(true);
+    expect(validShape(JSON.parse(xiao))).toBe(true);
+    expect(validShape({ strokes: ['M 1 1 Z'] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: 'x' })).toBe(false);
+    expect(validShape({ strokes: [1], medians: [[]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[], []] })).toBe(false);
+    expect(validShape({ strokes: [], medians: [] })).toBe(false);
+    expect(validShape([])).toBe(false);
+    expect(validShape(null)).toBe(false);
+  });
+
   it('turns an upstream failure into 502', async () => {
     const { fetcher } = upstream({ 大: 503 });
     const res = await makeHandler(fetcher)(get(`/api/strokes/${encodeURIComponent('大')}`), env);
@@ -109,7 +136,10 @@ describe('POST /api/sheet (the agent path)', () => {
     expect(html).toContain('size: A4');
     expect(html).toContain('--ink: #2D3436');
     expect(html).toContain('Arphic Public License');
+    expect(html).toContain('href="https://t.test/licenses/ARPHICPL.TXT"');
     expect((html.match(/class="ink-model"/g) ?? []).length).toBe(3);
+    // Shapes are defined once and reused, so a sheet stays small.
+    expect(html.length).toBeLessThan(120_000);
   });
 
   it('falls back to a plain glyph when a character has no data, and says which', async () => {

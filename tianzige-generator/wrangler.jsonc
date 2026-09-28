@@ -21,6 +21,8 @@
     // Browser and edge cache for one character's stroke file. The data is
     // pinned (hanzi-writer-data@2.0.1, see src/worker/stroke-manifest.json), so
     // a week is safe.
-    "STROKES_CACHE_SECONDS": "604800"
+    "STROKES_CACHE_SECONDS": "604800",
+    // Largest upstream stroke file accepted. The biggest real one is 8,621 bytes.
+    "STROKES_MAX_BYTES": "65536"
   }
 }

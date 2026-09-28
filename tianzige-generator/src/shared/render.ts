@@ -41,10 +41,9 @@ function dashedDiagonal(x1: number, y1: number, x2: number, y2: number, layout =
   return out;
 }
 
-export function gridCell(x: number, y: number, diagonals: boolean, layout = LAYOUT): SvgNode {
+/** One grid cell drawn at the origin. Defined once per page and reused with <use>. */
+export function gridCell(diagonals: boolean, layout = LAYOUT): SvgNode[] {
   const s = layout.cell;
-  const cx = x + s / 2;
-  const cy = y + s / 2;
   const guide = {
     class: 'g-guide',
     'stroke-width': layout.guideWidth,
@@ -52,14 +51,15 @@ export function gridCell(x: number, y: number, diagonals: boolean, layout = LAYO
   };
   const parts: SvgNode[] = [];
   // Diagonals first, then the cross, then the border, so the quieter lines sit underneath.
-  if (diagonals) parts.push(...dashedDiagonal(x, y, x + s, y + s, layout), ...dashedDiagonal(x + s, y, x, y + s, layout));
-  parts.push(h('line', { x1: x, y1: cy, x2: x + s, y2: cy, ...guide }));
-  parts.push(h('line', { x1: cx, y1: y, x2: cx, y2: y + s, ...guide }));
-  parts.push(h('rect', { x, y, width: s, height: s, class: 'g-border', 'stroke-width': layout.borderWidth }));
-  return h('g', {}, parts);
+  if (diagonals) parts.push(...dashedDiagonal(0, 0, s, s, layout), ...dashedDiagonal(s, 0, 0, s, layout));
+  parts.push(h('line', { x1: 0, y1: s / 2, x2: s, y2: s / 2, ...guide }));
+  parts.push(h('line', { x1: s / 2, y1: 0, x2: s / 2, y2: s, ...guide }));
+  parts.push(h('rect', { x: 0, y: 0, width: s, height: s, class: 'g-border', 'stroke-width': layout.borderWidth }));
+  return parts;
 }
 
-export function glyph(paths: string[], upto: number, x: number, y: number, inkClass: string, layout = LAYOUT): SvgNode {
+/** A glyph showing the first `upto` strokes, each a <use> of the page's stroke defs. */
+export function glyph(ids: string[], upto: number, x: number, y: number, inkClass: string, layout = LAYOUT): SvgNode {
   const inset = layout.glyphInset;
   const pad = Math.round((MMH_BOX * inset) / (1 - 2 * inset));
   const box = MMH_BOX + 2 * pad;
@@ -67,7 +67,7 @@ export function glyph(paths: string[], upto: number, x: number, y: number, inkCl
     h(
       'g',
       { transform: MMH_TRANSFORM, class: inkClass },
-      paths.slice(0, upto).map((d) => h('path', { d })),
+      ids.slice(0, upto).map((id) => h('use', { href: `#${id}` })),
     ),
   ]);
 }
@@ -95,12 +95,12 @@ const INK: Record<Cell['kind'], string> = {
   empty: '',
 };
 
-function cellContent(cell: Cell, char: string, paths: string[] | null, x: number, y: number, layout = LAYOUT): SvgNode | null {
+function cellContent(cell: Cell, char: string, ids: string[] | null, x: number, y: number, layout = LAYOUT): SvgNode | null {
   if (cell.kind === 'empty') return null;
   const ink = INK[cell.kind];
-  if (!paths) return cell.kind === 'build' ? null : fontGlyph(char, x, y, ink, layout);
-  const upto = cell.kind === 'build' ? cell.upto ?? paths.length : paths.length;
-  return glyph(paths, upto, x, y, ink, layout);
+  if (!ids) return cell.kind === 'build' ? null : fontGlyph(char, x, y, ink, layout);
+  const upto = cell.kind === 'build' ? cell.upto ?? ids.length : ids.length;
+  return glyph(ids, upto, x, y, ink, layout);
 }
 
 function textLine(label: string, x: number, y: number, lineW: number, size: number): SvgNode[] {
@@ -121,17 +121,39 @@ export function renderPages(sheet: Sheet, strokes: StrokeMap, layout = LAYOUT): 
     children.push(...textLine(SHEET_TEXT.name, 0, baseY, W * 0.36, labelSize));
     children.push(...textLine(SHEET_TEXT.date, W * 0.56, baseY, W * 0.3, labelSize));
 
+    // Every shape used more than once is defined once per page: the two grid
+    // cells and each stroke path. Keeps a 40-character sheet small.
+    const defs: SvgNode[] = [];
+    const prefix = `p${pageIndex}`;
+    const gridId = { tian: `${prefix}-tian`, mi: `${prefix}-mi` };
+    defs.push(h('g', { id: gridId.tian }, gridCell(false, layout)));
+    defs.push(h('g', { id: gridId.mi }, gridCell(true, layout)));
+    const strokeIds = new Map<string, string[] | null>();
     for (const block of page.blocks) {
+      if (strokeIds.has(block.char)) continue;
       const paths = strokes.get(block.char) ?? null;
+      if (!paths) {
+        strokeIds.set(block.char, null);
+        continue;
+      }
+      const base = `${prefix}-c${block.char.codePointAt(0)!.toString(16)}`;
+      const ids = paths.map((_, k) => `${base}-${k}`);
+      paths.forEach((d, k) => defs.push(h('path', { id: ids[k], d })));
+      strokeIds.set(block.char, ids);
+    }
+    children.push(h('defs', {}, defs));
+
+    for (const block of page.blocks) {
+      const ids = strokeIds.get(block.char) ?? null;
       const top = header + block.y;
       block.rows.forEach((row, r) => {
-        const y = top + r * layout.cell * (1 + layout.rowGap);
+        const y = r2(top + r * layout.cell * (1 + layout.rowGap));
         row.forEach((cell, c) => {
           const x = c * layout.cell;
           // The model cell is always 米字格 (STYLE-LOCK); practice cells follow the teacher's pick.
           const diagonals = cell.kind === 'model' || sheet.options.grid === 'mi';
-          children.push(gridCell(x, y, diagonals, layout));
-          const content = cellContent(cell, block.char, paths, x, y, layout);
+          children.push(h('use', { href: `#${diagonals ? gridId.mi : gridId.tian}`, x, y }));
+          const content = cellContent(cell, block.char, ids, x, y, layout);
           if (content) children.push(content);
         });
       });
