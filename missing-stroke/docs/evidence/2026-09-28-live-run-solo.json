@@ -1,0 +1,33 @@
+{
+  "mode": "solo",
+  "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+  "moves": [
+    {
+      "char": "人",
+      "hidden": 1,
+      "pad_turned_right": false
+    },
+    {
+      "char": "口",
+      "hidden": 0,
+      "pad_turned_right": false
+    },
+    {
+      "char": "大",
+      "hidden": 1,
+      "pad_turned_right": false
+    },
+    {
+      "char": "小",
+      "hidden": 2,
+      "pad_turned_right": false
+    },
+    {
+      "char": "日",
+      "hidden": 1,
+      "pad_turned_right": false
+    }
+  ],
+  "console_errors": [],
+  "result_screen": "You found 5 of 5!\n\nYour fastest stroke: 1.1 s. 好棒!\n\n1.4 s\n1.2 s\n1.4 s\n1.1 s\n1.5 s\nPlay again (next characters)\n\nNew list"
+}

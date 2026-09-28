@@ -1,0 +1,117 @@
+{
+  "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+  "deployed_version": "38baa8a8-cac4-418e-863d-5e71d80b8d5e",
+  "deployed_commit": "8424c6f",
+  "args": {
+    "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+    "record": true,
+    "level": "middle",
+    "no_agent": false,
+    "solo": false
+  },
+  "started_at": "2026-09-28T20:35:45.785410+00:00",
+  "kid_moves": [
+    {
+      "char": "山",
+      "hidden": 0,
+      "move": "backwards (wrong)",
+      "pad_wiggled": true
+    },
+    {
+      "char": "山",
+      "hidden": 0,
+      "move": "right",
+      "pad_turned_right": true
+    },
+    {
+      "char": "水",
+      "hidden": 0,
+      "move": "right",
+      "pad_turned_right": true
+    },
+    {
+      "char": "火",
+      "hidden": 0,
+      "move": "right",
+      "pad_turned_right": true
+    }
+  ],
+  "console_errors": [],
+  "code": "6ER4",
+  "missing_note": "We do not have strokes for 𠮷 yet, so we left it out.",
+  "agent_output": [
+    "joined 6ER4 as Robo",
+    "missed stroke 1 of 山",
+    "drew stroke 1 of 山",
+    "drew stroke 1 of 水",
+    "drew stroke 1 of 火",
+    "{\"rights\":3,\"mistakes\":1,\"wins\":0,\"place\":2,\"phase\":\"done\"}"
+  ],
+  "final": {
+    "phase": "done",
+    "standings": [
+      {
+        "playerId": "cc616007-c7f3-4e6c-89f5-7488f1db50f3",
+        "name": "Mia",
+        "agent": false,
+        "wins": 3,
+        "rights": 3,
+        "mistakes": 1,
+        "now": "right",
+        "nowMs": 1378,
+        "place": 1
+      },
+      {
+        "playerId": "856aeedc-6c49-4828-a074-49f578a6da98",
+        "name": "Robo",
+        "agent": true,
+        "wins": 0,
+        "rights": 3,
+        "mistakes": 1,
+        "now": "right",
+        "nowMs": 3298,
+        "place": 2
+      }
+    ],
+    "results": [
+      {
+        "char": "山",
+        "hidden": 0,
+        "winners": 1,
+        "times": [
+          3106,
+          6635
+        ]
+      },
+      {
+        "char": "水",
+        "hidden": 0,
+        "winners": 1,
+        "times": [
+          2757,
+          3330
+        ]
+      },
+      {
+        "char": "火",
+        "hidden": 0,
+        "winners": 1,
+        "times": [
+          1378,
+          3298
+        ]
+      }
+    ]
+  },
+  "board_text": "1\nMia★★★won 3 · 3 of 3 right · 1 oops\n2\nRoboAIwon 0 · 3 of 3 right · 1 oops",
+  "kid_screen": "You are number 1!\n\nYou won 3 and got 3 of 3 right. 好棒!\n\n1\nMiayou★★★won 3 · 3 of 3 right · 1 oops\n2\nRoboAIwon 0 · 3 of 3 right · 1 oops",
+  "demo": {
+    "mp4": "missing-stroke-demo.mp4",
+    "mp4_bytes": 738064,
+    "gif": "missing-stroke-demo.gif",
+    "gif_bytes": 2629518,
+    "gif_width": 820,
+    "gif_fps": 8
+  },
+  "finished_at": "2026-09-28T20:36:41.251410+00:00"
+}

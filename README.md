@@ -8,6 +8,7 @@ README, tests, and build docs.
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+| 补一笔 Missing Stroke | Momo forgot one stroke: kids race to draw it in the right spot, solo or as a class. Live: https://missing-stroke.joyd-ai-2026.workers.dev | `missing-stroke/` |
 
 ## Trace Race 笔顺比赛
 
