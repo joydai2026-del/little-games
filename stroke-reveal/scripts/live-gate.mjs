@@ -82,6 +82,8 @@ const leaked = playable.filter((w) => !kq.cards.includes(w) && kidView.text.incl
 note('a kid payload carries no list, no other words, no stroke count or timing that leaks one, no right card', kq.char === null && kq.answer === null && kq.strokes === null && kq.endsAt === null && kidView.json.state.list === null && kidView.json.state.expiresAt === null && leaked.length === 0 && !/"(questions|deck|orders|strokeCounts|attempts)"/.test(kidView.text), {
   question: kq, list: kidView.json.state.list, expiresAt: kidView.json.state.expiresAt, otherWordsInPayload: leaked, playableWords: playable.length,
 });
+// Look up the public stroke data of this kid's own cards during the countdown.
+const cardData = await Promise.all(kq.cards.map(async (w) => (await req('GET', `/api/strokes/${encodeURIComponent(firstChar(w))}`)).json));
 const tooSoon = await req('POST', `/api/rooms/${code}/guess`, { race: 1, question: 0, seq: 1, card: 0 }, early);
 note('guess before Momo starts drawing is refused', tooSoon.status === 409, { status: tooSoon.status, body: tooSoon.json });
 await sleep(Math.max(0, kq.startAt - Date.now()) + 250);
@@ -95,7 +97,6 @@ const drawing = await req('GET', `/api/rooms/${code}/drawing`, undefined, early)
 note('/drawing shows only the strokes on the big screen, never the character', drawing.status === 200 && drawing.json.shown >= 1 && drawing.json.strokes.length === drawing.json.shown && !drawing.text.includes('"char"'), {
   status: drawing.status, shown: drawing.json.shown, complete: drawing.json.complete,
 });
-const cardData = await Promise.all(kq.cards.map(async (w) => (await req('GET', `/api/strokes/${encodeURIComponent(firstChar(w))}`)).json));
 const now1 = (await req('GET', `/api/rooms/${code}`, undefined, early)).json.state;
 const plan = planGuess(now1, drawing.json, cardData, { patience: 0, mistakeRate: 0 });
 note('the agent sees exactly one card that matches the drawing', plan && matchingCards(drawing.json, cardData).length === 1, { plan, matches: matchingCards(drawing.json, cardData), cards: kq.cards });
