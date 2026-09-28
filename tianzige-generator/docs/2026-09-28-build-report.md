@@ -5,8 +5,8 @@ Grades: **A** = verified on the live site AND recorded in the committed receipt
 **B** = proven in source or unit tests; **C** = not verified.
 
 Live URL: https://tianzige-generator.joyd-ai-2026.workers.dev (workers.dev only; no custom domain).
-Deployed version in the receipt: `218ab2a2-ec45-4679-8fc5-3be2ab2673a4`, the same before and after
-the run, built from HEAD `dcd5218` (clean); every live asset's sha256 matches the local build.
+Deployed version in the receipt: `8691ea2b-89c4-40b2-958a-25cee1acfe5b`, the same before and after
+the run, built from HEAD `9dbb63b` (clean); every live asset's sha256 matches the local build.
 
 ## What shipped
 
@@ -23,7 +23,7 @@ the run, built from HEAD `dcd5218` (clean); every live asset's sha256 matches th
 | Letter and A4 print, no black lines, no English on the page but the brand | R: 612x792 and 595x842 pt, `check_pdf_ink` 0 black line paths, only Latin words Avery, Studio | A |
 | Headings skipped by shape only and always reported; vocabulary never dropped | R: `学校：\nschool` gives 学校; `学校 练习 日期 姓名` keeps all 4; `第三课 生字：校` gives 生字 校, skipped ["第三课"]; Momo names skipped headings | A |
 | Numerals separated by 、 stay vocabulary (`一、二、三、四、五`, `一、\n二、\n三、`); a colon heading needs a short line and Chinese on the NEXT line (`学校：\nschool\n老师：\nteacher` keeps both); `X-Sheet-Skipped` capped at 2 KB with "+N more" | R: 一二三四五; 一二三; 学校老师; unit test for the cap | A / B (cap) |
-| Textbook layout `一、生字：` / `二、词语：` over lists: labels skipped and reported; `㊀\n㊁\n㊂` gives 一二三 | R: 大小多学校老师, skipped [生字, 词语]; 一二三 | A |
+| Textbook layout `一、生字：` / `二、词语：` over lists: labels skipped and reported; `㊀\n㊁\n㊂` gives 一二三; `㈠\n小\n㈡\n大` gives 一小二大 | R: 大小多学校老师, skipped [生字, 词语]; 一二三; 一小二大 | A |
 | List markers stripped at line start; a list item is never a heading; enclosed ideographs elsewhere normalize | R: 生字 大 小 山 水; `1. 第五课` / `一、第六课` / `• 第七课` all kept, skipped []; `我爱㊀ ㊊ ㊥` gives 我爱一 月 中 | A |
 | PDF look-alikes normalized, one duplicate rule, input cut reported | R: ⼈ becomes 人; unit tests | A / B |
 | Agent path `POST /api/sheet` | R: messy paste 200 with X-Sheet headers; 40+ characters 200; text/plain 415; 120 KB body 413 | A |
