@@ -20,7 +20,7 @@ A = seen on the live site with a saved receipt. B = proven by tests or indirectl
 | Site, stroke proxy (manifest hash for 我, rejects traversal / two chars / no-data char), licence served | A | `docs/evidence/2026-09-28-live-gate.json` |
 | Messy paste: heading 第一课 skipped and reported, 𠮷野 listed as not drawable | A | live gate + lobby still |
 | A kid's payload carries no list, no other words from the list (6 playable, 0 found outside the 4 cards), no stroke count, no `endsAt`/`expiresAt`, no right card while a word is open | A | live gate |
-| Each phone has its own card order (round 2: big screen 山/口/大人/学校, Robo 学校/口/山/大人, Leo 学校/口/山/大人) | A | live gate `round2CardOrders` |
+| Card order is shuffled independently for each phone (round 2: big screen 山/口/大人/学校, Robo 学校/口/山/大人, Leo 学校/口/山/大人; the two phones matched each other by chance, 1 in 24, and both differ from the big screen) | A for differing from the big screen; B for independence per phone (`tests/reveal.test.ts`) | live gate `round2CardOrders` |
 | The answer cannot be derived from the payload (pasted order, first card, big-screen position all at chance or below over 300 rooms) | B | `tests/reveal.test.ts` "the old attack fails" (reducer, not live) |
 | Minimum reveal: a tap 250 ms after the drawing starts is refused (status 409); guessing opens 1400 ms after the start | A | live gate |
 | An agent sees exactly one matching card after the reveal and scores 732 points, tapping 268 ms after guessing opened (2 strokes x 900 ms) | A | live gate (numbers quoted from the receipt) |
