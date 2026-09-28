@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,9 +59,36 @@ def strokes(char: str) -> None:
     record(f"stroke proxy {char}", "GET", path, status, h, body, f"sha256 {sha[:16]}... manifest {match}" if status == 200 else body.decode()[:80])
 
 
+def deployment() -> str:
+    dep = subprocess.run(["npx", "wrangler", "deployments", "status"], cwd=ROOT, capture_output=True, text=True)
+    return (dep.stdout or dep.stderr).strip()
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def asset_binding() -> list[str]:
+    """Hash every file of the local build (dist/client, built from HEAD by `npm run deploy`)
+    and the same path on the live site. All MATCH = the live assets are this commit's build."""
+    dist = os.path.join(ROOT, "dist", "client")
+    rows = ["| file | local sha256 | live sha256 | result |", "|---|---|---|---|"]
+    for base, _, files in os.walk(dist):
+        for f in sorted(files):
+            full = os.path.join(base, f)
+            rel = "/" + os.path.relpath(full, dist).replace(os.sep, "/")
+            local = hashlib.sha256(open(full, "rb").read()).hexdigest()
+            status, _, body = req("GET", rel)
+            live = hashlib.sha256(body).hexdigest()
+            rows.append(f"| `{rel}` | {local[:16]}... | {live[:16]}... | {'MATCH' if status == 200 and live == local else f'MISMATCH ({status})'} |")
+    return rows
+
+
 def main() -> None:
     started = now()
-    dep = subprocess.run(["npx", "wrangler", "deployments", "status"], cwd=ROOT, capture_output=True, text=True)
+    head = git("rev-parse", "HEAD")
+    dirty = git("status", "--porcelain", "--", ".")
+    dep_before = deployment()
     lines.append("| time (UTC) | check | request | status | bytes | headers | result |")
     lines.append("|---|---|---|---|---|---|---|")
 
@@ -92,14 +120,27 @@ def main() -> None:
     s, h, b = req("POST", "/api/sheet", hostile, j)
     record("hostile paste via API", "POST", "/api/sheet", s, h, b, f"<script: {b.count(b'<script')}; onerror: {b.count(b'onerror')}; <img: {b.count(b'<img')}")
 
+    for label, chars in (
+        ("colon line, no Chinese after", "学校：\nschool"),
+        ("vocabulary that looks like headings", "学校 练习 日期 姓名"),
+        ("lesson marker leading a line", "第三课 生字：校"),
+        ("list numbering", "一、生字 大\n（二）小\n㊀山 ㈡水"),
+    ):
+        s, h, b = req("POST", "/api/sheet", json.dumps({"chars": chars}).encode(), j)
+        record(f"parse: {label} `{chars!r}`", "POST", "/api/sheet", s, h, b, "")
+
     browser_lines = browser_checks()
+    assets = asset_binding()
+    dep_after = deployment()
     finished = now()
 
     out = os.path.join(ROOT, "docs", "evidence", f"{dt.date.today().isoformat()}-live-receipt.md")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(f"# Live receipt, {dt.date.today().isoformat()}\n\n")
         fh.write(f"Written by `scripts/live-receipt.py` against **{URL}**, {started} to {finished}.\n\n")
-        fh.write("## Deployed version (`wrangler deployments status`)\n\n```\n" + (dep.stdout or dep.stderr).strip() + "\n```\n\n")
+        fh.write(f"## Source\n\nHEAD `{head}`; uncommitted changes in tianzige-generator/: {'none' if not dirty else chr(10) + dirty}\n\n")
+        fh.write("## Deployed version (`wrangler deployments status`)\n\nBefore the run:\n\n```\n" + dep_before + "\n```\n\nAfter the run:\n\n```\n" + dep_after + "\n```\n\n")
+        fh.write("## Live assets vs the local build of HEAD\n\n" + "\n".join(assets) + "\n\n")
         fh.write("## HTTP checks\n\n" + "\n".join(lines) + "\n\n")
         fh.write("## Browser checks (Chromium, 390x844, live site)\n\n" + "\n".join(browser_lines) + "\n")
     print(out)
@@ -128,13 +169,35 @@ def browser_checks() -> list[str]:
         pg.wait_for_timeout(300)
         out.append(f"- {now()} messy paste (heading, ⼈ U+2F08, 㐀, <img onerror>): Momo says \"{pg.inner_text('#momo-says')}\"; <img> in preview: {pg.eval_on_selector_all('#preview img', 'e => e.length')}")
 
-        # Stale print: Print must be disabled from the first keystroke until the redraw lands.
-        pg.fill("#chars", "大 小")
-        pg.wait_for_function(ready, timeout=20000)
-        pg.type("#chars", " 蛇", delay=0)
-        disabled_now = pg.evaluate("document.querySelector('#print').disabled")
-        pg.wait_for_function(ready, timeout=20000)
-        out.append(f"- {now()} stale print guard: Print disabled right after a keystroke: {disabled_now}; enabled again after redraw: {pg.evaluate(ready)}")
+        # Stale print, sampled continuously (every animation frame, from inside the page) while
+        # stroke fetches are slowed to 400 ms (slow school Wi-Fi) and keys land 520-640 ms apart.
+        # A violation = Print enabled while the drawn sheet is not the text in the box.
+        pg.fill("#chars", "")
+        pg.wait_for_timeout(400)
+        pg.route("**/api/strokes/**", lambda route: (time.sleep(0.4), route.continue_()))
+        pg.evaluate("""() => {
+            window.__samples = [];
+            const tick = () => {
+                const want = (document.querySelector('#chars').value.match(/\\p{Script=Han}/gu) || []).join('');
+                const drawn = [...document.querySelectorAll('#preview g.ink-model use')]
+                    .map(u => u.getAttribute('href').split('-c')[1].split('-')[0]).filter((v, i, a) => a.indexOf(v) === i)
+                    .map(h => String.fromCodePoint(parseInt(h, 16))).join('');
+                window.__samples.push({ enabled: !document.querySelector('#print').disabled, want, drawn });
+                if (window.__samples.length < 100000) requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        }""")
+        for gap in (520, 580, 640):
+            pg.fill("#chars", "")
+            for text in ("人", "人 口", "人 口 日"):
+                pg.fill("#chars", text)
+                pg.wait_for_timeout(gap)
+            pg.wait_for_function(ready, timeout=20000)
+        samples = pg.evaluate("window.__samples")
+        bad = [x for x in samples if x["enabled"] and x["want"] != x["drawn"]]
+        pg.unroute("**/api/strokes/**")
+        pg.evaluate("window.__samples = null")
+        out.append(f"- {now()} stale print guard, continuous: {len(samples)} frames sampled over 3 runs (gaps 520/580/640 ms, strokes delayed 400 ms); frames with Print enabled on a stale sheet: {len(bad)}")
 
         # Words stay together across page breaks, every paper and row width.
         # No character is shared between two items, so a page lookup by character is unambiguous.
@@ -156,12 +219,13 @@ def browser_checks() -> list[str]:
                     where = {i for i, chars in enumerate(per_page) for c in set(w) if c in chars}
                     if len(where) > 1:
                         first = min(where)
-                        # Moved to a fresh page and still did not fit: taller than one page, split allowed.
-                        if per_page[first] and per_page[first][0] == w[0]:
-                            too_tall.append(f"{w} ({paper}/{per}, starts page {first + 1})")
+                        # A word taller than a whole page runs onto the next page by design, and Momo says so.
+                        momo = pg.inner_text("#momo-says")
+                        if f"{w} is too tall for one page" in momo:
+                            too_tall.append(f"{w} ({paper}/{per}, pages {sorted(where)}, Momo says so)")
                         else:
                             splits.append(f"{w} on pages {sorted(where)} ({paper}/{per})")
-        out.append(f"- {now()} words across page breaks, paste `{paste}`: {', '.join(pages_seen)}; words split that would fit on one page: {splits or 'none'}; words taller than a page (starting a fresh page, split between characters by design): {too_tall or 'none'}")
+        out.append(f"- {now()} words across page breaks, paste `{paste}`: {', '.join(pages_seen)}; words split that would fit on one page: {splits or 'none'}; words taller than a whole page, which run onto the next page by design: {too_tall or 'none'}")
 
         # Print Letter and A4 and check the vectors.
         pg.locator("label:has(input[name=perRow][value='8']) span").click()
