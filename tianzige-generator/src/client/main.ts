@@ -64,4 +64,11 @@ printBtn.addEventListener('click', () => {
 const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--cream').trim();
 if (themeColor) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
 
+// The tool is one page and keeps nothing between loads, so following the Avery
+// header link would wipe the pasted list. Here "home" is the top of this page.
+document.querySelector('.avery-header a')?.addEventListener('click', (event) => {
+  event.preventDefault();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
 void controller.render();
