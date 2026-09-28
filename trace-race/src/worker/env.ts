@@ -5,6 +5,8 @@ export interface Env {
   ROOM_CREATE_LIMITER?: RateLimit;
   /** Seconds browsers and the edge keep one character's stroke JSON. */
   STROKE_CACHE_SECONDS?: string;
+  /** Largest upstream stroke JSON accepted, in bytes (largest real file is 8,621). */
+  STROKE_MAX_BYTES?: string;
   /** Deadline on one upstream stroke fetch. */
   STROKE_FETCH_TIMEOUT_MS?: string;
 }

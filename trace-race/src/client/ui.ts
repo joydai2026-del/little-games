@@ -47,7 +47,7 @@ export function credits(): HTMLElement {
   return h('p', { class: 'footer' }, [
     'Character stroke data: ',
     h('a', {
-      href: 'https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/ARPHICPL.TXT',
+      href: '/licenses/ARPHICPL.TXT',
       target: '_blank',
       rel: 'noopener noreferrer',
       text: 'Make Me a Hanzi / Arphic Technology, Arphic Public License',

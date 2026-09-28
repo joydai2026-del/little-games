@@ -1,7 +1,7 @@
 // The /api/strokes/:char proxy must not be an open proxy, and must never pass
 // through bytes that differ from the pinned manifest.
 import { describe, expect, it, vi } from 'vitest';
-import { handleStrokes, resolveList, strokeCharFromPath } from '../src/worker/strokes';
+import { handleStrokes, isStrokeJson, resolveList, strokeCharFromPath } from '../src/worker/strokes';
 import type { Env } from '../src/worker/env';
 
 const ENV = {} as Env;
@@ -61,6 +61,34 @@ describe('handleStrokes', () => {
   it('502s when the upstream is down', async () => {
     const res = await handleStrokes('我', ENV, REQ, { fetch: (async () => { throw new Error('down'); }) as never });
     expect(res.status).toBe(502);
+  });
+});
+
+describe('handleStrokes round-2 guards', () => {
+  it('502s an upstream body over the size cap (declared or streamed)', async () => {
+    const big = 'x'.repeat(2048);
+    const env = { STROKE_MAX_BYTES: '1024' } as Env;
+    const declared = await handleStrokes('我', env, REQ, {
+      fetch: (async () => new Response(big, { headers: { 'content-length': String(big.length) } })) as never,
+    });
+    expect(declared.status).toBe(502);
+    expect(await declared.text()).toContain('too big');
+    const streamed = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(big));
+        c.close();
+      },
+    });
+    const res = await handleStrokes('我', env, REQ, { fetch: (async () => new Response(streamed)) as never });
+    expect(res.status).toBe(502);
+    expect(await res.text()).toContain('too big');
+  });
+
+  it('isStrokeJson accepts the real shape and rejects anything else', () => {
+    expect(isStrokeJson({ strokes: ['M 1 2'], medians: [[[1, 2]]] })).toBe(true);
+    for (const bad of [null, [], 'x', {}, { strokes: [], medians: [] }, { strokes: [1], medians: [] }, { strokes: ['M'], medians: 'no' }, { strokes: ['M'], medians: [5] }]) {
+      expect(isStrokeJson(bad)).toBe(false);
+    }
   });
 });
 

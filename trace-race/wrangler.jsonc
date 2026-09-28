@@ -28,6 +28,8 @@
     // version). Only how long the answers are cached is policy.
     // How long browsers and the edge may keep one character's stroke JSON.
     "STROKE_CACHE_SECONDS": "2592000",
-    "STROKE_FETCH_TIMEOUT_MS": "6000"
+    "STROKE_FETCH_TIMEOUT_MS": "6000",
+    // Upstream body cap. The largest file in hanzi-writer-data 2.0.1 is 8,621 bytes.
+    "STROKE_MAX_BYTES": "65536"
   }
 }

@@ -10,6 +10,9 @@
 //   - Every upstream body is hashed and compared with the manifest before a
 //     byte of it is returned. A mismatch is a 502, never a pass-through.
 //   - Responses are application/json with X-Content-Type-Options: nosniff.
+//   - (Round 2) The upstream body is size-capped (STROKE_MAX_BYTES) and its
+//     JSON shape is checked ({ strokes: string[], medians: array[] }) before
+//     it is returned.
 // Stroke data licence: Make Me a Hanzi / Arphic Technology, Arphic Public License.
 
 import manifestJson from './strokes-manifest.json';
@@ -62,6 +65,19 @@ function jsonError(message: string, status: number): Response {
   });
 }
 
+/** The shape hanzi-writer expects; anything else is refused. */
+export function isStrokeJson(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as { strokes?: unknown; medians?: unknown };
+  return (
+    Array.isArray(v.strokes) &&
+    v.strokes.length > 0 &&
+    v.strokes.every((s) => typeof s === 'string') &&
+    Array.isArray(v.medians) &&
+    v.medians.every((m) => Array.isArray(m))
+  );
+}
+
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -78,6 +94,33 @@ export function strokeCharFromPath(segment: string): string | null {
   if (decoded.endsWith('.json')) decoded = decoded.slice(0, -5);
   if ([...decoded].length !== 1) return null;
   return hasStrokeData(decoded) ? decoded : null;
+}
+
+class TooBig extends Error {}
+
+/** Reads a body but stops (and throws) as soon as it passes `maxBytes`. */
+async function readCapped(res: Response, maxBytes: number): Promise<ArrayBuffer> {
+  if (!res.body) return new ArrayBuffer(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new TooBig();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out.buffer;
 }
 
 export interface StrokeDeps {
@@ -108,20 +151,31 @@ export async function handleStrokes(
   }
 
   const timeoutMs = numberVar(env.STROKE_FETCH_TIMEOUT_MS, 6000, 500, 30_000);
+  const maxBytes = numberVar(env.STROKE_MAX_BYTES, 65_536, 1024, 1_048_576);
   let body: ArrayBuffer;
   try {
     const upstream = await deps.fetch(`${UPSTREAM}${encodeURIComponent(ch)}.json`, {
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!upstream.ok) return jsonError('stroke data is not reachable right now', 502);
-    body = await upstream.arrayBuffer();
-  } catch {
+    const declared = Number(upstream.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > maxBytes) return jsonError('stroke data was too big', 502);
+    body = await readCapped(upstream, maxBytes);
+  } catch (err) {
+    if (err instanceof TooBig) return jsonError('stroke data was too big', 502);
     return jsonError('stroke data is not reachable right now', 502);
   }
   if ((await sha256Hex(body)) !== HASHES[ch]) {
     console.warn('strokes: upstream hash mismatch', ch);
     return jsonError('stroke data did not match what we expected', 502);
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    parsed = null;
+  }
+  if (!isStrokeJson(parsed)) return jsonError('stroke data did not match what we expected', 502);
   const response = new Response(body, { status: 200, headers });
   if (deps.cache) {
     try {
