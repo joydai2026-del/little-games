@@ -1,6 +1,6 @@
-Momo spikes check receipt  2026-09-28T11:05:58
+Momo spikes check receipt  2026-09-28T11:28:40
 Chromium headless via Python Playwright, viewports phone 390x844 and laptop 1280x800, sound stubbed
-73 PASS, 0 FAIL
+87 PASS, 0 FAIL
 
 PASS  identical in all 3 files: shared JS (parser, helpers, icons)
 PASS  identical in all 3 files: shared CSS tokens
@@ -22,6 +22,7 @@ PASS  parser: 二〇二六
 PASS  parser: 葡萄 / 葡萄 pútao
 PASS  parser: 草莓, 橙子
 PASS  parser: 苹果 香蕉 píngguǒ xiāngjiāo
+PASS  parser: píngguǒ 苹果 xiāngjiāo 香蕉
 PASS  parser: hello world
 PASS  parser: <img src=x onerror=alert(1)> 苹果 </button><script
 PASS  parser: 40 lines keeps 40 words
@@ -41,6 +42,10 @@ PASS  teach laptop: '巧克力蛋糕' fits, no sideways scroll
 PASS  teach laptop: '我今天很高兴见到你' fits, no sideways scroll
 PASS  teach laptop: '一石二鸟' fits, no sideways scroll
 PASS  teach laptop: one-word grammar
+PASS  teach 1280x720: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)
+PASS  teach 1366x768: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)
+PASS  teach 1280x800: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)
+PASS  teach 390x844: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)
 PASS  tap targets >= 64 px: karaoke paste screen
 PASS  shared list remembered across files (Chromium, file://)
 PASS  karaoke: every 3rd word starts as a blank
@@ -52,16 +57,23 @@ PASS  karaoke: end screen
 PASS  karaoke: New list resets setup
 PASS  karaoke: Stop halts the song
 PASS  karaoke: too-short list gets a plain message
+PASS  karaoke: every word a blank plays through
+PASS  karaoke 1280x720: 9-character word, Momo and the button stay on screen
+PASS  karaoke 390x844: 9-character word, Momo and the button stay on screen
 PASS  karaoke phone: 5-character word fits and sweeps in reading order
 PASS  karaoke laptop: 5-character word fits and sweeps in reading order
 PASS  tap targets >= 64 px: comic phone paste screen
-PASS  comic phone: 3-5 character words, no bubble or character overlaps (3 shuffles)
+PASS  comic phone: long words, nothing overlaps (bubbles and characters, any pair, 3 shuffles)
 PASS  comic phone: no sideways scroll
 PASS  tap targets >= 64 px: comic phone comic screen
 PASS  tap targets >= 64 px: comic laptop paste screen
-PASS  comic laptop: 3-5 character words, no bubble or character overlaps (3 shuffles)
+PASS  comic laptop: long words, nothing overlaps (bubbles and characters, any pair, 3 shuffles)
 PASS  comic laptop: no sideways scroll
 PASS  tap targets >= 64 px: comic laptop comic screen
+PASS  tap targets >= 64 px: comic small phone 320 paste screen
+PASS  comic small phone 320: long words, nothing overlaps (bubbles and characters, any pair, 3 shuffles)
+PASS  comic small phone 320: no sideways scroll
+PASS  tap targets >= 64 px: comic small phone 320 comic screen
 PASS  comic: printing before a comic exists shows 'Make the comic first'
 PASS  comic: empty print is 1 page
 PASS  comic: too-short list gets a plain message
@@ -71,7 +83,9 @@ PASS  comic: tap bubble then word fills it
 PASS  comic: after Shuffle a bubble is highlighted
 PASS  comic: after Shuffle a word tap changes the highlighted bubble only
 PASS  comic: Shuffle and Print have icons
+PASS  comic: a 1 inch print margin still prints 1 Letter page
 PASS  comic: print on letter is 1 page
 PASS  comic: print on A4 is 1 page
+PASS  comic: after New list, printing shows 'Make the comic first' (no stale comic)
 PASS  no page or console errors
 PASS  no requests outside the local files

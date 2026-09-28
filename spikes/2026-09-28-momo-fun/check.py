@@ -46,6 +46,7 @@ PARSER_CASES = [
     ("葡萄\n葡萄 pútao", [["葡萄", "pútao"]]),
     ("草莓, 橙子", [["草莓", ""], ["橙子", ""]]),
     ("苹果 香蕉 píngguǒ xiāngjiāo", [["苹果", "píngguǒ"], ["香蕉", "xiāngjiāo"]]),
+    ("píngguǒ 苹果 xiāngjiāo 香蕉", [["苹果", "píngguǒ"], ["香蕉", "xiāngjiāo"]]),
     ("hello world", []),
     ("<img src=x onerror=alert(1)> 苹果 </button><script>x</script>", [["苹果", ""]]),
 ]
@@ -61,6 +62,22 @@ def small_targets(pg, where):
         .map(b=>(b.textContent.trim()||b.tagName)+' '+Math.round(b.getBoundingClientRect().width)+'x'+Math.round(b.getBoundingClientRect().height))""")
     check("tap targets >= 64 px: " + where, not bad, "; ".join(bad))
     return not bad
+
+# Everything a teacher needs stays on one screen: button visible, word inside, bubble not over the word, even lines.
+TEACH_LAYOUT = """()=>{const out=[],H=innerHeight,W=innerWidth,$=id=>document.getElementById(id);
+  function glyphs(el){const t=el.firstChild;if(!t)return[];const res=[];for(let i=0;i<t.length;i++){const r=document.createRange();
+    r.setStart(t,i);r.setEnd(t,i+1);const b=r.getBoundingClientRect();if(b.width)res.push(b)}return res}
+  function uneven(el){const rows={};glyphs(el).forEach(g=>{const k=Math.round(g.top/4);rows[k]=(rows[k]||0)+1});
+    const n=Object.values(rows);return n.length>1&&Math.max(...n)-Math.min(...n)>1?n.join('/'):''}
+  const act=$('act').getBoundingClientRect();if(act.bottom>H+1)out.push('button off screen by '+Math.round(act.bottom-H)+'px');
+  const g=glyphs($('word'));const wb=Math.max(...g.map(x=>x.bottom));
+  if(Math.min(...g.map(x=>x.left))<0||Math.max(...g.map(x=>x.right))>W||Math.min(...g.map(x=>x.top))<0)out.push('word off screen');
+  if(uneven($('word')))out.push('uneven word lines '+uneven($('word')));
+  const b=$('bubble');if(!b.hidden){const br=b.getBoundingClientRect();if(br.top<wb-1)out.push('bubble covers word by '+Math.round(wb-br.top)+'px');
+    const z=b.querySelector('.zh');if(z&&uneven(z))out.push('uneven bubble lines '+uneven(z))}
+  const m=$('momo').getBoundingClientRect();if(m.bottom>act.top+1)out.push('Momo under the button');
+  if(document.documentElement.scrollHeight>H+1)out.push('page scrolls '+(document.documentElement.scrollHeight-H)+'px');
+  return out.map(s=>$('word').textContent+' ['+$('momo').dataset.mood+']: '+s)}"""
 
 def no_hscroll(pg): return pg.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
 def inside_view(pg, sel): return pg.evaluate(f"(()=>{{const r=document.querySelector('{sel}').getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1}})()")
@@ -105,10 +122,23 @@ with sync_playwright() as p:
             q.click("#new-list") if q.is_visible("#new-list") else None
             q.fill("#paste", w); q.click("#start")
             check(f"teach {vp_name}: '{w}' fits, no sideways scroll", no_hscroll(q) and inside_view(q, "#word"))
-            if w == "巧克力蛋糕" and vp_name == "phone": q.screenshot(path=str(SHOTS / "teach-long-word.png"))
         q.fill("#paste", "") if q.is_visible("#paste") else None
         q.click("#new-list"); q.fill("#paste", "水"); q.click("#start"); q.click("#act"); q.click("#act"); q.click("#act"); q.click("#act")
         check(f"teach {vp_name}: one-word grammar", q.inner_text("#done-title") == "Momo learned the word!", q.inner_text("#done-title"))
+        q.context.close()
+
+    # Teach Momo on landscape screens and a phone: 4, 5 and 9 character words through every step
+    for vw, vh in [(1280, 720), (1366, 768), (1280, 800), (390, 844)]:
+        q = page({"width": vw, "height": vh}); q.goto(url("teach-momo.html"))
+        q.fill("#paste", "1. 苹果\n2. 一石二鸟\n3. 巧克力蛋糕\n4. 我今天很高兴见到你"); q.click("#start"); probs = []
+        for _ in range(16):
+            q.wait_for_timeout(400); probs += q.evaluate(TEACH_LAYOUT)
+            if vw == 390 and q.inner_text("#word") == "巧克力蛋糕" and q.get_attribute("#momo", "data-mood") == "gotit":
+                q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-long-word.png"))
+            if (vw, vh) == (1280, 720) and q.inner_text("#word") == "我今天很高兴见到你" and q.get_attribute("#momo", "data-mood") == "gotit":
+                q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-landscape-1280x720.png"))
+            q.click("#act")
+        check(f"teach {vw}x{vh}: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)", not probs, "; ".join(probs[:4]))
         q.context.close()
 
     # 4. Karaoke
@@ -138,6 +168,23 @@ with sync_playwright() as p:
     pg.wait_for_timeout(2500); check("karaoke: Stop halts the song", pg.evaluate("idx") == t0)
     pg.fill("#paste", "苹果\n香蕉"); pg.click("#go")
     check("karaoke: too-short list gets a plain message", "at least 3" in pg.inner_text("#paste-note"))
+    pg.fill("#paste", FRUIT); pg.click("#go"); pg.evaluate("()=>{words.forEach((_,i)=>blanks[i]=true);renderChips()}"); pg.click("#go")
+    for _ in range(6):
+        pg.wait_for_selector("#stage.is-gap", timeout=8000); pg.click("#reveal"); pg.wait_for_timeout(100)
+    pg.wait_for_selector("#s-done.on", timeout=8000)
+    check("karaoke: every word a blank plays through", pg.inner_text("#done-sub") == "6 words, 6 shouted by the class.", pg.inner_text("#done-sub"))
+    KAR_FIT = """()=>{const H=innerHeight,out=[];const k=document.getElementById('kword');const st=document.getElementById('stage');
+      if(!st.classList.contains('is-gap')){const r=k.getBoundingClientRect();if(r.top<0||r.bottom>H)out.push('word off screen')}
+      const m=document.querySelector('.momo-row').getBoundingClientRect();if(m.bottom>H+1)out.push('Momo off screen by '+Math.round(m.bottom-H));
+      const b=document.getElementById('reveal').getBoundingClientRect();if(b.bottom>H+1)out.push('button off screen by '+Math.round(b.bottom-H));
+      if(document.documentElement.scrollHeight>H+1)out.push('page scrolls');return out}"""
+    for vw, vh in [(1280, 720), (390, 844)]:
+        q = page({"width": vw, "height": vh}); q.goto(url("karaoke-blanks.html"))
+        q.fill("#paste", "我今天很高兴见到你\n巧克力蛋糕\n你好"); q.click("#go"); q.evaluate("()=>{blanks={1:true}}"); q.click("#go")
+        q.wait_for_timeout(500); probs = q.evaluate(KAR_FIT)
+        q.wait_for_selector("#stage.is-gap", timeout=8000); q.wait_for_timeout(300); probs += q.evaluate(KAR_FIT)
+        check(f"karaoke {vw}x{vh}: 9-character word, Momo and the button stay on screen", not probs, "; ".join(probs))
+        q.context.close()
     for vp_name, vp in [("phone", PHONE), ("laptop", LAPTOP)]:
         q = page(vp); q.goto(url("karaoke-blanks.html")); q.fill("#paste", LONG); q.click("#go")
         q.evaluate("()=>{blanks={}}")   # no blanks, so the long word is sung
@@ -147,24 +194,24 @@ with sync_playwright() as p:
         q.context.close()
 
     # 5. Comic
-    for vp_name, vp in [("phone", PHONE), ("laptop", LAPTOP)]:
+    for vp_name, vp, words_in in [("phone", PHONE, LONG), ("laptop", LAPTOP, LONG),
+                                  ("small phone 320", {"width": 320, "height": 568}, "我今天很高兴见到你们大家\n一石二鸟\n生日快乐歌\n你好\n谢谢你")]:
         q = page(vp); q.goto(url("comic-bubbles.html")); small_targets(q, f"comic {vp_name} paste screen")
-        q.fill("#paste", LONG); q.click("#start")
+        q.fill("#paste", words_in); q.click("#start")
         for _ in range(3):
             q.click("#shuffle"); q.wait_for_timeout(450)
             ov = q.evaluate("""()=>{const bad=[];document.querySelectorAll('.panel').forEach((p,pi)=>{const pr=p.getBoundingClientRect();
               const items=[...p.querySelectorAll('.bubble,.char')].map(e=>({e,r:e.getBoundingClientRect()}));
               items.forEach(a=>{if(a.r.left<pr.left-1||a.r.right>pr.right+1)bad.push('panel'+(pi+1)+' outside: '+a.e.textContent)});
               for(let i=0;i<items.length;i++)for(let j=i+1;j<items.length;j++){const a=items[i],b=items[j];
-                const same=a.e.classList.contains('bubble')===b.e.classList.contains('bubble');
                 const x=Math.min(a.r.right,b.r.right)-Math.max(a.r.left,b.r.left),y=Math.min(a.r.bottom,b.r.bottom)-Math.max(a.r.top,b.r.top);
-                if(same&&x>0&&y>0)bad.push('panel'+(pi+1)+' overlap '+Math.round(x)+'px: '+a.e.textContent+' / '+b.e.textContent)}});return bad}""")
+                if(x>0&&y>0)bad.push('panel'+(pi+1)+' overlap '+Math.round(x)+'px: '+a.e.textContent+' / '+b.e.textContent)}});return bad}""")
             if ov: break
-        check(f"comic {vp_name}: 3-5 character words, no bubble or character overlaps (3 shuffles)", not ov, "; ".join(ov))
+        check(f"comic {vp_name}: long words, nothing overlaps (bubbles and characters, any pair, 3 shuffles)", not ov, "; ".join(ov))
         check(f"comic {vp_name}: no sideways scroll", no_hscroll(q))
         small_targets(q, f"comic {vp_name} comic screen")
         if vp_name == "laptop": q.screenshot(path=str(SHOTS / "comic-laptop.png"), full_page=True)
-        else: q.screenshot(path=str(SHOTS / "comic-long-words.png"), full_page=True)
+        elif vp_name == "phone": q.screenshot(path=str(SHOTS / "comic-long-words.png"), full_page=True)
         q.context.close()
     pg.goto(url("comic-bubbles.html"))
     pg.emulate_media(media="print")
@@ -192,6 +239,10 @@ with sync_playwright() as p:
     after = pg.eval_on_selector_all(".bubble", "e=>e.map(x=>x.textContent)")
     check("comic: after Shuffle a word tap changes the highlighted bubble only", after[0] == "香蕉" and after[1:] == before[1:], f"{before} -> {after}")
     check("comic: Shuffle and Print have icons", pg.locator("#shuffle svg.ic").count() == 1 and pg.locator("#print svg.ic").count() == 1)
+    pg.evaluate("()=>{CONFIG.printMargin='1in';setPaper('letter')}"); pg.emulate_media(media="print")
+    pg.pdf(path=str(TMP / "comic-1in.pdf"), prefer_css_page_size=True, print_background=True); pg.emulate_media(media="screen")
+    check("comic: a 1 inch print margin still prints 1 Letter page", pages(TMP / "comic-1in.pdf") == 1, f"{pages(TMP / 'comic-1in.pdf')} pages")
+    pg.evaluate("()=>{CONFIG.printMargin='0.5in'}")
     for size, name in [("letter", "letter"), ("A4", "a4")]:
         pg.click(f"[data-size={size}]"); pg.emulate_media(media="print")
         pdf = TMP / f"comic-{name}.pdf"; pg.pdf(path=str(pdf), prefer_css_page_size=True, print_background=True)
@@ -199,6 +250,9 @@ with sync_playwright() as p:
         n = pages(pdf); check(f"comic: print on {size} is 1 page", n == 1, f"{n} pages")
         if shutil.which("pdftoppm"):
             subprocess.run(["pdftoppm", "-png", "-r", "80", "-singlefile", str(pdf), str(SHOTS / f"comic-print-{name}")], check=True)
+    pg.click("#new-list"); pg.emulate_media(media="print")
+    check("comic: after New list, printing shows 'Make the comic first' (no stale comic)", pg.is_visible(".print-empty") and not pg.is_visible("main"))
+    pg.emulate_media(media="screen")
     br.close()
 
 check("no page or console errors", not errors, "; ".join(errors[:5]))
