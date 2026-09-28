@@ -20,6 +20,7 @@
 .big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 var(--mint-shadow)}
 .big-btn.coral{background:var(--coral);box-shadow:0 6px 0 var(--coral-shadow)}
 .big-btn:disabled{opacity:.5}
+@media (max-height:520px){.big-btn{min-height:64px;margin-top:8px}}
 .ic{width:36px;height:36px;flex:none;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:var(--error)}
 .link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
@@ -204,12 +205,17 @@ function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
 function charCount(s){ return Array.from(s).length; }
 // Biggest font size that fits a word inside a box by BOTH width and height. Tries every line count
 // (at most maxPerLine characters a line) and caps the element width so the lines come out even.
+// Words of up to ONE_LINE_UP_TO characters never wrap. Returns null when the box has no room at all:
+// callers shrink their other parts first (see layout()) and only then fall back to the smallest size.
+var ONE_LINE_UP_TO = 3, SMALLEST_PX = 14;
 function fitWord(text, boxW, boxH, maxPx, maxPerLine){
-  var n = Math.max(1, charCount(text)), opts = [], top = 0;
-  for (var lines = Math.ceil(n / maxPerLine); lines <= n; lines++){
+  if (!(boxW > 0) || !(boxH > 0)) return null;
+  var n = Math.max(1, charCount(text)), cap = Math.max(1, Math.floor(maxPerLine) || 1), opts = [], top = 0;
+  var fromLines = n <= ONE_LINE_UP_TO ? 1 : Math.ceil(n / cap), toLines = n <= ONE_LINE_UP_TO ? 1 : n;
+  for (var lines = fromLines; lines <= toLines; lines++){
     var per = Math.ceil(n / lines), rows = Math.ceil(n / per);
     var px = Math.floor(Math.min(maxPx, boxW / (per * 1.12), boxH / (rows * 1.2)));
-    opts.push({ px: Math.max(14, px), per: per }); top = Math.max(top, px);
+    opts.push({ px: Math.max(SMALLEST_PX, px), per: per }); top = Math.max(top, px);
   }
   // Fewest lines that are nearly as big as the best: a short word stays on one line instead of stacking.
   for (var i = 0; i < opts.length; i++) if (opts[i].px >= top * 0.8) return opts[i];
@@ -217,9 +223,15 @@ function fitWord(text, boxW, boxH, maxPx, maxPerLine){
 }
 function applyFit(el, text, boxW, boxH, maxPx, maxPerLine){
   var f = fitWord(text, boxW, boxH, maxPx, maxPerLine);
-  el.style.fontSize = f.px + "px";
-  el.style.maxWidth = Math.ceil(f.px * f.per * 1.1) + "px";   // wraps after f.per characters
+  el.style.fontSize = (f ? f.px : SMALLEST_PX) + "px";
+  el.style.maxWidth = f ? Math.ceil(f.px * f.per * 1.1) + "px" : "";   // wraps after f.per characters
   el.style.marginLeft = el.style.marginRight = "auto";
+  return !!f;
+}
+// Run fn after the screen is resized or rotated (once, after the last event settles).
+function onResize(fn){
+  var t = null, later = function(){ clearTimeout(t); t = setTimeout(fn, 120); };
+  window.addEventListener("resize", later); window.addEventListener("orientationchange", later);
 }
 var ICON = {
   play:    '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',

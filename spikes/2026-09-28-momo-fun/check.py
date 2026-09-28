@@ -99,6 +99,11 @@ with sync_playwright() as p:
     for text, want in PARSER_CASES:
         got = [[w["zh"], w["py"]] for w in pg.evaluate("t=>parseList(t)", text)]
         check("parser: " + text.replace("\n", " / ").replace("\t", "<TAB>")[:48], got == want, f"got {got}")
+    fw = pg.evaluate("""()=>({neg:fitWord('我今天很高兴见到你',358,-80,190,6),zero:fitWord('巧克力蛋糕',0,300,190,6),
+        cap0:fitWord('巧克力蛋糕',358,445,190,0),three:fitWord('谢谢你',358,445,190,6),two:fitWord('苹果',358,445,190,6)})""")
+    check("fit: no size is returned for a box with no height or width", fw["neg"] is None and fw["zero"] is None, str(fw))
+    check("fit: a line limit of 0 is treated as 1, no crash", bool(fw["cap0"]) and fw["cap0"]["per"] >= 1, str(fw["cap0"]))
+    check("fit: 2 and 3 character words stay on one line (358x445 box)", fw["three"]["per"] == 3 and fw["two"]["per"] == 2, str(fw))
     check("parser: 40 lines keeps 40 words", len(pg.evaluate("t=>parseList(t)", "\n".join(chr(0x4e00 + i) * 2 for i in range(40)))) == 40)
 
     # 3. Teach Momo
@@ -131,16 +136,26 @@ with sync_playwright() as p:
     # Teach Momo on landscape screens and a phone: 4, 5 and 9 character words through every step
     for vw, vh in [(1280, 720), (1366, 768), (1280, 800), (390, 844)]:
         q = page({"width": vw, "height": vh}); q.goto(url("teach-momo.html"))
-        q.fill("#paste", "1. 苹果\n2. 一石二鸟\n3. 巧克力蛋糕\n4. 我今天很高兴见到你"); q.click("#start"); probs = []
-        for _ in range(16):
+        q.fill("#paste", "1. 苹果\n2. 一石二鸟\n3. 巧克力蛋糕\n4. 我今天很高兴见到你\n5. 谢谢你"); q.click("#start"); probs = []
+        for _ in range(20):
             q.wait_for_timeout(400); probs += q.evaluate(TEACH_LAYOUT)
             if vw == 390 and q.inner_text("#word") == "巧克力蛋糕" and q.get_attribute("#momo", "data-mood") == "gotit":
                 q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-long-word.png"))
             if (vw, vh) == (1280, 720) and q.inner_text("#word") == "我今天很高兴见到你" and q.get_attribute("#momo", "data-mood") == "gotit":
                 q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-landscape-1280x720.png"))
             q.click("#act")
-        check(f"teach {vw}x{vh}: button, word and bubble all fit on screen, even lines (4, 5, 9 characters, every step)", not probs, "; ".join(probs[:4]))
+        check(f"teach {vw}x{vh}: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)", not probs, "; ".join(probs[:4]))
         q.context.close()
+
+    # Rotation in the middle of a round: phone upright -> sideways -> upright, at every step, every word
+    q = page(PHONE); q.goto(url("teach-momo.html"))
+    q.fill("#paste", "1. 谢谢你\n2. 巧克力蛋糕\n3. 我今天很高兴见到你"); q.click("#start"); probs = []
+    for _ in range(12):
+        for vp in [{"width": 844, "height": 390}, PHONE]:
+            q.set_viewport_size(vp); q.wait_for_timeout(450); probs += [f"{vp['width']}x{vp['height']} " + x for x in q.evaluate(TEACH_LAYOUT)]
+        q.click("#act")
+    check("teach: rotating the phone mid-round (844x390 and back) keeps button, word, bubble and Momo on screen at every step", not probs, "; ".join(probs[:4]))
+    q.context.close()
 
     # 4. Karaoke
     pg.goto(url("karaoke-blanks.html")); small_targets(pg, "karaoke paste screen")
@@ -179,7 +194,9 @@ with sync_playwright() as p:
       if(!st.classList.contains('is-gap')){const r=k.getBoundingClientRect();if(r.top<0||r.bottom>H)out.push('word off screen')}
       const m=document.querySelector('.momo-row').getBoundingClientRect();if(m.bottom>H+1)out.push('Momo off screen by '+Math.round(m.bottom-H));
       const b=document.getElementById('reveal').getBoundingClientRect();if(b.bottom>H+1)out.push('button off screen by '+Math.round(b.bottom-H));
-      if(document.documentElement.scrollHeight>H+1)out.push('page scrolls');return out}"""
+      if(document.documentElement.scrollHeight>H+1)out.push('page scrolls');
+      if(!st.classList.contains('is-gap')&&k.textContent.length<=3&&new Set([...k.querySelectorAll('span')].map(s=>Math.round(s.getBoundingClientRect().top))).size>1)out.push('short word split');
+      return out.map(s=>k.textContent+(st.classList.contains('is-gap')?' [blank]':' [singing]')+': '+s)}"""
     for vw, vh in [(1280, 720), (390, 844)]:
         q = page({"width": vw, "height": vh}); q.goto(url("karaoke-blanks.html"))
         q.fill("#paste", "我今天很高兴见到你\n巧克力蛋糕\n你好"); q.click("#go"); q.evaluate("()=>{blanks={1:true}}"); q.click("#go")
@@ -187,6 +204,17 @@ with sync_playwright() as p:
         q.wait_for_selector("#stage.is-gap", timeout=8000); q.wait_for_timeout(300); probs += q.evaluate(KAR_FIT)
         check(f"karaoke {vw}x{vh}: 9-character word, Momo and the button stay on screen", not probs, "; ".join(probs))
         q.context.close()
+    q = page(PHONE); q.goto(url("karaoke-blanks.html"))
+    q.fill("#paste", "谢谢你\n我今天很高兴见到你\n巧克力蛋糕\n你好"); q.click("#go")
+    q.evaluate("()=>{blanks={2:true};CONFIG.speeds.slow=9000}"); q.click("[data-speed=slow]"); q.click("#go"); probs = []
+    for i in range(3):
+        if i == 2: q.wait_for_selector("#stage.is-gap", timeout=20000)
+        else: q.wait_for_function(f"idx==={i}", timeout=20000)
+        for vp in [PHONE, {"width": 844, "height": 390}, PHONE]:
+            q.set_viewport_size(vp); q.wait_for_timeout(450); probs += [f"{vp['width']}x{vp['height']} " + x for x in q.evaluate(KAR_FIT)]
+        if i < 2: q.evaluate("()=>{clearTimeout(timer);idx++;step()}")
+    check("karaoke: rotating the phone mid-song (844x390 and back) keeps word, Momo and button on screen, 3 characters on one line (singing and blank)", not probs, "; ".join(probs[:4]))
+    q.context.close()
     for vp_name, vp in [("phone", PHONE), ("laptop", LAPTOP)]:
         q = page(vp); q.goto(url("karaoke-blanks.html")); q.fill("#paste", LONG); q.click("#go")
         q.evaluate("()=>{blanks={}}")   # no blanks, so the long word is sung

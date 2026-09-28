@@ -38,9 +38,9 @@ Paste reader: pairs each Chinese word with the pinyin that follows it before loo
 | `comic-print-letter.png`, `comic-print-a4.png` | print | Printed page, 1 page each |
 | `review-board.png` | 1280 | The review board (first round) |
 
-## Verified by the committed check (`python3 check.py`, 88 PASS, 0 FAIL; full list in `check-receipt.txt`)
+## Verified by the committed check (`python3 check.py`, 93 PASS, 0 FAIL; full list in `check-receipt.txt`)
 
-Headless Chromium through Python Playwright, phone 320x568 and 390x844, laptop 1280x800, 1280x720 and 1366x768, sound stubbed.
+Headless Chromium through Python Playwright, phone 320x568, 390x844 and turned sideways (844x390, rotated in the middle of a round), laptop 1280x800, 1280x720 and 1366x768, sound stubbed.
 
 | Area | What is checked | Grade |
 |---|---|---|
@@ -85,6 +85,14 @@ Not verified (C): real phones and tablets, Safari/iOS (including Safari's suppor
 | 1 inch print margin gave 2 pages | Panel height worked out from paper and margin |
 | Pinyin-first lines paired wrong | Lines that start with pinyin pair each word with the pinyin before it; remaining limit documented |
 | Answer bubble lines uneven | Bubble uses the same even-line fit as the main word |
+
+## Round 4 fixes (Codex round 3)
+
+| Reviewer item | Fix |
+|---|---|
+| Resize and rotation not handled | Teach refits the word, the visible bubble and Momo; Karaoke refits the word, blank box, Momo and strip; both on resize and rotation (debounced). check.py rotates a phone 390x844 to 844x390 and back at every Teach step (listen, confused, got it) and in Karaoke (singing and blank), asserting the button, word and Momo stay on screen; the same checks fail on the previous build |
+| Impossible height budget treated as valid | `fitWord` returns nothing for a box with no height or width; on a short screen Momo shrinks first, then the bubble room (Teach) or lyric strip (Karaoke), and only then the word takes the smallest size; line limit of 0 is treated as 1 |
+| Short-word boundary | Words of up to 3 characters never wrap; check.py tests 2 and 3 characters in Teach, Karaoke and the fit function |
 
 ## Open questions for JJ
 
