@@ -81,6 +81,9 @@ async function render(): Promise<void> {
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 function schedule(): void {
+  // The preview is stale from the first keystroke, not only once the redraw starts.
+  printBtn.disabled = true;
+  preview.classList.add('loading');
   clearTimeout(timer);
   timer = setTimeout(() => void render(), DEBOUNCE_MS);
 }

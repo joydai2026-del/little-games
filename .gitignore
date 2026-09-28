@@ -14,3 +14,6 @@ caption-wars/docs/demo/*.webm
 caption-wars/docs/demo/events.json
 caption-wars/docs/demo/_video_raw/
 __pycache__/
+
+# Tianzige Generator demo recorder raw output
+tianzige-generator/docs/demo/_video_raw/

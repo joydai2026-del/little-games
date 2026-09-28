@@ -1,5 +1,9 @@
 /* Avery Studio + 墨墨 (Momo) palette. The ONLY place colors are defined.
-   Everything else (app, printed sheet, API sheet) uses these variables. */
+   Everything else (app, printed sheet, API sheet, the browser theme-color)
+   uses these variables. One documented exception: public/momo.svg is image
+   art loaded with <img>, which cannot read CSS variables, so its fills are
+   the same palette values written into the file (placeholder art, swapped
+   whole when the real Momo exists). */
 :root {
   --cream: #FFF7E8;   /* page */
   --mint: #BFE8D8;    /* light fill */

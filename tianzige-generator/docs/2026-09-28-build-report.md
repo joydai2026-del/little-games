@@ -1,83 +1,71 @@
-# Tianzige Generator build report (2026-09-28)
+# Tianzige Generator build report (2026-09-28, round 2)
 
-Grades: A = verified on the live site, B = proven in source or tests, C = not verified.
+Grades: **A** = verified on the live site AND recorded in the committed receipt
+[`docs/evidence/2026-09-28-live-receipt.md`](evidence/2026-09-28-live-receipt.md) (R = receipt line);
+**B** = proven in source or unit tests; **C** = not verified.
+
+Live URL: https://tianzige-generator.joyd-ai-2026.workers.dev (workers.dev only; no custom domain).
+Deployed version in the receipt: `7399fdfc-8ac0-4ff5-b25c-8d38d5fe802e`.
 
 ## What shipped
 
-| Piece | Status | Grade |
+| Piece | Evidence | Grade |
 |---|---|---|
-| One-screen phone-first app: paste box, live preview, 4 plain-word options, Print button, Save-as-PDF hint | Live | A |
-| Locked grid: ink model on 米字格, gray stroke build-up, light-gray trace cells, empty cells, wrapping | Live, printed | A |
-| Page fill (leftover space becomes practice rows), words kept together, pages break between characters | Printed PDFs show it | A |
-| Letter and A4 print via `@page` | Both printed by Chromium from the live site: 612x792 pt and 595x842 pt | A |
-| No black lines in the printed PDF (Avery Studio's `check_pdf_ink.py`) | 0 black line paths, Letter and A4 | A |
-| Messy paste parsing (numbering, pinyin, English, punctuation, emoji, duplicates) | 8 real-paste fixtures + 5 edge tests | B |
-| Agent path `POST /api/sheet` returning standalone printable HTML | curl on live, 40 characters -> 10 pages, 200 | A |
-| Stroke proxy `/api/strokes/:char`: manifest allowlist, sha256 check, 64 KB cap, JSON shape check, `nosniff`, cache headers | Live headers checked; reject, hash-mismatch, size-cap and shape paths tested | A (headers, 400/404) / B (hash, cap, shape) |
-| Own copy of the Arphic license at `/licenses/ARPHICPL.TXT`, credits line in app and API sheet | Live 200; sha256 matches the npm tarball | A |
-| Character with no data: plain font glyph + Momo note, never a crash | Live: 㐀 drawn plain, Momo names it | A |
-| Pasted markup cannot become DOM (`<img onerror>` paste) | Live: 0 `<img>` in the preview; `check:xss` clean | A |
+| One-screen phone app: paste box, live preview, 4 options, Print, Save-as-PDF hint | R: app page 200; demo video; stills | A |
+| Tap targets at least 64 px | R: 13 targets measured, smallest 160x64 | A |
+| Print disabled from the first keystroke until the new sheet is drawn; paper CSS swaps with the pages | R: stale print guard True/True | A |
+| Locked grid: ink model on 米字格 with 共N画, gray build-up, light-gray trace, empty cells, wrapping | Stills; render tests | A (look) / B (rules) |
+| 米字格 diagonals dash-dot at 0.55x the cross, paler; default 田字格 | Render tests; stills | B |
+| Words never split across a page break (unless one word is taller than a page) | R: 6 paper x row-width combos, 0 splits of words that fit; 画蛇添足 at 6 a row is taller than a page and starts a fresh page. Unit test sweeps an idiom across every boundary | A |
+| Spare rows go to the characters with the most strokes | Unit test; A4 still (校 gets the extra row) | B |
+| Letter and A4 print, no black lines, no English on the page but the brand | R: 612x792 and 595x842 pt, `check_pdf_ink` 0 black line paths, only Latin words Avery, Studio | A |
+| Messy paste: headings dropped, PDF look-alikes normalized, one duplicate rule, input cut reported | R: `第三课 生字：` + ⼈ + 㐀 gives 3 characters; 11 real-paste fixtures + edge tests | A (that paste) / B (rules) |
+| Agent path `POST /api/sheet` | R: messy paste 200 with X-Sheet headers; 40+ characters 200; text/plain 415; 120 KB body 413 | A |
+| Body cap enforced while streaming, 5,000,001-character body refused | Unit test (413) | B |
+| Stroke proxy: allowlist, pinned upstream, sha256, nosniff, cache headers | R: 大 龍 館 學 sha256 MATCH manifest; 㐀 404; 大人, a, ../ 400 | A |
+| Upstream 64 KB cap while streaming; medians must be finite [x, y] pairs | Unit tests (a chunked 1 MB stream stops near 64 KB; 7 bad median shapes refused) | B |
+| Own copy of the Arphic license | R: 200, sha256 MATCH the repo copy (which matches the npm tarball) | A |
+| No pasted text reaches markup or an attribute | R: 0 `<img>` in the live preview, 0 `<script>`/`onerror` in the API sheet; dom.ts taint tests | A |
+| Traditional characters, never converted | R: 龍 館 學 served and verified | A |
+| Demo video recorded on the live site | `docs/demo/tianzige-generator-demo.mp4` (21 s, 666 KB), `.gif` (7.6 MB, 6 fps); frames checked | A |
 
-Live URL: https://tianzige-generator.joyd-ai-2026.workers.dev (workers.dev only; no custom domain touched).
+Tests: 64 passing (`npm test`), typecheck clean (client + worker), `check:xss` clean.
 
-Tests: 46 passing (`npm test`), `npm run typecheck` clean (client + worker configs), `npm run check:xss` clean.
+## What changed after the review panel (both FIX-FIRST)
 
-## Evidence
-
-| What | Path |
+| Review item | Fix |
 |---|---|
-| Phone view, live | `docs/demo/tianzige-phone.png` |
-| Phone preview of the sheet, live | `docs/demo/tianzige-phone-preview.png` |
-| Printed page 1, Letter, 田字格 (Chromium PDF, rasterized) | `docs/demo/tianzige-print-letter.png` |
-| Printed page 1, A4, 米字格 | `docs/demo/tianzige-print-a4.png` |
-| Capture script (live site, sound stubbed, `?silent=1`) | `scripts/capture-stills.py` |
-
-I opened and looked at all four PNGs. The first capture after moving grid cells into `<defs>/<use>`
-printed every cell SOLID BLACK while all 45 tests were green (ancestor CSS selectors do not reach
-`<use>` clones). Fixed, re-deployed, re-captured, and a test now pins it (proven red on the old CSS).
-
-## Traditional characters
-
-Pasted as-is, never converted. 龍, 館 and 學 all have stroke data and render with build-up
-(live `/api/sheet`, `X-Sheet-Missing` empty): grade A for those three. The manifest has 9,574
-characters (simplified and many traditional); a traditional character outside it gets the plain
-font glyph and the Momo note (grade B from the manifest, 㐀 shown live). 学 and 學 are treated as
-two different characters, which is right for a teacher who pasted one on purpose.
+| Words split across pages | Paginate by word; split only a word taller than a page |
+| No body cap / any content type on `/api/sheet` | 415 unless JSON, 413 over 32 KB (declared or streamed) |
+| Medians check not real; cap after full read | Finite [x, y] pairs per stroke; cap enforced while streaming |
+| Headings became practice characters | Heading rules in `parse.ts`, 5+ real heading lines tested |
+| Stale print | Print disabled on keystroke until the matching render commits |
+| Tap targets 44-55 px | 64 px minimum |
+| STYLE-LOCK | Dash-dot diagonals at 0.55x, 共N画 label, 田字格 default; pinyin out (no source) |
+| PDF look-alikes (⼈) | NFKC before parsing |
+| Demo | Live-recorded mp4 + gif, embedded in both READMEs |
+| Evidence | This regrade plus the receipt script and receipt |
+| Should-fixes | One duplicate rule; hardest-first fill; input cut reported; palette via theme (momo.svg documented exception); render and worker numbers moved to config; setAttribute taint tests |
 
 ## Placeholders
 
-- **Momo is a placeholder**: `public/momo.svg` is a hand-drawn ink drop (two eyes, smile, coral
-  cheeks). No canonical Momo art exists. Swap that one file; nothing else references the art.
-- Grid color is brand mint (`--grid-border` in `theme.css`). Textbooks use red or green; one token
-  to change.
+- **Momo is a placeholder**: `public/momo.svg`, hand-drawn ink drop. Swap that one file.
+- Grid colour is brand mint (`--grid-border`), one token to change.
+- The mp4 needs its GitHub user-attachments URL; both READMEs hold a marked placeholder line.
 
-## Open questions for JJ (WHAT decisions)
+## Open questions for JJ
 
-1. A heading pasted with the list (like 第三课 生字) is Chinese, so it becomes practice characters.
-   Keep that (teacher deletes the heading), or try to detect headings?
-2. Grid line color: brand mint (now) or textbook red?
-3. Demo video: the repo rule says every game ships an mp4+gif. This is a tool; I shipped stills
-   only. Want a recorded video too?
-4. Pinyin: hanzi-writer-data has none, so there is no pinyin toggle. Adding it needs a new pinned
-   pinyin source (and its own safety scan).
+1. Grid line colour: brand mint (now) or textbook red?
+2. 共N画 always uses 画 (simplified). OK, or wait for a script source to write 共八畫 on traditional lists?
 
-## Findings worth a look
+## Not verified
 
-- `hanzi_svg.py` (the Avery Studio print engine) uses a glyph viewBox of y -124..900. After its own
-  flip the ink sits in 0..1024 (田: data y 92..717, flipped 183..808), so its glyphs may sit about
-  10% low in the cell. This port uses 0..1024 and the printed stills show centred glyphs. Grade B;
-  worth checking a printed page of the Chinese writing packs.
-- The browser logs one 404 per character with no stroke data (expected, harmless).
+- Safari / iPad and Firefox printing (C). No WebKit here; the `<use>` CSS rules are ancestor-free,
+  which is the spec-safe form, but only Chromium printing is proven.
+- Rate limiter under load (C).
+- `hanzi_svg.py` may place glyphs about 10% low in the Avery print engine (B, from reading its viewBox).
 
 ## Dependencies
 
-No new npm packages (same devDependencies and lockfile versions as caption-wars). Runtime data:
-`hanzi-writer-data@2.0.1` JSON from jsDelivr, fetched by the Worker, pinned by the committed
-sha256 manifest. Safety scan: round 1 (Claude) WARN and round 2 (Codex) WARN, both with required
-mitigations; all of them are applied (allowlist, pinned upstream, sha256, size cap, shape check,
-nosniff, own license copy). The hanzi-writer script itself is not used.
-
-## Not done / next
-
-- Codex review of this PR (house rule before JJ sees it) has not run in this track.
-- Saved teacher list and paid tier: not built; `SheetSpec` is plain JSON so both stay possible.
+No new npm packages. Runtime data `hanzi-writer-data@2.0.1`, pinned by the committed sha256 manifest;
+both safety-scan rounds WARN, every required mitigation applied.
