@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Karaoke Blanks</title>
+<style>
+/* ---- Shared look (same in all three spikes) ---- */
+:root{
+  --cream:#FFF7E8; --mint:#BFE8D8; --mint-deep:#3FA88A; --coral:#FF7B6B; --ink:#2D3436;
+  --white:#FFFFFF; --mint-shadow:#2C7A64; --coral-shadow:#C95A4C; --error:#B3473A;
+  --coral-soft:#FFE9E5; --selected:#FFF3C8; --muted:#B8B8B8;
+  --zh:"Kaiti SC","STKaiti","KaiTi","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+.big-btn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:76px;margin-top:16px;border:0;border-radius:22px;
+  background:var(--mint-deep);color:var(--white);font:800 28px/1 var(--ui);cursor:pointer;box-shadow:0 6px 0 var(--mint-shadow)}
+.big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 var(--mint-shadow)}
+.big-btn.coral{background:var(--coral);box-shadow:0 6px 0 var(--coral-shadow)}
+.big-btn:disabled{opacity:.5}
+@media (max-height:520px){.big-btn{min-height:64px;margin-top:8px}}
+.ic{width:36px;height:36px;flex:none;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:var(--error)}
+.link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
+textarea{width:100%;font:22px/1.5 var(--zh);padding:14px;border-radius:18px;border:3px solid var(--mint);background:var(--white);color:var(--ink)}
+textarea:focus{outline:none;border-color:var(--mint-deep)}
+/* Momo: identical SVG in every file; each mode picks which mouth shows */
+.mo-ink{fill:var(--ink)} .mo-eye{fill:var(--white)} .mo-shine{fill:var(--white);opacity:.18} .mo-cheek{fill:var(--coral);opacity:.75}
+.mo-line{stroke:var(--white);stroke-width:4;fill:none;stroke-linecap:round}
+.momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%}
+.momo .m-o,.momo .m-wavy{opacity:0}
+/* ---- Karaoke Blanks ---- */
+html,body{margin:0;height:100%}
+body{background:var(--cream);color:var(--ink);font-family:var(--ui);-webkit-tap-highlight-color:transparent;display:flex;justify-content:center;min-height:100dvh;overflow-x:hidden}
+main{width:100%;max-width:560px;padding:16px 16px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
+h1{font-size:28px;margin:8px 0 4px;text-align:center}
+h2{font-size:20px;margin:18px 0 8px}
+.sub{text-align:center;margin:0 0 14px;font-size:18px;opacity:.8}
+.screen{display:none;flex-direction:column;flex:1}
+.screen.on{display:flex}
+textarea{min-height:170px}
+.seg{display:flex;gap:8px}
+.seg button{flex:1;min-height:64px;border-radius:18px;border:3px solid var(--mint);background:var(--white);color:var(--ink);font:700 22px var(--ui);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--mint-deep);border-color:var(--mint-deep);color:var(--white)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:64px;min-width:64px;max-width:100%;padding:6px 14px;border-radius:16px;border:3px solid var(--mint);background:var(--white);color:var(--ink);font:700 30px var(--zh);cursor:pointer;overflow-wrap:anywhere}
+.chip.blank{border-style:dashed;border-color:var(--coral);background:var(--coral-soft);color:var(--error)}
+.hint{font-size:16px;opacity:.7;margin:6px 0 0}
+/* Play screen */
+.strip-wrap{overflow:hidden;margin:6px -16px 0;padding:10px 0;background:var(--mint)}
+.strip{position:relative;display:flex;gap:18px;white-space:nowrap;padding:0 50%;transition:transform .5s ease}
+.strip span{font:700 var(--strip-font,34px) var(--zh);opacity:.45}
+.strip span.now{opacity:1;color:var(--mint-deep)}
+.strip span.gap{color:var(--coral)}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;width:100%}
+.kword{font:700 170px/1.15 var(--zh);letter-spacing:.04em;text-align:center;max-width:100%;word-break:break-all;line-break:anywhere;text-wrap:balance}
+.kword span{color:var(--ink)}
+/* Sweep runs character by character, so a word that wraps onto two lines still lights up in reading order */
+.kword.sing span{background:linear-gradient(90deg,var(--coral) 0 50%,var(--ink) 50% 100%) 100% 0/200% 100% no-repeat;
+  -webkit-background-clip:text;background-clip:text;color:transparent;animation:sweep var(--char-ms) linear var(--d) forwards}
+@keyframes sweep{to{background-position:0 0}}
+.kword.enter{animation:rise .3s ease-out}
+@keyframes rise{from{transform:translateY(30px);opacity:0}}
+.gapbox{display:none;min-width:min(60vw,300px);height:var(--gap-h,min(36vw,190px));border:6px dashed var(--coral);border-radius:28px;align-items:center;justify-content:center;
+  font:900 calc(var(--gap-h,min(36vw,190px)) * .72) var(--ui);color:var(--coral);animation:throb .8s ease-in-out infinite alternate}
+@keyframes throb{to{transform:scale(1.06)}}
+.shout{display:none;align-items:center;gap:10px;font:800 var(--shout-font,30px)/1.2 var(--ui);text-align:center;margin-top:10px}
+.stage.is-gap .kword{display:none}.stage.is-gap .gapbox{display:flex}.stage.is-gap .shout{display:flex}
+.reveal .kword{animation:popin .45s cubic-bezier(.3,1.8,.5,1)}
+.reveal .kword span{color:var(--mint-deep)}
+@keyframes popin{from{transform:scale(.3)}}
+.momo-row{position:relative;display:flex;align-items:flex-end;justify-content:center;height:var(--momo-row,130px)}
+.momo-wrap{width:calc(var(--momo-row,130px) * .85);height:calc(var(--momo-row,130px) * .92);position:relative}
+.momo{animation:sway 1.4s ease-in-out infinite alternate}
+.momo-wrap.cheer .momo{animation:jump .6s cubic-bezier(.3,1.8,.5,1) 3}
+.momo-wrap.shouting .m-happy{opacity:0}.momo-wrap.shouting .m-o{opacity:1}
+/* Cheer sits beside Momo, inside Momo's row, so it never covers the word that was just revealed */
+.cheer-bubble{background:var(--white);border:4px solid var(--ink);border-radius:22px;padding:6px 12px;font:800 clamp(16px,calc(var(--momo-row,130px) * .2),26px) var(--zh);
+  opacity:0;transform:scale(.5);transition:all .25s cubic-bezier(.3,1.6,.5,1);position:absolute;left:calc(50% + var(--momo-row,130px) * .3);
+  bottom:calc(var(--momo-row,130px) * .45);white-space:nowrap;transform-origin:0 100%}
+.cheer-bubble.show{opacity:1;transform:scale(1)}
+@keyframes sway{from{transform:rotate(-6deg)}to{transform:rotate(6deg)}}
+@keyframes jump{40%{transform:translateY(-40px) scale(.94,1.08)}70%{transform:translateY(0) scale(1.1,.9)}}
+.done-title{font:800 34px/1.2 var(--ui);text-align:center;margin:40px 0 10px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.kword.sing span{color:var(--ink);background:none}}
+</style>
+</head>
+<body>
+<main>
+  <section class="screen on" id="s-setup">
+    <h1>Karaoke Blanks</h1>
+    <p class="sub">Read along. When a word goes missing, everybody shouts it!</p>
+    <textarea id="paste" placeholder="Paste your word list here.&#10;Numbers, pinyin and English are fine. Only the Chinese is kept."></textarea>
+    <p class="note" id="paste-note"></p>
+    <div id="more" hidden>
+      <h2>Which words go missing?</h2>
+      <div class="chips" id="chips"></div>
+      <p class="hint">Tap a word to make it a blank. Tap again to bring it back.</p>
+      <h2>How fast?</h2>
+      <div class="seg" id="speed">
+        <button data-speed="slow">Slow</button>
+        <button data-speed="normal">Normal</button>
+        <button data-speed="fast">Fast</button>
+      </div>
+    </div>
+    <button class="big-btn" id="go"></button>
+  </section>
+
+  <section class="screen" id="s-play">
+    <button class="link" id="stop" style="align-self:flex-start">Stop</button>
+    <div class="strip-wrap"><div class="strip" id="strip"></div></div>
+    <div class="stage" id="stage">
+      <div class="kword" id="kword"></div>
+      <div class="gapbox">?</div>
+      <div class="shout"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" id="shout-ic"></svg>Everybody, shout it!</div>
+    </div>
+    <div class="momo-row">
+      <div class="momo-wrap" id="momo">
+<!-- MOMO SVG (placeholder art, identical in all three spikes; CSS picks the mouth) -->
+<svg class="momo" viewBox="0 0 120 130" role="img" aria-label="Momo, a little ink drop">
+  <path class="mo-ink" d="M60 4 C70 26 108 50 108 84 A48 44 0 0 1 12 84 C12 50 50 26 60 4 Z"/>
+  <ellipse class="mo-shine" cx="40" cy="62" rx="6" ry="9"/>
+  <ellipse class="mo-eye" cx="44" cy="82" rx="9" ry="11"/><ellipse class="mo-eye" cx="76" cy="82" rx="9" ry="11"/>
+  <circle class="mo-ink" cx="46" cy="84" r="5"/><circle class="mo-ink" cx="78" cy="84" r="5"/>
+  <ellipse class="mo-cheek" cx="32" cy="100" rx="7" ry="4"/><ellipse class="mo-cheek" cx="88" cy="100" rx="7" ry="4"/>
+  <path class="m-happy mo-line" d="M50 102 Q60 112 70 102"/>
+  <ellipse class="m-o mo-eye" cx="60" cy="106" rx="5" ry="6"/>
+  <path class="m-wavy mo-line" d="M48 106 Q53 100 58 106 T68 106 T74 104"/>
+</svg>
+      </div>
+      <div class="cheer-bubble" id="cheer"></div>
+    </div>
+    <button class="big-btn coral" id="reveal" style="visibility:hidden" data-icon="eye">Show the word</button>
+  </section>
+
+  <section class="screen" id="s-done">
+    <div class="done-title">That's the song!</div>
+    <p class="sub" id="done-sub"></p>
+    <button class="big-btn" id="again" data-icon="again">Sing again</button>
+    <button class="link" id="new-list" style="margin:10px auto 0">New list</button>
+  </section>
+</main>
+<script>
+// Tunable settings. Change here, never inside the game logic.
+var CONFIG = {
+  speeds: { slow: 2400, normal: 1600, fast: 1000 },   // ms each word stays on screen
+  defaultSpeed: "normal",
+  defaultBlankEvery: 3,                                // on paste, every Nth word starts as a blank
+  blankGlyph: "＿＿",                                  // how a blank looks in the lyric strip
+  cheers: ["好棒！", "对了！", "太棒了！", "Yes!"],
+  afterRevealMs: 1400,                                 // pause after a reveal before the song continues
+  minWords: 3,
+  maxWords: 30,                                        // longer lists: only the first maxWords are used
+  maxCharsPerLine: 6, wordMaxPx: 170,
+  momoRowPx: 130, stripFontPx: 34, gapBoxMaxPx: 190, shoutFontPx: 30,
+  minWordBoxPx: 90,               // on short screens (phone turned sideways) Momo, then the lyric strip, shrink until the word has this much height
+  minMomoRowPx: 64, minStripFontPx: 20,
+  storageKey: "momo-spike-list"
+};
+// ---- Shared helpers: MUST stay identical in all three spikes (check.py compares them) ----
+var HAN = /[〇㐀-鿿豈-﫿\u{20000}-\u{3134f}]+/u;
+var TOKEN = /[〇㐀-鿿豈-﫿\u{20000}-\u{3134f}]+|(?:[A-Za-zÀ-ɏ]+[1-5]?)+/gu;
+var TONE = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+var NUM_PINYIN = /^(?:[bcdfghjklmnpqrstwxyz]{0,2}[aeiouvü]+(?:ng|n|r)?[1-5])+$/i;
+function isPinyin(t){ return TONE.test(t) || NUM_PINYIN.test(t); }
+function parseList(text){
+  var out = [], byWord = {};
+  String(text).normalize("NFC").split(/\r?\n/).forEach(function(line){
+    line = line.replace(/^\s*[\(（\[]?\s*[0-9０-９]+\s*[\.\)、．:：）\]-]?\s*/, "");
+    // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
+    // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
+    // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
+    // (Other text before the first word or pinyin, like "a)" or "Lesson 3:", is ignored for this.)
+    var toks = (line.match(TOKEN) || []).filter(function(t){ return HAN.test(t) || isPinyin(t); });
+    var before = toks.length > 0 && !HAN.test(toks[0]);
+    var items = [], pending = [];
+    toks.forEach(function(t){
+      if (HAN.test(t)){ items.push({ zh: t, py: pending }); pending = []; }
+      else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
+    });
+    if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
+    var last = items[items.length - 1], tail = last ? last.py.slice() : [];
+    if (items.length > 1 && tail.length === items.length &&
+        items.slice(0, -1).every(function(w){ return !w.py.length; })){                   // "苹果 香蕉 píngguǒ xiāngjiāo"
+      items.forEach(function(w, i){ w.py = [tail[i]]; });
+    }
+    items.forEach(function(w){
+      var py = w.py.join(" ");
+      if (byWord[w.zh]){ if (!byWord[w.zh].py && py) byWord[w.zh].py = py; return; }
+      byWord[w.zh] = { zh: w.zh, py: py }; out.push(byWord[w.zh]);
+    });
+  });
+  return out;
+}
+function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
+function charCount(s){ return Array.from(s).length; }
+// Biggest font size that fits a word inside a box by BOTH width and height. Tries every line count
+// (at most maxPerLine characters a line) and caps the element width so the lines come out even.
+// Words of up to ONE_LINE_UP_TO characters never wrap. Returns null when the box has no room at all:
+// callers shrink their other parts first (see layout()) and only then fall back to the smallest size.
+// The element also needs CSS text-wrap:balance so a word split over lines comes out even (3/2/2, not 3/3/1).
+var ONE_LINE_UP_TO = 3, SMALLEST_PX = 14;
+function fitWord(text, boxW, boxH, maxPx, maxPerLine){
+  if (!(boxW > 0) || !(boxH > 0)) return null;
+  var n = Math.max(1, charCount(text)), cap = Math.max(1, Math.floor(maxPerLine) || 1), opts = [], top = 0;
+  var fromLines = n <= ONE_LINE_UP_TO ? 1 : Math.ceil(n / cap), toLines = n <= ONE_LINE_UP_TO ? 1 : n;
+  for (var lines = fromLines; lines <= toLines; lines++){
+    var per = Math.ceil(n / lines), rows = Math.ceil(n / per);
+    var px = Math.floor(Math.min(maxPx, boxW / (per * 1.12), boxH / (rows * 1.2)));
+    opts.push({ px: Math.max(SMALLEST_PX, px), per: per }); top = Math.max(top, px);
+  }
+  // Fewest lines that are nearly as big as the best: a short word stays on one line instead of stacking.
+  for (var i = 0; i < opts.length; i++) if (opts[i].px >= top * 0.8) return opts[i];
+  return opts[0];
+}
+function applyFit(el, text, boxW, boxH, maxPx, maxPerLine){
+  var f = fitWord(text, boxW, boxH, maxPx, maxPerLine);
+  el.style.fontSize = (f ? f.px : SMALLEST_PX) + "px";
+  el.style.maxWidth = f ? Math.ceil(f.px * f.per * 1.1) + "px" : "";   // wraps after f.per characters
+  el.style.marginLeft = el.style.marginRight = "auto";
+  return !!f;
+}
+// Run fn after the screen is resized or rotated (once, after the last event settles).
+function onResize(fn){
+  var t = null, later = function(){ clearTimeout(t); t = setTimeout(fn, 120); };
+  window.addEventListener("resize", later); window.addEventListener("orientationchange", later);
+}
+var ICON = {
+  play:    '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
+  ear:     '<path d="M7 10a5 5 0 1 1 10 0c0 3.5-3.5 4.5-3.5 7.5a3 3 0 0 1-5.5 1.6"/><path d="M10 10a2 2 0 1 1 4 0"/>',
+  mouth:   '<path d="M3 11c3-3 6-3 9-1 3-2 6-2 9 1-2 5.5-5 7.5-9 7.5S5 16.5 3 11z"/><path d="M3 11c5 2.5 13 2.5 18 0"/>',
+  arrow:   '<path d="M4 12h15M13 6l6 6-6 6"/>',
+  star:    '<path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5l-5.5 2.9 1-6.3L3 9.7l6.2-.9z"/>',
+  eye:     '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  again:   '<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/>',
+  shuffle: '<path d="M3 7h4l10 10h4M3 17h4l3-3M14 10l3-3h4M18 4l3 3-3 3M18 14l3 3-3 3"/>',
+  print:   '<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2"/><path d="M7 14h10v7H7z"/>'
+};
+function setBtn(b, icon, label){
+  b.innerHTML = (ICON[icon] ? '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">' + ICON[icon] + "</svg>" : "") + "<span>" + esc(label) + "</span>";
+}
+document.querySelectorAll("[data-icon]").forEach(function(b){ setBtn(b, b.dataset.icon, b.textContent.trim()); });
+// ---- end shared helpers ----
+// ---- Game ----
+var $ = function(id){ return document.getElementById(id); };
+var words = [], blanks = {}, speed = CONFIG.defaultSpeed, idx = 0, timer = null, playing = false, revealing = false;
+$("shout-ic").innerHTML = ICON.mouth;
+function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
+function later(fn, ms){ clearTimeout(timer); timer = setTimeout(fn, ms); }   // only ever one pending timer
+function setSpeed(s){ speed = s; document.querySelectorAll("#speed button").forEach(function(x){ x.setAttribute("aria-pressed", x.dataset.speed === s); }); }
+function renderChips(){
+  $("chips").innerHTML = words.map(function(w, i){
+    return '<button class="chip' + (blanks[i] ? " blank" : "") + '" data-i="' + i + '">' + esc(w.zh) + "</button>";
+  }).join("");
+}
+function resetSetup(){   // back to a clean paste step: no old chips, blanks or words left behind
+  playing = false; revealing = false; clearTimeout(timer);
+  words = []; blanks = {}; $("chips").innerHTML = ""; $("more").hidden = true; $("paste-note").textContent = "";
+  setSpeed(CONFIG.defaultSpeed); setBtn($("go"), "arrow", "Next");
+}
+$("chips").onclick = function(e){ var b = e.target.closest(".chip"); if (!b) return; var i = +b.dataset.i; blanks[i] = !blanks[i]; renderChips(); };
+$("speed").onclick = function(e){ var b = e.target.closest("button"); if (b) setSpeed(b.dataset.speed); };
+$("paste").oninput = function(){ if (!$("more").hidden || $("paste-note").textContent) resetSetup(); };
+
+$("go").onclick = function(){
+  if ($("more").hidden){   // step 1: read the paste
+    var list = parseList($("paste").value);
+    if (!list.length){ $("paste-note").textContent = "No Chinese words found. Paste a list with Chinese in it."; return; }
+    if (list.length < CONFIG.minWords){ $("paste-note").textContent = "Add at least " + plural(CONFIG.minWords, "word", "words") + " for a song."; return; }
+    $("paste-note").textContent = list.length > CONFIG.maxWords ? "That is a long list. The song uses the first " + CONFIG.maxWords + " words." : "";
+    words = list.slice(0, CONFIG.maxWords); store(CONFIG.storageKey, $("paste").value);
+    blanks = {}; words.forEach(function(_, i){ if ((i + 1) % CONFIG.defaultBlankEvery === 0) blanks[i] = true; });
+    renderChips(); $("more").hidden = false; setBtn($("go"), "play", "Play"); return;
+  }
+  start();                 // step 2: play
+};
+
+function start(){
+  $("strip").innerHTML = words.map(function(w, i){ return '<span class="' + (blanks[i] ? "gap" : "") + '">' + esc(blanks[i] ? CONFIG.blankGlyph : w.zh) + "</span>"; }).join("");
+  idx = 0; playing = true; revealing = false; show("s-play"); step();
+}
+function moveStrip(){
+  var spans = $("strip").children;
+  for (var i = 0; i < spans.length; i++) spans[i].classList.toggle("now", i === idx);
+  var el = spans[idx]; if (!el) return;
+  $("strip").style.transform = "translateX(" + ($("strip").parentNode.offsetWidth / 2 - (el.offsetLeft + el.offsetWidth / 2)) + "px)";
+}
+// Height left for the sung word: the screen minus the lyric strip above and Momo, the button and padding below.
+function wordHeight(){
+  var main = getComputedStyle(document.querySelector("main")), btn = getComputedStyle($("reveal"));
+  var below = document.querySelector(".momo-row").offsetHeight + $("reveal").offsetHeight + parseFloat(btn.marginTop) + parseFloat(main.paddingBottom) + 12;
+  return window.innerHeight - $("stage").getBoundingClientRect().top - below;
+}
+// Fit everything on one screen. On a short screen Momo shrinks first, then the lyric strip; then the word and blank box fill what is left.
+function layout(){
+  var root = document.documentElement.style, row = CONFIG.momoRowPx, strip = CONFIG.stripFontPx;
+  root.setProperty("--momo-row", row + "px"); root.setProperty("--strip-font", strip + "px");
+  var need = CONFIG.minWordBoxPx - wordHeight();
+  if (need > 0){ var cut = Math.min(need, row - CONFIG.minMomoRowPx); row -= cut; need -= cut; root.setProperty("--momo-row", row + "px"); }
+  if (need > 0){ strip = Math.max(CONFIG.minStripFontPx, strip - need); root.setProperty("--strip-font", strip + "px"); }
+  var h = wordHeight(), shout = Math.max(16, Math.min(CONFIG.shoutFontPx, Math.round(h * 0.16)));
+  root.setProperty("--shout-font", shout + "px");
+  var shoutH = $("stage").querySelector(".shout").offsetHeight || Math.ceil(shout * 1.2 * 2);   // the shout line can wrap on a narrow phone
+  root.setProperty("--gap-h", Math.max(28, Math.min(CONFIG.gapBoxMaxPx, window.innerWidth * 0.36, h - shoutH - 18)) + "px");
+  if (words[idx] && playing) applyFit($("kword"), words[idx].zh, $("stage").clientWidth, h, CONFIG.wordMaxPx, CONFIG.maxCharsPerLine);
+  if (playing) moveStrip();
+}
+function step(){
+  clearTimeout(timer);
+  if (!playing) return;
+  if (idx >= words.length){
+    playing = false;
+    var shouted = Object.keys(blanks).filter(function(k){ return blanks[k]; }).length;
+    $("done-sub").textContent = plural(words.length, "word", "words") + ", " + shouted + " shouted by the class.";
+    show("s-done"); return;
+  }
+  var w = words[idx], k = $("kword"), stage = $("stage"), ms = CONFIG.speeds[speed], chars = Array.from(w.zh);
+  moveStrip(); stage.classList.remove("reveal"); $("cheer").classList.remove("show"); $("momo").classList.remove("cheer", "shouting");
+  k.innerHTML = chars.map(function(c, i){ return '<span style="--d:' + Math.round(i * ms / chars.length) + 'ms">' + esc(c) + "</span>"; }).join("");
+  k.style.setProperty("--char-ms", Math.round(ms / chars.length) + "ms");
+  layout();
+  k.classList.remove("sing", "enter"); void k.offsetWidth;
+  if (blanks[idx]){
+    stage.classList.add("is-gap"); $("momo").classList.add("shouting");
+    $("reveal").disabled = false; $("reveal").style.visibility = "visible"; return;
+  }
+  stage.classList.remove("is-gap"); k.classList.add("sing", "enter");
+  later(function(){ idx++; step(); }, ms);
+}
+$("reveal").onclick = function(){
+  if (!playing || revealing || !blanks[idx]) return;   // one reveal per blank, even if the tap or key fires twice
+  revealing = true; $("reveal").disabled = true; $("reveal").style.visibility = "hidden";
+  var stage = $("stage"); stage.classList.remove("is-gap"); stage.classList.add("reveal");
+  $("momo").classList.remove("shouting"); void $("momo").offsetWidth; $("momo").classList.add("cheer");
+  $("cheer").textContent = CONFIG.cheers[idx % CONFIG.cheers.length]; $("cheer").classList.add("show");
+  $("strip").children[idx].textContent = words[idx].zh;
+  later(function(){ revealing = false; idx++; step(); }, CONFIG.afterRevealMs);
+};
+$("stop").onclick = function(){ playing = false; revealing = false; clearTimeout(timer); $("reveal").style.visibility = "hidden"; show("s-setup"); };
+$("again").onclick = start;
+$("new-list").onclick = function(){ resetSetup(); show("s-setup"); };
+onResize(layout);   // rotation or window resize refits the word, the blank box, Momo and the strip
+resetSetup();
+var saved = store(CONFIG.storageKey); if (saved) $("paste").value = saved;
+</script>
+</body>
+</html>
