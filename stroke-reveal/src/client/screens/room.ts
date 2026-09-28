@@ -72,6 +72,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         game?.destroy();
         game = s.role === 'teacher' ? new TeacherGame(ctx) : new KidGame(ctx);
         root.replaceChildren(game.el);
+        window.scrollTo(0, 0);
       }
       game.update();
       lastKey = key;
@@ -294,7 +295,8 @@ class TeacherGame implements Game {
     if (key !== this.qKey && q.char) {
       this.qKey = key;
       this.pad?.destroy();
-      const size = Math.max(200, Math.min(window.innerHeight - 330, 480));
+      const header = document.querySelector('.avery-header')?.getBoundingClientRect().height ?? 0;
+      const size = Math.max(200, Math.min(window.innerHeight - 300 - header, 480));
       this.pad = startDrawing(q.char, size, (msg) => (this.note.textContent = msg));
       this.padBox.replaceChildren(this.pad.root);
       this.note.textContent = '';
