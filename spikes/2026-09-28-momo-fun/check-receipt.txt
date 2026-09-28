@@ -1,5 +1,5 @@
-Momo spikes check receipt  2026-09-28T11:44:29
-Chromium headless via Python Playwright, viewports phone 390x844 and laptop 1280x800, sound stubbed
+Momo spikes check receipt  2026-09-28T11:47:39
+Chromium headless via Python Playwright; viewports 320x568, 390x844, 844x390 (rotated mid-round), 1280x720, 1280x800, 1366x768; sound stubbed
 93 PASS, 0 FAIL
 
 PASS  identical in all 3 files: shared JS (parser, helpers, icons)

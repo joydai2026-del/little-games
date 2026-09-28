@@ -289,7 +289,7 @@ check("no page or console errors", not errors, "; ".join(errors[:5]))
 check("no requests outside the local files", not external, "; ".join(external[:5]))
 n_fail = sum(1 for r in results if r[0] == "FAIL")
 lines = [f"Momo spikes check receipt  {datetime.datetime.now().isoformat(timespec='seconds')}",
-         f"Chromium headless via Python Playwright, viewports phone 390x844 and laptop 1280x800, sound stubbed",
+         "Chromium headless via Python Playwright; viewports 320x568, 390x844, 844x390 (rotated mid-round), 1280x720, 1280x800, 1366x768; sound stubbed",
          f"{len(results) - n_fail} PASS, {n_fail} FAIL", ""]
 lines += [f"{s}  {n}" + (f"   [{d}]" if d and s == "FAIL" else "") for s, n, d in results]
 (HERE / "check-receipt.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
