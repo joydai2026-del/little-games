@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Terminal player for Dictation Dash. Joins a live room over the same HTTP API
-// the phones use, "hears" each word (downloads the clip, never plays it) and
-// writes it stroke by stroke at a human-ish pace, with a few honest mistakes.
+// the phones use, hears each word (downloads the clip, never plays it) and
+// writes it stroke by stroke, sending real points (the stroke medians from the
+// site's proxy) at a human-ish pace, with a few honest backwards strokes.
 //
 //   node agent/play.mjs --url https://dictation-dash.joyd-ai-2026.workers.dev --room ABCD --name "Robo"
 //   DICTATION_DASH_URL=... node agent/play.mjs --room ABCD --pace-ms 900 --mistakes 0.15
@@ -12,7 +13,8 @@
 //   --name       display name (default "Robo")
 //   --pace-ms    wait between strokes (default 700)
 //   --mistakes   chance a stroke attempt is a miss, 0..0.9 (default 0.1)
-//   --no-listen  do not download the word clips
+//   --words      the list this agent studied, e.g. "朋友 学校 大山" (it never sees the word;
+//                without a list it cannot know what to write and skips)
 //   --rounds     how many rounds to play in this room (default 1)
 //   --seed       make the mistakes repeatable
 import { createClient, playRound, seededRandom } from './lib.mjs';
@@ -30,7 +32,7 @@ const opts = args(process.argv.slice(2));
 const url = opts.url || process.env.DICTATION_DASH_URL;
 const room = String(opts.room || '').toUpperCase();
 if (!url || !/^[A-Z0-9]{4}$/.test(room)) {
-  console.error('usage: node agent/play.mjs --url <site> --room <CODE> [--name Robo] [--pace-ms 700] [--mistakes 0.1] [--no-listen] [--rounds 1] [--seed 7]');
+  console.error('usage: node agent/play.mjs --url <site> --room <CODE> [--name Robo] [--pace-ms 700] [--mistakes 0.1] [--words "朋友 学校"] [--rounds 1] [--seed 7]');
   process.exit(2);
 }
 const pace = Number(opts['pace-ms'] ?? 700);
@@ -45,7 +47,7 @@ const common = {
   name: opts.name || 'Robo',
   paceMs: Number.isFinite(pace) && pace >= 0 ? pace : 700,
   mistakeRate: Number.isFinite(mistakes) ? mistakes : 0.1,
-  listen: opts['no-listen'] !== 'true',
+  words: String(opts.words ?? '').split(/[\s,，、]+/).filter(Boolean),
   random,
   log: (line) => console.log(line),
 };

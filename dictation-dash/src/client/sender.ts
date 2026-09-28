@@ -10,7 +10,7 @@
 //     a full state read has reconciled the pad with the room.
 
 export type SendMsg =
-  | { kind: 'stroke'; race: number; seq: number; wordIndex: number; charIndex: number; strokeIndex: number; result: 'correct' | 'mistake' }
+  | { kind: 'stroke'; race: number; seq: number; wordIndex: number; charIndex: number; points: number[][] }
   | { kind: 'skip'; race: number; seq: number; wordIndex: number };
 
 export interface SenderDeps<T> {

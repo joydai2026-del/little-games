@@ -12,9 +12,16 @@
     "not_found_handling": "single-page-application"
   },
   "durable_objects": {
-    "bindings": [{ "name": "ROOMS", "class_name": "RoomDO" }]
+    "bindings": [
+      { "name": "ROOMS", "class_name": "RoomDO" },
+      // One global counter of paid speech calls per UTC day.
+      { "name": "BUDGET", "class_name": "BudgetDO" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["BudgetDO"] }
+  ],
   // Workers AI: the Chinese speech for each word (paid per call, so cached).
   "ai": { "binding": "AI" },
   "observability": { "enabled": true },
@@ -38,6 +45,10 @@
     "TTS_LANG": "zh",
     "TTS_MAX_ATTEMPTS": "3",
     "TTS_CACHE_SECONDS": "86400",
-    "TTS_MAX_BYTES": "1048576"
+    "TTS_MAX_BYTES": "1048576",
+    // Paid speech calls (every model attempt, retries included) per UTC day.
+    // Reaching either one switches speech off (fail closed) until tomorrow.
+    "TTS_ROOM_DAILY_CALLS": "150",
+    "TTS_GLOBAL_DAILY_CALLS": "3000"
   }
 }

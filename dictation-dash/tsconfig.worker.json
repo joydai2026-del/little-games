@@ -13,5 +13,5 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src/worker/**/*.ts", "src/shared/**/*.ts", "tests/room-do.test.ts", "tests/agent-flow.test.ts", "tests/harness.ts", "tests/strokes.test.ts", "tests/tts.test.ts", "tests/raw.d.ts"]
+  "include": ["src/worker/**/*.ts", "src/shared/**/*.ts", "tests/room-do.test.ts", "tests/agent-flow.test.ts", "tests/harness.ts", "tests/strokes.test.ts", "tests/tts.test.ts", "tests/geom.ts", "tests/raw.d.ts"]
 }

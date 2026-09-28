@@ -20,7 +20,7 @@ import manifestJson from './strokes-manifest.json';
 import countsJson from './stroke-counts.json';
 import { parseWordList } from '../shared/parse';
 import { GAME } from '../shared/config';
-import type { WordList } from '../shared/types';
+import type { CharGeom, WordList } from '../shared/types';
 import { numberVar, type Env } from './env';
 
 export const STROKE_DATA_VERSION = '2.0.1';
@@ -54,6 +54,7 @@ export function resolveWords(text: string): WordList {
     words,
     missing,
     tooLong: parsed.tooLong,
+    skipped: parsed.skipped,
     strokeCounts,
     repeats: parsed.repeats,
     overflow: writable.slice(GAME.maxListWords),
@@ -130,6 +131,26 @@ async function readCapped(res: Response, maxBytes: number): Promise<ArrayBuffer>
     at += c.byteLength;
   }
   return out.buffer;
+}
+
+/**
+ * The verified stroke data for one character, for the room to grade drawn
+ * strokes with: the same pinned upstream, size cap, manifest hash and shape
+ * check as the proxy (the same function as Missing Stroke). Throws when it
+ * cannot be had.
+ */
+export async function loadGeometry(ch: string, env: Env, fetchImpl: typeof fetch = fetch): Promise<CharGeom> {
+  if (!hasStrokeData(ch)) throw new Error(`no stroke data for ${ch}`);
+  const timeoutMs = numberVar(env.STROKE_FETCH_TIMEOUT_MS, 6000, 500, 30_000);
+  const maxBytes = numberVar(env.STROKE_MAX_BYTES, 65_536, 1024, 1_048_576);
+  const upstream = await fetchImpl(`${UPSTREAM}${encodeURIComponent(ch)}.json`, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!upstream.ok) throw new Error('stroke data is not reachable right now');
+  const body = await readCapped(upstream, maxBytes);
+  if ((await sha256Hex(body)) !== HASHES[ch]) throw new Error('stroke data did not match what we expected');
+  const parsed = JSON.parse(new TextDecoder().decode(body)) as unknown;
+  if (!isStrokeJson(parsed)) throw new Error('stroke data did not match what we expected');
+  const { strokes, medians } = parsed as CharGeom;
+  return { strokes, medians };
 }
 
 export interface StrokeDeps {

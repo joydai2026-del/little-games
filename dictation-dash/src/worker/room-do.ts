@@ -13,6 +13,8 @@ import {
   advanceIfDue,
   createRoom,
   join,
+  markHeard,
+  nextRoundChars,
   nextAlarmAt,
   parseSkipInput,
   parseStrokeInput,
@@ -26,15 +28,19 @@ import {
   wordToSay,
   type Result,
 } from '../shared/dash';
-import type { Mode, RoomState } from '../shared/types';
+import type { CharGeom, Mode, RoomState } from '../shared/types';
 import type { Env } from './env';
-import { resolveWords } from './strokes';
+import { loadGeometry, resolveWords } from './strokes';
 import { speakWord } from './tts';
-import { ttsConfig } from './env';
+import { budgetConfig, ttsConfig, utcDay } from './env';
 
 const KEY_STATE = 'state';
 /** Word clips live in the room's own storage: the Cache API does nothing on workers.dev. */
 const CLIP_PREFIX = 'clip:';
+/** Verified stroke data for the characters of the list's rounds (server-only). */
+const KEY_GEOM = 'geom';
+/** This room's paid speech calls today. */
+const KEY_TTS = 'ttsDay';
 const KEY_SECRETS = 'secrets';
 const ROOM_GONE = 'that room is not around any more';
 const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
@@ -59,6 +65,7 @@ export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
+  private geom: Record<string, CharGeom> = {};
   /** One synthesis per word at a time: 30 kids hearing a new word make ONE model call. */
   private readonly speaking = new Map<string, Promise<Response>>();
 
@@ -67,12 +74,14 @@ export class RoomDO implements DurableObject {
     private readonly env: Env
   ) {
     this.ctx.blockConcurrencyWhile(async () => {
-      const [room, secrets] = await Promise.all([
+      const [room, secrets, geom] = await Promise.all([
         this.ctx.storage.get<RoomState>(KEY_STATE),
         this.ctx.storage.get<Record<string, string>>(KEY_SECRETS),
+        this.ctx.storage.get<Record<string, CharGeom>>(KEY_GEOM),
       ]);
       this.room = room ?? null;
       this.secrets = secrets ?? {};
+      this.geom = geom ?? {};
     });
   }
 
@@ -89,6 +98,23 @@ export class RoomDO implements DurableObject {
     await this.ctx.storage.deleteAll();
     this.room = null;
     this.secrets = {};
+    this.geom = {};
+  }
+
+  /** Makes sure the room holds verified stroke data for every character it needs. Returns an error message or null. */
+  private async loadGeometryFor(chars: string[]): Promise<string | null> {
+    const need = chars.filter((c) => !this.geom[c]);
+    if (!need.length) return null;
+    try {
+      const loaded = await Promise.all(need.map((c) => loadGeometry(c, this.env)));
+      const next = { ...this.geom };
+      need.forEach((c, i) => (next[c] = loaded[i]));
+      this.geom = next;
+      await this.ctx.storage.put(KEY_GEOM, this.geom);
+      return null;
+    } catch {
+      return 'the stroke data for these words did not load, please try again';
+    }
   }
 
   private async settle(now: number): Promise<void> {
@@ -120,7 +146,7 @@ export class RoomDO implements DurableObject {
 
   private envelope(viewerId: string, extra: Record<string, unknown> = {}): Response {
     const now = Date.now();
-    return json({ state: publicView(this.room!, viewerId, now), serverTime: now, ...extra });
+    return json({ state: publicView(this.room!, viewerId, now, this.geom), serverTime: now, ...extra });
   }
 
   /** Applies a reducer result: an error becomes JSON, a change is saved. */
@@ -130,7 +156,7 @@ export class RoomDO implements DurableObject {
       this.room = result.state;
       await this.save();
     }
-    return this.envelope(viewerId);
+    return this.envelope(viewerId, result.verdict ? { verdict: result.verdict } : result.duplicate ? { duplicate: true } : {});
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -180,23 +206,44 @@ export class RoomDO implements DurableObject {
       }
       case 'say': {
         // Which word to speak. Only a player of the running round, only a word
-        // they have reached: nobody can listen ahead, and nothing outside a
-        // real round is ever sent to the speech model.
+        // they have reached, only with the round named: nobody can listen
+        // ahead, and nothing outside a real round is sent to the speech model.
+        // The first successful clip of the current word starts its clock.
         const index = Number(url.searchParams.get('w'));
         const prog = this.room.progress[playerId];
         const word = wordToSay(this.room, index);
         const round = url.searchParams.get('r');
-        if (round !== null && Number(round) !== this.room.round) response = json({ error: 'that was for a different round' }, 409);
+        if (round === null || !/^\d{1,6}$/.test(round)) response = json({ error: 'say which round: ?r=<round>&w=<word>' }, 400);
+        else if (Number(round) !== this.room.round) response = json({ error: 'that was for a different round' }, 409);
         else if (!prog) response = json({ error: 'only players of this round can hear its words' }, 403);
         else if (word === null) response = json({ error: 'no such word in this round' }, 404);
         else if (prog.finishedAt == null && index > prog.wordIndex) response = json({ error: 'that word is still coming' }, 409);
-        else response = await this.clip(word, request);
+        else if (this.room.phase !== 'racing' || (this.room.goAt != null && now < this.room.goAt)) response = json({ error: 'wait for GO' }, 409);
+        else {
+          response = await this.clip(word, request);
+          if (response.ok && this.room) {
+            const heard = markHeard(this.room, playerId, index, Date.now());
+            if (heard !== this.room) {
+              this.room = heard;
+              await this.save();
+            }
+          }
+        }
+        break;
+      }
+      case 'budget': {
+        // Readback: this room's paid speech calls today (any player of the room may look).
+        const t = (await this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS)) ?? null;
+        response = json({ day: utcDay(now), used: t && t.day === utcDay(now) ? t.used : 0, limit: budgetConfig(this.env).roomDaily });
         break;
       }
       case 'start':
-      case 'next':
-        response = await this.apply(startRound(this.room, playerId, now), playerId);
+      case 'next': {
+        // The room must hold verified stroke data before a round can start: it grades every stroke.
+        const problem = playerId === this.room.hostId && this.room.phase !== 'racing' ? await this.loadGeometryFor(nextRoundChars(this.room)) : null;
+        response = problem ? json({ error: problem }, 503) : await this.apply(startRound(this.room, playerId, Date.now()), playerId);
         break;
+      }
       case 'list': {
         const b = await body(request);
         const text = typeof b.text === 'string' ? b.text : '';
@@ -212,9 +259,7 @@ export class RoomDO implements DurableObject {
         break;
       case 'stroke': {
         const input = parseStrokeInput(await body(request));
-        response = input
-          ? await this.apply(submitStroke(this.room, playerId, input, now), playerId)
-          : json({ error: 'send race, seq, wordIndex, charIndex, strokeIndex and result ("correct" or "mistake")' }, 400);
+        response = typeof input === 'string' ? json({ error: input }, 400) : await this.apply(submitStroke(this.room, playerId, input, this.geom, now), playerId);
         break;
       }
       case 'skip': {
@@ -247,22 +292,39 @@ export class RoomDO implements DurableObject {
         await storage.put(CLIP_PREFIX + word, { bytes: await res.arrayBuffer() });
       },
     } as unknown as Cache;
-    const limiter = this.env.TTS_LIMITER;
     const ip = request.headers.get('x-client-ip') ?? 'no-ip';
     const job = speakWord(word, ttsConfig(this.env), request.url, {
       ai: this.env.AI,
       cache: store,
-      allowMiss: async () => {
-        if (!limiter) return true;
-        try {
-          return (await limiter.limit({ key: ip })).success;
-        } catch {
-          return true;
-        }
-      },
+      beforeAttempt: () => this.reserveSpeechCall(ip),
     }).finally(() => this.speaking.delete(word));
     this.speaking.set(word, job);
     return job.then((r) => r.clone());
+  }
+
+  /**
+   * One paid model call may go ahead only if ALL of these say yes, and each
+   * FAILS CLOSED (a missing binding, an error or a timeout means no): the
+   * per-IP rate limit, this room's daily budget, the game's daily budget.
+   */
+  private async reserveSpeechCall(ip: string): Promise<boolean> {
+    const limiter = this.env.TTS_LIMITER;
+    const budgets = this.env.BUDGET;
+    if (!limiter || !budgets) return false;
+    const { roomDaily, globalDaily } = budgetConfig(this.env);
+    try {
+      if (!(await limiter.limit({ key: ip })).success) return false;
+      const day = utcDay(Date.now());
+      const mine = (await this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS)) ?? { day, used: 0 };
+      const used = mine.day === day ? mine.used : 0;
+      if (used + 1 > roomDaily) return false;
+      const global = await budgets.get(budgets.idFromName('global')).fetch(new Request(`https://budget/reserve?limit=${globalDaily}`, { method: 'POST' }));
+      if (!global.ok || !((await global.json()) as { ok?: boolean }).ok) return false;
+      await this.ctx.storage.put(KEY_TTS, { day, used: used + 1 });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async handleCreate(request: Request, now: number): Promise<Response> {

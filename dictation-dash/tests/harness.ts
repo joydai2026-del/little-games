@@ -1,7 +1,9 @@
 // Hand-written fakes of the Cloudflare pieces the Worker and RoomDO touch:
 // storage, blockConcurrencyWhile, and a Durable Object namespace. Nothing here
 // talks to the network.
+import { readFileSync } from 'node:fs';
 import { RoomDO } from '../src/worker/room-do';
+import { BudgetDO } from '../src/worker/budget-do';
 import worker from '../src/worker/index';
 import type { Env } from '../src/worker/env';
 
@@ -68,9 +70,54 @@ export function buildWorker(extra: Partial<Env> = {}): { env: Env; fetch: (input
   const env = {
     ROOMS: namespace as unknown as DurableObjectNamespace,
     ASSETS: { fetch: async () => new Response('static') } as unknown as Fetcher,
+    ...boundEnv(),
     ...extra,
   } as Env;
   const fetchFn = (input: string, init?: RequestInit) =>
     worker.fetch(new Request(new URL(input, 'https://dash.test').toString(), init) as never, env);
   return { env, fetch: fetchFn, rooms };
+}
+
+/**
+ * Serves the pinned stroke-data URLs from byte-exact fixtures
+ * (tests/fixtures/strokes/<codepoint>.json, the real hanzi-writer-data 2.0.1
+ * files), so the room's hash check passes offline. Any other URL is a 404.
+ */
+export function strokeFetch(): typeof fetch {
+  return (async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const m = url.match(/hanzi-writer-data@2\.0\.1\/(.+)\.json$/);
+    if (!m) return new Response('not found', { status: 404 });
+    const ch = decodeURIComponent(m[1]);
+    try {
+      return new Response(readFileSync(new URL(`./fixtures/strokes/${ch.codePointAt(0)!.toString(16)}.json`, import.meta.url)));
+    } catch {
+      return new Response('not found', { status: 404 });
+    }
+  }) as typeof fetch;
+}
+
+/** A rate limiter that always says yes (or no), and counts calls. */
+export function fakeLimiter(allow = true): RateLimit & { calls: number } {
+  const l = {
+    calls: 0,
+    async limit() {
+      l.calls += 1;
+      return { success: allow };
+    },
+  };
+  return l as unknown as RateLimit & { calls: number };
+}
+
+/** An in-memory BudgetDO namespace (one real BudgetDO over FakeStorage). */
+export function fakeBudgets(): DurableObjectNamespace {
+  const storage = new FakeStorage();
+  const ctx = new FakeState(storage);
+  const obj = new BudgetDO(ctx as unknown as DurableObjectState);
+  return { idFromName: (n: string) => n, get: () => ({ fetch: (req: Request) => obj.fetch(req) }) } as unknown as DurableObjectNamespace;
+}
+
+/** Everything a working deploy has bound: limiters, budgets, generous caps. */
+export function boundEnv(extra: Partial<Env> = {}): Partial<Env> {
+  return { ROOM_CREATE_LIMITER: fakeLimiter(), TTS_LIMITER: fakeLimiter(), BUDGET: fakeBudgets(), ...extra };
 }

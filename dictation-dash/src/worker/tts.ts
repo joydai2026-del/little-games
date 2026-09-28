@@ -16,7 +16,9 @@
 // What is different here: there is no open ?text= route. The Worker only
 // speaks a word of a round that is running in a real room, asked for by a
 // player of that round (room-do.ts `say`), so a stranger cannot make us pay
-// for arbitrary speech. Cache misses are also rate-limited per IP.
+// for arbitrary speech. EVERY model call (retries included) must pass the
+// caller's beforeAttempt: a per-IP rate limit, a per-room daily budget and a
+// global daily budget, all failing CLOSED (room-do.ts).
 
 export interface AiRunner {
   run(model: string, options: Record<string, unknown>): Promise<unknown>;
@@ -88,10 +90,13 @@ export async function synthesize(
   ai: AiRunner,
   cfg: TtsConfig,
   text: string,
-  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))
-): Promise<{ bytes: Uint8Array | null; attempts: number }> {
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  /** Asked before EVERY model call (each one is paid). False = stop now. */
+  beforeAttempt: () => Promise<boolean> = async () => true
+): Promise<{ bytes: Uint8Array | null; attempts: number; refused?: boolean }> {
   const max = Math.max(1, Math.floor(cfg.maxAttempts));
   for (let attempt = 0; attempt < max; attempt++) {
+    if (!(await beforeAttempt())) return { bytes: null, attempts: attempt, refused: true };
     const { bytes, reason } = await runOnce(ai, cfg, text);
     if (reason === 'ok' && bytes) {
       if (bytes.byteLength > cfg.maxBytes) return { bytes: null, attempts: attempt + 1 };
@@ -127,8 +132,8 @@ export function audioResponse(bytes: Uint8Array, _cacheSeconds: number, cache: '
 export interface SpeakDeps {
   ai: AiRunner | undefined;
   cache: Cache | null;
-  /** Called before a paid call (cache miss). Return false to refuse (rate limit). */
-  allowMiss: () => Promise<boolean>;
+  /** Called before EVERY paid model call (a miss may retry). False = refuse: rate limit or budget. Must fail closed. */
+  beforeAttempt: () => Promise<boolean>;
   wait?: (ms: number) => Promise<void>;
 }
 
@@ -149,8 +154,8 @@ export async function speakWord(text: string, cfg: TtsConfig, requestUrl: string
     }
   }
   if (!deps.ai) return jsonError('speech is not set up here', 503);
-  if (!(await deps.allowMiss())) return jsonError('too many new words at once, wait a minute and try again', 429);
-  const { bytes } = await synthesize(deps.ai, cfg, text, deps.wait);
+  const { bytes, refused, attempts } = await synthesize(deps.ai, cfg, text, deps.wait, deps.beforeAttempt);
+  if (!bytes && refused && attempts === 0) return jsonError('speech is resting: too many new words right now, wait a minute and try again', 429);
   if (!bytes) return jsonError('speech is unavailable right now', 502);
   if (deps.cache) {
     try {

@@ -4,7 +4,7 @@ import type { PublicState } from '../../shared/types';
 import { h } from '../ui';
 
 export function board(state: PublicState, opts: { compact?: boolean; jumpFor?: string } = {}): HTMLElement {
-  const total = state.roundWords.length || 1;
+  const total = state.roundSize || 1;
   return h(
     'ol',
     { class: `board${opts.compact ? ' compact' : ''}`, 'aria-label': 'Class board' },
@@ -32,6 +32,8 @@ export function board(state: PublicState, opts: { compact?: boolean; jumpFor?: s
             class: 'muted',
             text: `${row.wordsDone} of ${total} word${total === 1 ? '' : 's'} written${row.wordsSkipped ? `, ${row.wordsSkipped} skipped` : ''}`,
           }),
+          // A Hard stroke that was only right after the hint scores half: shown, small.
+          row.helped ? h('span', { class: 'helped', text: `${row.helped} helped`, title: 'Strokes written after the hint showed' }) : null,
         ]),
         row.finished ? h('span', { class: 'now fin', text: 'Done!' }) : h('span', { class: 'now' }),
       ]);

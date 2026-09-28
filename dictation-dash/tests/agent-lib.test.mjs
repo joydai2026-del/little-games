@@ -1,29 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planStroke, seededRandom } from '../agent/lib.mjs';
+import { candidates, seededRandom, strokePoints } from '../agent/lib.mjs';
 
-const base = {
-  phase: 'racing',
-  goAt: 1000,
-  serverNow: 2000,
-  you: 'me',
-  round: 2,
-  roundWords: ['人口', '大'],
-  list: { strokeCounts: { 人: 2, 口: 3, 大: 3 } },
-  progress: { me: { wordIndex: 0, charIndex: 1, strokeIndex: 2, finishedAt: null, seq: 6 } },
-};
-
-test('plans the next stroke (word, character, stroke) from the room state', () => {
-  assert.deepEqual(planStroke(base, { random: () => 0.9, mistakeRate: 0.1 }), {
-    race: 2, seq: 7, wordIndex: 0, charIndex: 1, strokeIndex: 2, result: 'correct', word: '人口',
-  });
-  assert.equal(planStroke(base, { random: () => 0.01, mistakeRate: 0.1 }).result, 'mistake');
+test('candidates: list words with the right number of boxes, not already closed', () => {
+  const me = { charCount: 2, closed: [{ word: '朋友', result: 'written' }] };
+  assert.deepEqual(candidates(me, ['朋友', '学校', '大', '大山']), ['学校', '大山']);
+  assert.deepEqual(candidates({ charCount: null }, ['大']), []);
 });
 
-test('does nothing before GO, after finishing, or outside a round', () => {
-  assert.equal(planStroke({ ...base, serverNow: 500 }), null);
-  assert.equal(planStroke({ ...base, phase: 'done' }), null);
-  assert.equal(planStroke({ ...base, progress: { me: { ...base.progress.me, finishedAt: 5 } } }), null);
+test('strokePoints: the median as points; wrong = backwards', () => {
+  const medians = [[[1, 2], [3, 4], [5, 6]]];
+  assert.deepEqual(strokePoints(medians, 0), [[1, 2], [3, 4], [5, 6]]);
+  assert.deepEqual(strokePoints(medians, 0, { wrong: true }), [[5, 6], [3, 4], [1, 2]]);
+  assert.equal(strokePoints(medians, 3), null);
 });
 
 test('seeded random is repeatable', () => {

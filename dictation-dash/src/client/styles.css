@@ -159,3 +159,17 @@ h3 { font-size: 1.15rem; margin: 16px 0 8px; }
 .board.compact .lane .place { width: 32px; height: 32px; font-size: 1.1rem; }
 .cheer > div { max-width: 560px; width: 100%; padding: 0 16px; }
 @media (prefers-reduced-motion: reduce) { .bean, .bean.jump, .momo.talk { animation: none !important; transition: none !important; } }
+
+/* The server-graded pad (same layering as Missing Stroke): grid, outline/hint/ink layers, then the finger. */
+.pad-wrap > svg, .pad-wrap .layers svg { position: absolute; inset: 0; }
+.pad-wrap .drawing { touch-action: none; cursor: crosshair; }
+.pad-wrap.busy .drawing { cursor: progress; }
+.pad-wrap .hint.flash { animation: hintflash 1.2s ease-in-out infinite; }
+@keyframes hintflash { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+.box svg { display: block; }
+.skip-row { text-align: center; margin: 4px 0; }
+.helped { display: inline-block; margin-left: 8px; font-size: 0.85rem; font-weight: 800; background: var(--butter-soft); border: 2px solid var(--butter); border-radius: 999px; padding: 0 8px; }
+/* Every tap target is 64 px, the list editor's summary included. */
+details > summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 700; }
+.btn.show-words { margin: 8px 0; }
+@media (prefers-reduced-motion: reduce) { .pad-wrap .hint.flash { animation: none; opacity: 0.7; } }

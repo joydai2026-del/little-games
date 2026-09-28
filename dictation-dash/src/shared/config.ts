@@ -26,9 +26,10 @@ export const OPTION_LIMITS = {
 } as const;
 
 /** What each level does to the writing box. Both levels grade strokes the same way. */
-export const LEVEL_RULES: Record<Level, { showOutline: boolean; hintAfterMisses: number; label: string; blurb: string }> = {
-  easy: { showOutline: true, hintAfterMisses: 2, label: 'Easy', blurb: 'A faint outline shows in the box' },
-  hard: { showOutline: false, hintAfterMisses: 3, label: 'Hard', blurb: 'Blank box. Write it from memory' },
+export const LEVEL_RULES: Record<Level, { showOutline: boolean; label: string; blurb: string }> = {
+  // The room sends the outline ONLY on Easy, and only after the word was heard.
+  easy: { showOutline: true, label: 'Easy', blurb: 'A faint outline shows in the box' },
+  hard: { showOutline: false, label: 'Hard', blurb: 'Blank box. Write it from memory' },
 };
 
 /** Product flags. No paywall code reads these yet. */
@@ -58,16 +59,28 @@ export const GAME = {
   speakTimeoutMs: 8000,
   /** Extra seconds per word on the round clock, for loading and hearing the word. */
   hearSlackSeconds: 6,
-  /** Misses before a stroke is filled in for the kid, so nobody gets stuck. */
-  giveStrokeAfterMisses: 5,
+  /** Misses on one stroke before the room shows that stroke as a hint (so nobody is stuck for good). */
+  hintAfterMisses: 4,
+  /**
+   * What one correct stroke scores. On Hard, a stroke that was only right after
+   * the hint showed counts as "helped" and scores less (Claude review ruling,
+   * 2026-09-28); on Easy the outline is there anyway, so full credit.
+   */
+  strokeScore: { easy: { plain: 1, helped: 1 }, hard: { plain: 1, helped: 0.5 } },
+  /** Joins one room accepts per minute (a script cannot flood a class list). */
+  joinsPerMinute: 60,
   /** Client polling, in ms. */
   pollMs: { lobby: 1500, racing: 800, done: 2500 },
   /** How long the "your bean jumps" cheer shows between words, in ms. */
   cheerMs: 1600,
-  /** How forgiving stroke matching is (hanzi-writer leniency; 1 = library default). */
+  /** How forgiving the ROOM's stroke matcher is (src/shared/matcher.ts; 1 = Hanzi Writer's default). */
   leniency: 1.3,
-  /** Pen width while a kid draws, in grid units of the writer. */
+  /** Pen width while a kid draws, in stroke-data units (1024 = the box). */
   drawingWidth: 34,
+  /** Most points one drawn stroke may carry (the pad thins longer drags). Same as Missing Stroke. */
+  maxStrokePoints: 256,
+  /** A short line ending in a colon with this many Chinese characters or fewer, over more Chinese lines, is a label (Tianzige's rule). */
+  headingLineMax: 8,
   /** Waits between the phone's retries of one send (ms). After the last one it resyncs with the room. */
   sendRetryBackoffMs: [300, 800, 1500],
   /**

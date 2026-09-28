@@ -107,6 +107,7 @@ describe('resolveWords', () => {
     expect(r.words).toEqual(['我们', '你好']);
     expect(r.missing).toEqual(['𠮷祥']);
     expect(r.tooLong).toEqual(['中华人民共和国']);
+    expect(r.skipped).toEqual([]);
     // Real stroke counts from hanzi-writer-data 2.0.1.
     expect(r.strokeCounts).toEqual({ 我: 7, 们: 5, 你: 7, 好: 6 });
     expect(r.repeats).toBe(1);

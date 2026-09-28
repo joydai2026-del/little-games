@@ -25,8 +25,7 @@ describe('goTo', () => {
 });
 
 describe('headerLinkOn', () => {
-  const s = (role: 'kid' | 'teacher', phase: 'lobby' | 'racing' | 'done', inRound: boolean) =>
-    ({ role, phase, you: 'p', progress: inRound ? { p: {} } : {} }) as never;
+  const s = (role: 'kid' | 'teacher', phase: 'lobby' | 'racing' | 'done', inRound: boolean) => ({ role, phase, me: inRound ? {} : null }) as never;
   it('a writer in a live round gets a plain header; everyone else keeps the link', () => {
     expect(headerLinkOn(s('kid', 'racing', true))).toBe(false);
     expect(headerLinkOn(s('kid', 'racing', false))).toBe(true);

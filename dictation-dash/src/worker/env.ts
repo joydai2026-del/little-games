@@ -7,8 +7,14 @@ export interface Env {
   AI?: AiRunner;
   /** Caps room creation per IP. Policy in wrangler.jsonc `ratelimits`. */
   ROOM_CREATE_LIMITER?: RateLimit;
-  /** Caps speech cache MISSES (paid calls) per IP. Policy in wrangler.jsonc `ratelimits`. */
+  /** Caps paid speech calls per IP. Policy in wrangler.jsonc `ratelimits`. Missing = speech OFF (fail closed). */
   TTS_LIMITER?: RateLimit;
+  /** One global counter of paid speech calls per UTC day (BudgetDO). Missing = speech OFF. */
+  BUDGET?: DurableObjectNamespace;
+  /** Paid speech calls one room may make per UTC day. */
+  TTS_ROOM_DAILY_CALLS?: string;
+  /** Paid speech calls the whole game may make per UTC day. */
+  TTS_GLOBAL_DAILY_CALLS?: string;
   /** Seconds browsers and the edge keep one character's stroke JSON. */
   STROKE_CACHE_SECONDS?: string;
   /** Largest upstream stroke JSON accepted, in bytes (largest real file is 8,621). */
@@ -40,3 +46,12 @@ export function ttsConfig(env: Env): TtsConfig {
     maxBytes: numberVar(env.TTS_MAX_BYTES, 1_048_576, 16_384, 8_388_608),
   };
 }
+
+export function budgetConfig(env: Env): { roomDaily: number; globalDaily: number } {
+  return {
+    roomDaily: numberVar(env.TTS_ROOM_DAILY_CALLS, 150, 0, 100_000),
+    globalDaily: numberVar(env.TTS_GLOBAL_DAILY_CALLS, 3000, 0, 10_000_000),
+  };
+}
+
+export const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);

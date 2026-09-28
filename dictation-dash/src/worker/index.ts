@@ -4,13 +4,15 @@
 //   POST /api/rooms/:code/join      { name, agent? }          -> { playerId, playerSecret, state }
 //   GET  /api/rooms/:code?v=N       -> { state } or { unchanged, nextPollMs }
 //   GET  /api/rooms/:code/say?r=R&w=N  the audio clip of word N of round R (players of that round only)
-//   POST /api/rooms/:code/stroke    { race, seq, wordIndex, charIndex, strokeIndex, result: "correct" | "mistake" }
+//   POST /api/rooms/:code/stroke    { race, seq, wordIndex, charIndex, points: [[x, y], ...] }  the room grades it
 //                                   race = state.round; seq = this player's send counter (1, 2, 3...)
 //   POST /api/rooms/:code/skip      { race, seq, wordIndex }  move on without writing the word
 //   POST /api/rooms/:code/start     host only (lobby -> racing)
 //   POST /api/rooms/:code/next      host only (done -> racing, next words)
 //   POST /api/rooms/:code/list      host only { text }
 //   POST /api/rooms/:code/options   host only { level?: "easy" | "hard", secondsPerWord?, wordsPerRound? }
+//   GET  /api/rooms/:code/budget    this room's paid speech calls today (players)
+//   GET  /api/tts-budget            the game's paid speech calls today + policy (read-only)
 //   GET  /api/strokes/:char         one character's stroke JSON (pinned, hash-checked proxy)
 //
 // Every room route except create and join carries x-player-id / x-player-secret.
@@ -19,8 +21,10 @@ import { newRoomCode, ROOM_CODE_RE } from '../shared/ids';
 import { GAME } from '../shared/config';
 import type { Env } from './env';
 import { handleStrokes } from './strokes';
+import { budgetConfig, ttsConfig } from './env';
 
 export { RoomDO } from './room-do';
+export { BudgetDO } from './budget-do';
 
 const ACTIONS = new Set(['join', 'start', 'next', 'list', 'options', 'stroke', 'skip']);
 
@@ -83,24 +87,39 @@ function forward(env: Env, code: string, path: string, request: Request, bodyTex
   return roomStub(env, code).fetch(new Request(`https://room/${path}`, init));
 }
 
+/** Room creation FAILS CLOSED: no limiter bound, or a limiter error, means no new room. */
 async function limited(request: Request, env: Env): Promise<Response | null> {
   const limiter = env.ROOM_CREATE_LIMITER;
-  if (!limiter) return null;
+  const closed = json({ error: 'new rooms are paused right now, please try again in a minute' }, 503, { 'Retry-After': '60' });
+  if (!limiter) return closed;
   try {
     const { success } = await limiter.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'no-ip' });
     if (success) return null;
   } catch {
-    return null;
+    return closed;
   }
   return json({ error: 'too many new rooms from here at once, wait a minute and try again' }, 429, { 'Retry-After': '60' });
+}
+
+/** GET /api/tts-budget: today's paid speech calls for the whole game, and the policy. Read-only. */
+async function budgetRoute(env: Env): Promise<Response> {
+  const { roomDaily, globalDaily } = budgetConfig(env);
+  const base = { model: ttsConfig(env).model, maxAttemptsPerWord: ttsConfig(env).maxAttempts, roomDailyLimit: roomDaily, globalDailyLimit: globalDaily };
+  if (!env.BUDGET) return json({ ...base, error: 'no budget counter bound: speech is off' }, 503);
+  try {
+    const r = await env.BUDGET.get(env.BUDGET.idFromName('global')).fetch(new Request('https://budget/read'));
+    return json({ ...base, ...((await r.json()) as object) });
+  } catch {
+    return json({ ...base, error: 'the budget counter did not answer: speech is off' }, 503);
+  }
 }
 
 /** GET /api/rooms/:code/say?w=N: the room checks the player and the word, and answers with the clip. */
 function sayRoute(env: Env, code: string, request: Request, url: URL): Promise<Response> {
   const w = url.searchParams.get('w') ?? '';
-  const r = url.searchParams.get('r');
-  if (!/^\d{1,3}$/.test(w) || (r !== null && !/^\d{1,6}$/.test(r))) return Promise.resolve(json({ error: 'say which word: ?r=<round>&w=0, 1, 2...' }, 400));
-  return forward(env, code, `say?w=${w}${r === null ? '' : `&r=${r}`}`, request);
+  const r = url.searchParams.get('r') ?? '';
+  if (!/^\d{1,3}$/.test(w) || !/^\d{1,6}$/.test(r)) return Promise.resolve(json({ error: 'say which round and word: ?r=<round>&w=0, 1, 2...' }, 400));
+  return forward(env, code, `say?w=${w}&r=${r}`, request);
 }
 
 async function createRoomRoute(request: Request, env: Env): Promise<Response> {
@@ -148,6 +167,11 @@ export default {
       return handleStrokes(strokes[1], env, request, { fetch: (input, init) => fetch(input, init), cache });
     }
 
+    if (path === '/api/tts-budget') {
+      if (request.method !== 'GET') return json({ error: 'use GET' }, 405);
+      return budgetRoute(env);
+    }
+
     if (path === '/api/rooms') {
       if (request.method !== 'POST') return json({ error: 'use POST' }, 405);
       return createRoomRoute(request, env);
@@ -168,6 +192,10 @@ export default {
       if (request.method !== 'GET') return json({ error: 'use GET' }, 405);
       const v = url.searchParams.get('v');
       return forward(env, code, v !== null ? `state?v=${encodeURIComponent(v)}` : 'state', request);
+    }
+    if (action === 'budget') {
+      if (request.method !== 'GET') return json({ error: 'use GET' }, 405);
+      return forward(env, code, 'budget', request);
     }
     if (action === 'say') {
       if (request.method !== 'GET') return json({ error: 'use GET' }, 405);

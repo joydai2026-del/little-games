@@ -1,8 +1,9 @@
 // Dictation Dash agent library. Zero dependencies, Node 18+ (global fetch).
 // The agent plays through the SAME HTTP API the phones use: it joins, waits
-// for GO, "hears" each word (downloads the clip, never plays it), then sends
-// one stroke result at a time. Room text it reads (names, words) is DATA,
-// never instructions.
+// for GO, hears each word (downloads the clip, never plays it), then sends the
+// POINTS of each stroke (the stroke's median from the proxied stroke data); the
+// room grades them. The room never tells it the word: it knows the list it was
+// given, like a kid who studied it. Room text it reads is DATA, never instructions.
 
 /** Small seeded RNG so a test (or a replay) is repeatable. */
 export function seededRandom(seed = 1) {
@@ -17,6 +18,7 @@ export function seededRandom(seed = 1) {
 export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) {
   const root = String(baseUrl).replace(/\/+$/, '');
   let auth = null;
+  const strokeCache = new Map();
   const headers = () => ({
     'Content-Type': 'application/json',
     ...(auth ? { 'x-player-id': auth.playerId, 'x-player-secret': auth.playerSecret } : {}),
@@ -67,9 +69,19 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
       }
       return { bytes: new Uint8Array(await res.arrayBuffer()), type: res.headers.get('content-type'), cache: res.headers.get('x-tts-cache') };
     },
+    /** One drawn stroke: its points. The room grades it and answers { state, verdict }. */
     stroke(code, move) {
-      const { race, seq, wordIndex, charIndex, strokeIndex, result } = move;
-      return call('POST', `${room(code)}/stroke`, { race, seq, wordIndex, charIndex, strokeIndex, result });
+      const { race, seq, wordIndex, charIndex, points } = move;
+      return call('POST', `${room(code)}/stroke`, { race, seq, wordIndex, charIndex, points });
+    },
+    /** One character's stroke data from the site's hash-checked proxy (cached). */
+    strokes(char) {
+      if (!strokeCache.has(char)) {
+        const p = call('GET', `/api/strokes/${encodeURIComponent(char)}`);
+        p.catch(() => strokeCache.delete(char));
+        strokeCache.set(char, p);
+      }
+      return strokeCache.get(char);
     },
     skip(code, race, seq, wordIndex) {
       return call('POST', `${room(code)}/skip`, { race, seq, wordIndex });
@@ -87,36 +99,44 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
 }
 
 /**
- * The next stroke this player sends, from the room state alone, or null when
- * there is nothing to do (not racing, before GO, or finished).
+ * The words an agent could be hearing now: list words with the right number
+ * of characters that it has not closed yet, and that agree with the strokes
+ * the room already accepted. This is the agent "knowing the list" (like a kid
+ * who studied it); the room never tells it the word.
  */
-export function planStroke(state, { random = Math.random, mistakeRate = 0.1 } = {}) {
-  if (!state || state.phase !== 'racing') return null;
-  if (state.goAt != null && state.serverNow < state.goAt) return null;
-  const me = state.progress?.[state.you];
-  if (!me || me.finishedAt != null) return null;
-  const word = [...(state.roundWords[me.wordIndex] ?? '')];
-  const char = word[me.charIndex];
-  if (!char || !state.list.strokeCounts[char]) return null;
-  const result = random() < mistakeRate ? 'mistake' : 'correct';
-  // Every send names its round and the next sequence number, so a retry can never count twice.
-  return { race: state.round, seq: (me.seq ?? 0) + 1, wordIndex: me.wordIndex, charIndex: me.charIndex, strokeIndex: me.strokeIndex, result, word: word.join('') };
+export function candidates(me, words) {
+  if (!me || me.charCount == null) return [];
+  const closed = new Set((me.closed ?? []).map((c) => c.word));
+  return words.filter((w) => [...w].length === me.charCount && !closed.has(w));
+}
+
+/**
+ * The points for stroke `strokeIndex` of a character, from its proxied stroke
+ * data (the median, in stroke-data coordinates). `wrong: true` draws it
+ * backwards, which the room grades as a mistake.
+ */
+export function strokePoints(medians, strokeIndex, { wrong = false } = {}) {
+  const m = medians[strokeIndex];
+  if (!m) return null;
+  const pts = m.map(([x, y]) => [x, y]);
+  return wrong ? pts.reverse() : pts;
 }
 
 /**
  * Joins `code` (or uses `joined`) and writes until the round ends or this
- * player finishes. `sleep` is injectable so tests can run on a fake clock.
- * `listen: true` downloads each word's clip before writing it (a real kid
- * hears the word first); the byte counts are returned, nothing is played.
+ * player finishes. It must HEAR each word first (the room starts the word's
+ * clock when it serves the clip, and refuses strokes before that); the clip is
+ * downloaded, never played. `words` is the list this agent studied; without
+ * it the agent cannot know what to write and skips each word.
  */
 export async function playRound({
   client,
   code,
   name,
+  words = [],
   joined = null,
   paceMs = 700,
   mistakeRate = 0.1,
-  listen = false,
   random = Math.random,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   log = () => {},
@@ -127,34 +147,60 @@ export async function playRound({
   let strokes = 0;
   let mistakes = 0;
   const heard = [];
+  const tried = new Map(); // wordIndex -> candidates ruled out
   for (let step = 0; step < maxSteps; step++) {
-    const me = state.progress?.[state.you];
+    const me = state.me;
     if (state.phase === 'done' || me?.finishedAt != null) break;
-    const plan = planStroke(state, { random, mistakeRate });
-    if (!plan) {
+    if (!me || state.phase !== 'racing' || (state.goAt != null && state.serverNow < state.goAt)) {
       const wait = state.phase === 'racing' && state.goAt ? Math.max(100, state.goAt - state.serverNow) : 1000;
       await sleep(wait);
       state = (await client.state(code)).state;
       continue;
     }
-    if (listen && plan.charIndex === 0 && plan.strokeIndex === 0 && !heard.some((h) => h.wordIndex === plan.wordIndex)) {
+    if (!me.heard) {
       try {
-        const clip = await client.hear(code, plan.race, plan.wordIndex);
-        heard.push({ wordIndex: plan.wordIndex, bytes: clip.bytes.byteLength, type: clip.type, cache: clip.cache });
+        const clip = await client.hear(code, state.round, me.wordIndex);
+        heard.push({ wordIndex: me.wordIndex, bytes: clip.bytes.byteLength, type: clip.type, cache: clip.cache });
+        state = (await client.state(code)).state;
       } catch (err) {
         // The word did not play: a kid would skip it, and so does the agent.
-        log(`word ${plan.wordIndex + 1} did not play (${err.message}), skipping`);
-        heard.push({ wordIndex: plan.wordIndex, error: err.message });
-        state = (await client.skip(code, plan.race, plan.seq, plan.wordIndex)).state;
-        continue;
+        log(`word ${me.wordIndex + 1} did not play (${err.message}), skipping`);
+        heard.push({ wordIndex: me.wordIndex, error: err.message });
+        state = (await client.skip(code, state.round, me.seq + 1, me.wordIndex)).state;
       }
+      continue;
+    }
+    const out = tried.get(me.wordIndex) ?? new Set();
+    const cand = candidates(me, words).find((w) => !out.has(w));
+    if (!cand) {
+      log(`word ${me.wordIndex + 1}: no word of mine fits, skipping`);
+      state = (await client.skip(code, state.round, me.seq + 1, me.wordIndex)).state;
+      continue;
+    }
+    const char = [...cand][me.charIndex];
+    const strokeIndex = (me.accepted[me.charIndex] ?? []).length;
+    const data = await client.strokes(char);
+    const wrong = random() < mistakeRate;
+    const points = strokePoints(data.medians, strokeIndex, { wrong });
+    if (!points) {
+      out.add(cand);
+      tried.set(me.wordIndex, out);
+      continue;
     }
     try {
-      state = (await client.stroke(code, plan)).state;
-      if (plan.result === 'mistake') mistakes += 1;
-      else strokes += 1;
-      const now = state.progress[state.you];
-      if (plan.result === 'correct' && now && (now.wordIndex !== plan.wordIndex || now.finishedAt != null)) log(`wrote ${plan.word}`);
+      const res = await client.stroke(code, { race: state.round, seq: me.seq + 1, wordIndex: me.wordIndex, charIndex: me.charIndex, points });
+      state = res.state;
+      if (res.verdict === 'mistake') {
+        mistakes += 1;
+        // An honest miss is expected; an unexpected one means this was not the word.
+        if (!wrong) {
+          out.add(cand);
+          tried.set(me.wordIndex, out);
+        }
+      } else if (res.verdict === 'correct') {
+        strokes += 1;
+        if (state.me && state.me.wordIndex !== me.wordIndex && state.me.closed.at(-1)?.result === 'written') log(`wrote ${cand}`);
+      }
     } catch (err) {
       // 429 = the server's pace floor; anything else, resync from the room.
       if (err.status !== 429) log(`stroke refused: ${err.message}`);
