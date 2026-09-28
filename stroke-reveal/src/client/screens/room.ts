@@ -386,9 +386,13 @@ class KidGame implements Game {
   private errorText = '';
   private errorUntil = 0;
   private cheeredFor = '';
-  private viewKey = '';
+  private qKey = '';
+  private headKey = '';
+  private buttons: HTMLButtonElement[] = [];
   private readonly head = h('div', { class: 'race-head' });
   private readonly stage = h('div');
+  private readonly prompt = h('p', { class: 'prompt', role: 'status' });
+  private readonly buddy = momo('tilt small');
 
   constructor(private readonly ctx: Ctx) {
     this.round = ctx.state!.round;
@@ -398,7 +402,6 @@ class KidGame implements Game {
   update(): void {
     const s = this.ctx.state!;
     this.seq = Math.max(this.seq, s.score?.seq ?? 0);
-    this.viewKey = '';
     this.tick();
   }
 
@@ -409,38 +412,38 @@ class KidGame implements Game {
     const now = serverNow(this.ctx);
     const view = cardsView(q, s.mine, now, this.sending);
     const message = Date.now() < this.errorUntil ? this.errorText : view.message;
-    const counting = now < q.startAt && q.closedAt == null;
-    const count = counting ? secondsLeft(this.ctx, q.startAt) : 0;
-    const key = `${s.version}:${q.index}:${view.looks.join(',')}:${message}:${count}`;
-    if (key === this.viewKey) return;
-    this.viewKey = key;
-    this.head.replaceChildren(
-      h('span', { text: `Word ${q.index + 1} of ${q.total}` }),
-      h('span', { class: 'timer', text: `${s.score?.points ?? 0} points` })
-    );
-    if (counting && q.index === 0) {
-      this.stage.replaceChildren(h('p', { class: 'countdown', text: String(Math.max(1, count)) }), h('p', { class: 'notice', text: 'Ready, set... look at the big screen!' }));
+    const counting = now < q.startAt && q.closedAt == null && q.index === 0;
+    const headText = `${s.score?.points ?? 0} points`;
+    if (this.headKey !== `${q.index}:${headText}`) {
+      this.headKey = `${q.index}:${headText}`;
+      this.head.replaceChildren(h('span', { text: `Word ${q.index + 1} of ${q.total}` }), h('span', { class: 'timer', text: headText }));
+    }
+    if (counting) {
+      const count = String(Math.max(1, secondsLeft(this.ctx, q.startAt)));
+      if (this.stage.dataset.count !== count) {
+        this.stage.dataset.count = count;
+        this.qKey = '';
+        this.stage.replaceChildren(h('p', { class: 'countdown', text: count }), h('p', { class: 'notice', text: 'Ready, set... look at the big screen!' }));
+      }
       return;
     }
-    const closed = q.closedAt != null;
-    const got = s.mine?.correctAt != null;
-    this.stage.replaceChildren(
-      h('p', { class: 'prompt', role: 'status', text: message }),
-      h(
-        'div',
-        { class: 'cards' },
-        q.cards.map((w, i) =>
-          h('button', {
-            class: `word-card ${view.looks[i]}`,
-            text: w,
-            disabled: view.looks[i] !== 'open',
-            'aria-label': `Word ${w}`,
-            onClick: () => void this.tap(i),
-          })
-        )
-      ),
-      momo(closed || got ? 'bounce' : s.mine?.locked ? 'tilt' : 'tilt small')
-    );
+    delete this.stage.dataset.count;
+    // The buttons are built ONCE per word and only restyled afterwards, so a
+    // poll landing mid-tap can never swap the button out from under a finger.
+    const qKey = `${s.round}:${q.index}`;
+    if (this.qKey !== qKey) {
+      this.qKey = qKey;
+      this.buttons = q.cards.map((w, i) => h('button', { class: 'word-card', text: w, 'aria-label': `Word ${w}`, onClick: () => void this.tap(i) }));
+      this.stage.replaceChildren(this.prompt, h('div', { class: 'cards' }, this.buttons), this.buddy);
+    }
+    this.buttons.forEach((b, i) => {
+      const cls = `word-card ${view.looks[i]}`;
+      if (b.className !== cls) b.className = cls;
+      b.disabled = view.looks[i] !== 'open';
+    });
+    if (this.prompt.textContent !== message) this.prompt.textContent = message;
+    const mood = q.closedAt != null || s.mine?.correctAt != null ? 'momo bounce' : 'momo tilt small';
+    if (this.buddy.className !== mood) this.buddy.className = mood;
   }
 
   private async tap(card: number): Promise<void> {
@@ -449,7 +452,6 @@ class KidGame implements Game {
     if (!q || this.sending) return;
     if (!cardsView(q, s.mine, serverNow(this.ctx), false).canTap) return;
     this.sending = true;
-    this.viewKey = '';
     this.tick();
     const msg = { race: s.round, question: q.index, seq: ++this.seq, card };
     try {
@@ -479,7 +481,6 @@ class KidGame implements Game {
       this.errorUntil = Date.now() + 2500;
     } finally {
       this.sending = false;
-      this.viewKey = '';
       this.tick();
       this.ctx.refresh();
     }
