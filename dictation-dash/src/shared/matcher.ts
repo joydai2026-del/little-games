@@ -5,7 +5,8 @@
 // This is a port of Hanzi Writer 3.7.3's stroke matcher (MIT, Copyright (c)
 // 2014 David Chanin, https://github.com/chanind/hanzi-writer), unchanged in
 // its thresholds, so a stroke that passed on the old in-browser pad passes
-// here. One deliberate change: the "a different stroke fits better" guard
+// here. Dictation Dash adds DoS guards (below, marked) that Missing Stroke's
+// review round 2 asked for. One deliberate change: the "a different stroke fits better" guard
 // checks EVERY other stroke of the character, not only later ones, because in
 // Missing Stroke all the other strokes are already on screen, and tracing one
 // of them is a wrong answer.
@@ -25,6 +26,18 @@ const START_AND_END_DIST_THRESHOLD = 250; // bigger = more lenient
 const FRECHET_THRESHOLD = 0.4; // bigger = more lenient
 const MIN_LEN_THRESHOLD = 0.35; // smaller = more lenient
 const AVERAGE_DISTANCE_THRESHOLD = 350;
+// DoS guards (Missing Stroke review round 2, 2026-09-28): this matcher runs in
+// the room, one request at a time for the whole class, so no single stroke may
+// cost more than a few ms. A curve whose ends sit near its own centre makes
+// `scale` near 0 and `subdivideCurve` explode into millions of points; such a
+// curve (or a tiny scribble) is simply no match.
+/** A curve's scale below this fraction of its length is degenerate: no match. */
+const MIN_SCALE_FRACTION = 0.05;
+/** A drawn stroke whose bounding box is smaller than this (stroke-data units, 1024 box) is no match. */
+const MIN_BOX = 8;
+/** Most points a subdivided curve may reach before it counts as no match. */
+const MAX_SUBDIVIDED = 2000;
+
 const SHAPE_FIT_ROTATIONS = [Math.PI / 16, Math.PI / 32, 0, (-1 * Math.PI) / 32, (-1 * Math.PI) / 16];
 
 const subtract = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y });
@@ -68,13 +81,14 @@ function frechetDist(curve1: Point[], curve2: Point[]): number {
   return prev[shortCurve.length - 1];
 }
 
-function subdivideCurve(curve: Point[], maxLen = 0.05): Point[] {
+function subdivideCurve(curve: Point[], maxLen = 0.05): Point[] | null {
   const out = curve.slice(0, 1);
   for (const point of curve.slice(1)) {
     const prevPoint = last(out);
     const segLen = distance(point, prevPoint);
     if (segLen > maxLen) {
       const n = Math.ceil(segLen / maxLen);
+      if (!Number.isFinite(n) || out.length + n > MAX_SUBDIVIDED) return null;
       const newSegLen = segLen / n;
       for (let i = 0; i < n; i++) out.push(extendPointOnLine(point, prevPoint, -1 * newSegLen * (i + 1)));
     } else out.push(point);
@@ -106,11 +120,12 @@ function outlineCurve(curve: Point[], numPoints = 30): Point[] {
   return outline;
 }
 
-function normalizeCurve(curve: Point[]): Point[] {
+function normalizeCurve(curve: Point[]): Point[] | null {
   const outlined = outlineCurve(curve);
   const mean = { x: average(outlined.map((p) => p.x)), y: average(outlined.map((p) => p.y)) };
   const translated = outlined.map((p) => subtract(p, mean));
   const scale = Math.sqrt(average([translated[0].x ** 2 + translated[0].y ** 2, last(translated).x ** 2 + last(translated).y ** 2]));
+  if (!Number.isFinite(scale) || scale < MIN_SCALE_FRACTION * length(outlined)) return null;
   return subdivideCurve(translated.map((p) => ({ x: p.x / scale, y: p.y / scale })));
 }
 
@@ -131,6 +146,7 @@ const averageDistanceTo = (stroke: Point[], points: Point[]) =>
 function shapeFit(a: Point[], b: Point[], leniency: number): boolean {
   const na = normalizeCurve(a);
   const nb = normalizeCurve(b);
+  if (!na || !nb) return false;
   let min = Infinity;
   for (const theta of SHAPE_FIT_ROTATIONS) min = Math.min(min, frechetDist(na, rotate(nb, theta)));
   return min <= FRECHET_THRESHOLD * leniency;
@@ -176,7 +192,11 @@ export type Verdict = 'correct' | 'mistake';
 export function gradeStroke(points: Point[], medians: number[][][], target: number, leniency: number = GAME.leniency): Verdict {
   const strokes = medians.map((m) => m.map(([x, y]) => ({ x, y })));
   const drawn = stripDuplicates(points);
-  if (drawn.length < 2 || !strokes[target]) return 'mistake';
+  if (drawn.length < 2 || drawn.length > GAME.maxStrokePoints || !strokes[target]) return 'mistake';
+  const xs = drawn.map((p) => p.x);
+  const ys = drawn.map((p) => p.y);
+  if (!xs.concat(ys).every(Number.isFinite)) return 'mistake';
+  if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < MIN_BOX) return 'mistake';
   const main = matchData(drawn, strokes[target], target, leniency);
   if (!main.isMatch) return 'mistake';
   // If another stroke fits the drawing better, it was probably that stroke: try again, stricter.

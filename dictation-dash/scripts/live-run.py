@@ -24,10 +24,14 @@ SILENT = """
 LIST = "1. 朋友 péngyou friend\n2. 大山 dàshān big mountain\n3. 学校 xuéxiào school\n4. 𠮷祥 (no stroke data)\n5. 上下 shàngxià up and down"
 MAX_GIF_BYTES = 8 * 1024 * 1024
 
+# The "kid" is a script that studied the list (like a real kid): it learns the
+# word from the TEACHER's page (the kid's own page never has it), and draws the
+# stroke median from the site's stroke proxy with real pointer drags. The ROOM
+# grades every stroke.
 MEDIANS_JS = """
 async ([char, strokeNum]) => {
   const data = await (await fetch('/api/strokes/' + encodeURIComponent(char))).json();
-  const g = document.querySelector('.writer svg g');
+  const g = document.querySelector('.pad-wrap .layers svg.ink g');
   const svg = g.ownerSVGElement;
   const m = g.getScreenCTM();
   return data.medians[strokeNum].map(([x, y]) => {
@@ -42,7 +46,7 @@ async (c) => {
   const s = JSON.parse(localStorage.getItem('dictation-dash:seat:' + c));
   const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
   const st = (await r.json()).state;
-  return { phase: st.phase, round: st.round, level: st.options.level, words: st.roundWords, me: st.progress[st.you] || null, you: st.you, standings: st.standings };
+  return { phase: st.phase, round: st.round, level: st.options.level, me: st.me, you: st.you, standings: st.standings, kidSeesWords: st.roundWords.length > 0 && st.phase !== 'done' };
 }
 """
 
@@ -74,6 +78,15 @@ def encode_demo(kid_webm, board_webm, log):
         if gif.stat().st_size <= MAX_GIF_BYTES:
             break
     log["demo"] = {"mp4": mp4.name, "mp4_bytes": mp4.stat().st_size, "gif": gif.name, "gif_bytes": gif.stat().st_size, "gif_width": width, "gif_fps": fps}
+
+
+TEACHER_WORDS_JS = """
+async (c) => {
+  const s = JSON.parse(localStorage.getItem('dictation-dash:seat:' + c));
+  const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
+  return (await r.json()).state.roundWords;
+}
+"""
 
 
 def write_round(k, t, code, log, tag, expected_round, fail_word=None, shots=None):
@@ -111,12 +124,15 @@ def write_round(k, t, code, log, tag, expected_round, fail_word=None, shots=None
                 k.screenshot(path=str(OUT / shots["cheer"]))
             k.wait_for_timeout(250)
             continue
-        w = k.query_selector(".writer[data-char] svg g")
-        if not w:
-            k.wait_for_timeout(250)
+        if st.get("kidSeesWords"):
+            log[f"{tag}_LEAK"] = True
+        w = k.query_selector(".pad-wrap .layers svg.ink g")
+        if not w or not me or not me.get("heard") or k.query_selector(".pad-wrap.busy"):
+            k.wait_for_timeout(200)
             continue
-        ch = k.get_attribute(".writer[data-char]", "data-char")
-        stroke = int(k.get_attribute(".writer[data-char]", "data-stroke") or 0)
+        words = t.evaluate(TEACHER_WORDS_JS, code)
+        ch = list(words[me["wordIndex"]])[me["charIndex"]]
+        stroke = len(me["accepted"][me["charIndex"]])
         pts = k.evaluate(MEDIANS_JS, [ch, stroke])
         if stroke >= 1 and shots.get("writing") and not (OUT / shots["writing"]).exists():
             k.screenshot(path=str(OUT / shots["writing"]))
@@ -162,7 +178,8 @@ def main():
         k.wait_for_selector("text=You're in")
 
         agent = subprocess.Popen(["node", str(ROOT / "agent" / "play.mjs"), "--url", base, "--room", code, "--name", "Robo",
-                                  "--pace-ms", "2200", "--mistakes", "0.15", "--seed", "5", "--rounds", "2"],
+                                  "--pace-ms", "2200", "--mistakes", "0.15", "--seed", "5", "--rounds", "2",
+                                  "--words", "朋友 大山 学校 上下"],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         t.wait_for_function("document.body.innerText.includes('Kids here (2)')", timeout=20000)
         t.click("button[aria-label='less Words per round']")
@@ -184,9 +201,10 @@ def main():
         t.screenshot(path=str(OUT / "dictation-dash-winners-easy.png"))
 
         # Round 2: Hard (blank box). The teacher taps Hard, then Next round.
-        # The done screen has no level buttons: change the level through the same API the lobby uses.
-        seat = t.evaluate("(c) => JSON.parse(localStorage.getItem('dictation-dash:seat:' + c))", code)
-        t.evaluate("""async ([c, s]) => (await fetch('/api/rooms/' + c + '/options', {method: 'POST', headers: {'content-type': 'application/json', 'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}, body: JSON.stringify({level: 'hard'})})).status""", [code, seat])
+        # The class done screen has the same level buttons as the lobby: tap Hard through the real UI.
+        t.click("button[data-level='hard']")
+        t.wait_for_selector("button[data-level='hard'].chosen", timeout=15000)
+        log["hard_tapped_in_ui"] = True
         t.wait_for_timeout(1500)
         t.click("text=Next round")
         t.wait_for_function("!document.body.innerText.includes('Winners!')", timeout=20000)
@@ -206,6 +224,7 @@ def main():
         log["kid_screen_end"] = k.inner_text("#app")[:220]
         log["board_end"] = t.inner_text(".board")
         log["kid_heard_clips"] = k.evaluate("window.__ddSaid || []")
+        log["kid_final_me"] = k.evaluate(STATE_JS, code)["me"]
         log["play_called"] = "stubbed: HTMLMediaElement.prototype.play and speechSynthesis.speak replaced before any page script"
         kid_video = k.video.path() if args.record else None
         board_video = t.video.path() if args.record else None

@@ -288,3 +288,28 @@ describe('rounds, lists and settings', () => {
     expect(wordToSay(racing(), 2)).toBeNull();
   });
 });
+
+describe('matcher cost guards (a crafted stroke cannot freeze the room)', () => {
+  it('a stroke that returns to its own centre, and a dot-sized scribble, grade as mistakes in under 20 ms', async () => {
+    const { gradeStroke } = await import('../src/shared/matcher');
+    // Out, back past the centre, and home: both ends at the centre, so scale is ~0.
+    const loop: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 120; i++) {
+      const t = (i / 120) * Math.PI * 2;
+      loop.push({ x: 500 + 200 * Math.sin(t), y: 400 + 0.01 * Math.cos(t) });
+    }
+    const target = GEOM['一'] ? '一' : '大';
+    for (const pts of [loop, [{ x: 500, y: 500 }, { x: 501, y: 501 }, { x: 500, y: 502 }]]) {
+      const t0 = performance.now();
+      expect(gradeStroke(pts, GEOM[target].medians, 0)).toBe('mistake');
+      expect(performance.now() - t0).toBeLessThan(20);
+    }
+    // Normal grading still works and stays cheap.
+    const t1 = performance.now();
+    expect(gradeStroke(right('大', 0), GEOM['大'].medians, 0)).toBe('correct');
+    expect(performance.now() - t1).toBeLessThan(20);
+    // Non-finite and oversized inputs are refused before grading.
+    expect(gradeStroke([{ x: NaN, y: 1 }, { x: 2, y: 3 }], GEOM['大'].medians, 0)).toBe('mistake');
+    expect(parseStrokeInput({ race: 1, seq: 1, wordIndex: 0, charIndex: 0, points: [[1e308 * 10, 1], [2, 3]] })).toMatch(/points must be/);
+  });
+});
