@@ -3,12 +3,15 @@
 
 A teacher makes a room with a real word list and projects the big screen; one
 browser kid joins on a phone-sized screen and taps word cards with real clicks;
-one AI agent joins through agent/play.mjs and plays by watching /drawing.
-The browser kid "looks at the big screen": it reads which character the
-teacher's pad is drawing (data-char on the pad, the same thing the class sees)
-and taps the card that starts with it, once a couple of strokes are up. On the
-second word it first taps a wrong card, to show the K-2 "try again" pause.
-Saves stills to docs/demo/.
+one AI agent joins through agent/play.mjs.
+
+The browser kid is a SCRIPTED READER, not a person: it never looks at the
+teacher's page. From its own phone seat it reads GET /drawing (the strokes on
+the big screen, the same thing the class sees) and the public stroke data of
+its own four cards, and taps the one card whose first strokes match, once at
+least 2 strokes are up. On the second word it first taps a wrong card, to show
+the K-2 pause. This proves the flow works end to end; it does not prove a
+child can read the drawing.
 
   python3 scripts/record-demo.py            # stills + demo mp4 + gif
   python3 scripts/record-demo.py --no-video # stills only
@@ -24,6 +27,17 @@ SILENT = """
   HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
 """
 LIST = "第三课\n1. 大人 dàrén grown-up\n2. 山 shān mountain\n3. 学校 xuéxiào school\n4. 人 rén person\n5. 火 huǒ fire\n6. 𠮷野 (rare, no data)"
+READ_JS = """
+async (code) => {
+  const seat = JSON.parse(localStorage.getItem('stroke-reveal:seat:' + code));
+  const headers = { 'x-player-id': seat.playerId, 'x-player-secret': seat.playerSecret };
+  const d = await (await fetch('/api/rooms/' + code + '/drawing', { headers })).json();
+  const cards = [...document.querySelectorAll('button.word-card')].map((b) => b.textContent);
+  const data = await Promise.all(cards.map((w) => fetch('/api/strokes/' + encodeURIComponent([...w][0])).then((r) => (r.ok ? r.json() : null))));
+  const matches = cards.map((_, i) => i).filter((i) => data[i] && (d.strokes || []).every((p, k) => data[i].strokes[k] === p));
+  return { shown: d.shown || 0, question: d.question, cards, matches };
+}
+"""
 MAX_GIF_BYTES = 8 * 1024 * 1024
 
 
@@ -103,46 +117,38 @@ def main():
         while time.time() < deadline:
             if t.query_selector("text=Winners!"):
                 break
-            pad = t.query_selector(".writer[data-char]")
-            cards = k.query_selector_all("button.word-card")
-            if not pad or not cards:
+            buttons = k.query_selector_all("button.word-card")
+            if not buttons or not any("open" in (b.get_attribute("class") or "") for b in buttons):
                 k.wait_for_timeout(200)
                 continue
-            char = pad.get_attribute("data-char")
-            drawn = t.eval_on_selector(".pad-wrap", "el => el.dataset.drawn || '0'")
-            head = k.inner_text(".race-head")
-            word_no = head.split("Word ")[1].split(" ")[0] if "Word " in head else "?"
-            key = f"{word_no}:{char}"
-            if key in done_words or drawn in ("0", "1"):
-                k.wait_for_timeout(200)
+            seen = k.evaluate(READ_JS, code)
+            key = f"q{seen['question']}"
+            if key in done_words or seen["shown"] < 2 or len(seen["matches"]) != 1:
+                k.wait_for_timeout(250)
                 continue
             if "live" not in shots:
                 shots.add("live")
                 t.screenshot(path=str(OUT / "stroke-reveal-board-live.png"))
                 k.screenshot(path=str(OUT / "stroke-reveal-kid-cards.png"))
-            open_cards = [c for c in cards if "open" in (c.get_attribute("class") or "")]
-            if not open_cards:
-                k.wait_for_timeout(200)
-                continue
-            right = next((c for c in open_cards if c.inner_text().startswith(char)), None)
-            wrong = next((c for c in open_cards if not c.inner_text().startswith(char)), None)
-            if word_no == "2" and wrong is not None and f"miss:{key}" not in done_words:
+            right = seen["matches"][0]
+            if seen["question"] == 1 and f"miss:{key}" not in done_words:
                 done_words.add(f"miss:{key}")
-                log["kid_taps"].append({"word": word_no, "char": char, "tapped": wrong.inner_text(), "right": False})
+                wrong = next(i for i in range(len(seen["cards"])) if i != right)
+                log["kid_taps"].append({"word": seen["question"] + 1, "tapped": seen["cards"][wrong], "right": False, "strokes_seen": seen["shown"]})
                 try:
-                    wrong.click(timeout=3000)
+                    buttons[wrong].click(timeout=3000)
                 except Exception as e:  # a button that went away is a finding, not a crash
                     log.setdefault("click_errors", []).append(str(e)[:120])
                     continue
                 k.wait_for_timeout(700)
                 k.screenshot(path=str(OUT / "stroke-reveal-kid-try-again.png"))
                 continue
-            if right is None:
-                k.wait_for_timeout(200)
+            if "open" not in (buttons[right].get_attribute("class") or ""):
+                k.wait_for_timeout(250)  # the K-2 pause after the wrong tap
                 continue
-            log["kid_taps"].append({"word": word_no, "char": char, "tapped": right.inner_text(), "right": True, "strokes_drawn": drawn})
+            log["kid_taps"].append({"word": seen["question"] + 1, "tapped": seen["cards"][right], "right": True, "strokes_seen": seen["shown"]})
             try:
-                right.click(timeout=3000)
+                buttons[right].click(timeout=3000)
             except Exception as e:
                 log.setdefault("click_errors", []).append(str(e)[:120])
                 continue
@@ -160,7 +166,7 @@ def main():
             agent.kill()
             out, _ = agent.communicate()
         log["agent_output"] = out.strip().splitlines()[-6:]
-        log["board"] = t.inner_text(".board")
+        log["board"] = t.inner_text("#app")[:400]
         k.wait_for_timeout(2500)
         log["kid_screen"] = k.inner_text("#app")[:200]
         kid_video = k.video.path() if record else None

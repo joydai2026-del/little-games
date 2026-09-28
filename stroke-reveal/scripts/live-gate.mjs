@@ -59,7 +59,7 @@ note('over-long paste is 400 with a plain message', long.status === 400, { statu
 
 // 3. Round 1: one agent guesses early, the other waits, the word closes on the clock
 const made = await req('POST', '/api/rooms', {
-  text: '第一课\n1. 大人 dàrén grown-up\n2. 山 shān\n3. 学校 xuéxiào\n4. 人 rén\n5. 𠮷野 (no data)',
+  text: '第一课\n1. 大人 dàrén grown-up\n2. 山 shān\n3. 学校 xuéxiào\n4. 人 rén\n5. 火 huǒ\n6. 口 kǒu\n7. 𠮷野 (no data)',
   options: { charsPerRound: 1, level: 'g35' },
 });
 const code = made.json.code;
@@ -72,15 +72,25 @@ const early = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Robo
 const slow = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Robo Slow', agent: true })).json);
 const started = await req('POST', `/api/rooms/${code}/start`, {}, teacher);
 const tq = started.json.state.question;
-note('round started, teacher sees the drawn character', started.status === 200 && tq.char === '大', { status: started.status, round: started.json.state.round, question: tq });
+const answerWord = tq.cards[tq.answer];
+note('round started, teacher sees the drawn character and right card', started.status === 200 && tq.char && answerWord.startsWith(tq.char), { status: started.status, round: started.json.state.round, question: tq });
 const late = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Late Leo' })).json);
 const kidView = await req('GET', `/api/rooms/${code}`, undefined, early);
 const kq = kidView.json.state.question;
-note('kids never see the character or the right card while the word is open', kq.char === null && kq.answer === null && !kidView.text.includes('"questions"'), { question: kq });
+const playable = made.json.state.list.words;
+const leaked = playable.filter((w) => !kq.cards.includes(w) && kidView.text.includes(w));
+note('a kid payload carries no list, no other words, no stroke count or timing that leaks one, no right card', kq.char === null && kq.answer === null && kq.strokes === null && kq.endsAt === null && kidView.json.state.list === null && kidView.json.state.expiresAt === null && leaked.length === 0 && !/"(questions|deck|orders|strokeCounts|attempts)"/.test(kidView.text), {
+  question: kq, list: kidView.json.state.list, expiresAt: kidView.json.state.expiresAt, otherWordsInPayload: leaked, playableWords: playable.length,
+});
 const tooSoon = await req('POST', `/api/rooms/${code}/guess`, { race: 1, question: 0, seq: 1, card: 0 }, early);
 note('guess before Momo starts drawing is refused', tooSoon.status === 409, { status: tooSoon.status, body: tooSoon.json });
+await sleep(Math.max(0, kq.startAt - Date.now()) + 250);
+const blind = await req('POST', `/api/rooms/${code}/guess`, { race: 1, question: 0, seq: 1, card: 0 }, early);
+note('minimum reveal: a tap 250 ms after the drawing starts (stroke 1 not yet readable) is refused', blind.status === 409 && blind.json?.error === 'watch the first stroke, then tap', {
+  status: blind.status, body: blind.json, startAt: kq.startAt, openAt: kq.openAt, openAfterStartMs: kq.openAt - kq.startAt,
+});
 
-await sleep(Math.max(0, kq.startAt - Date.now()) + 300);
+await sleep(Math.max(0, kq.openAt - Date.now()) + 50);
 const drawing = await req('GET', `/api/rooms/${code}/drawing`, undefined, early);
 note('/drawing shows only the strokes on the big screen, never the character', drawing.status === 200 && drawing.json.shown >= 1 && drawing.json.strokes.length === drawing.json.shown && !drawing.text.includes('"char"'), {
   status: drawing.status, shown: drawing.json.shown, complete: drawing.json.complete,
@@ -92,36 +102,43 @@ note('the agent sees exactly one card that matches the drawing', plan && matchin
 const g1 = await req('POST', `/api/rooms/${code}/guess`, plan, early);
 const g1again = await req('POST', `/api/rooms/${code}/guess`, plan, early);
 note('a right guess before the drawing is complete scores above the minimum (100); the same guess again changes nothing', g1.status === 200 && g1.json.state.score.points > 100 && g1again.json.state.version === g1.json.state.version && g1again.json.state.score.points === g1.json.state.score.points, {
-  points: g1.json?.state?.score?.points, guessedMsAfterStart: g1.json?.state?.mine?.correctAt - kq.startAt, drawMs: 3 * 900, version: g1.json?.state?.version, retryVersion: g1again.json?.state?.version, mine: g1.json?.state?.mine,
+  points: g1.json?.state?.score?.points, guessedMsAfterOpen: g1.json?.state?.mine?.correctAt - kq.openAt, strokes: tq.strokes, strokeMs: tq.strokeMs, version: g1.json?.state?.version, retryVersion: g1again.json?.state?.version, mine: g1.json?.state?.mine,
 });
 const lateGuess = await req('POST', `/api/rooms/${code}/guess`, { race: 1, question: 0, seq: 1, card: 0 }, late);
 note('late joiner waits for the next round', lateGuess.status === 409, { status: lateGuess.status, body: lateGuess.json });
 
 // Nobody polls until 3 s after the word's end: only the alarm can close it.
-const endsAt = kq.endsAt;
+// (Only AI seats play round 1, and AI seats never close a word early.)
+const endsAt = tq.endsAt;
 await sleep(Math.max(0, endsAt - Date.now()) + 3000);
 const afterEnd = await req('GET', `/api/rooms/${code}`, undefined, slow);
 const aq = afterEnd.json.state.question;
-note('the word closed on the clock (alarm), and kids now see the answer', aq.closedAt === endsAt && aq.answer != null && aq.cards[aq.answer] === '大人', {
+note('the word closed on the clock (alarm), and kids now see the answer on their own cards', aq.closedAt === endsAt && aq.answer != null && aq.cards[aq.answer] === answerWord, {
   endsAt, closedAt: aq.closedAt, answer: aq.answer, word: aq.cards[aq.answer], phase: afterEnd.json.state.phase,
 });
 await sleep(Math.max(0, aq.nextAt - Date.now()) + 2500);
 const end1 = await req('GET', `/api/rooms/${code}`, undefined, teacher);
 const st1 = end1.json.state;
-note('round ended after the answer showed; early guesser first, waiting agent second with 0', st1.phase === 'done' && st1.endedAt === aq.nextAt && st1.standings[0].name === 'Robo Quick' && st1.standings[1].points === 0, {
-  phase: st1.phase, endedAt: st1.endedAt, nextAt: aq.nextAt, standings: st1.standings,
+note('round ended after the answer showed; AI players ranked in their own line (early guesser first), no AI in the kids places', st1.phase === 'done' && st1.endedAt === aq.nextAt && st1.standings.length === 0 && st1.robots[0].name === 'Robo Quick' && st1.robots[1].points === 0, {
+  phase: st1.phase, endedAt: st1.endedAt, nextAt: aq.nextAt, standings: st1.standings, robots: st1.robots,
 });
 
 // 4. Round 2: stale round refused, lock rule, late joiner plays
 const r2 = await req('POST', `/api/rooms/${code}/next`, {}, teacher);
 const q2 = r2.json.state.question;
-note('late joiner plays round 2', Object.keys(r2.json.state.standings.reduce((m, r) => ((m[r.name] = 1), m), {})).includes('Late Leo'), { standings: r2.json.state.standings.map((r) => r.name), word: q2.char });
-await sleep(Math.max(0, q2.startAt - Date.now()) + 300);
+note('late joiner plays round 2 (a kid, ranked among kids)', r2.json.state.standings.map((r) => r.name).includes('Late Leo'), { standings: r2.json.state.standings.map((r) => r.name), robots: r2.json.state.robots.map((r) => r.name) });
+await sleep(Math.max(0, q2.openAt - Date.now()) + 50);
 const stale = await req('POST', `/api/rooms/${code}/guess`, { race: 1, question: 0, seq: 5, card: 0 }, slow);
 note('a guess for round 1 is refused in round 2', stale.status === 409 && stale.json?.error === 'that guess was for a different round', { status: stale.status, body: stale.json });
-const wrongCard = (q2.answer + 1) % q2.cards.length;
+// Each phone has its own card order: find the right word on Robo Slow's own cards.
+const word2 = q2.cards[q2.answer];
+const slowCards = (await req('GET', `/api/rooms/${code}`, undefined, slow)).json.state.question.cards;
+const leoCards = (await req('GET', `/api/rooms/${code}`, undefined, late)).json.state.question.cards;
+receipt.round2CardOrders = { bigScreen: q2.cards, robo: slowCards, leo: leoCards };
+const rightCard = slowCards.indexOf(word2);
+const wrongCard = (rightCard + 1) % slowCards.length;
 const w1 = await req('POST', `/api/rooms/${code}/guess`, { race: 2, question: 0, seq: 1, card: wrongCard }, slow);
-const w2 = await req('POST', `/api/rooms/${code}/guess`, { race: 2, question: 0, seq: 2, card: q2.answer }, slow);
+const w2 = await req('POST', `/api/rooms/${code}/guess`, { race: 2, question: 0, seq: 2, card: rightCard }, slow);
 note('Grades 3-5: a wrong guess locks you out of that word', w1.status === 200 && w1.json.state.mine.locked === true && w2.status === 409, {
   wrong: [w1.status, w1.json?.state?.mine], retryRight: [w2.status, w2.json?.error],
 });
