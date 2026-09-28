@@ -20,44 +20,33 @@ difficulty levels must be obvious on screen. Paid tier later (it uses speech).
 
 ## Feasibility check 1: can hanzi-writer 3.7.3 grade strokes with NO outline? (was grade C)
 
-**Verdict: YES. Hard = `showOutline: false`, `showCharacter: false`, same quiz. Grade A.**
+**Verdict: YES (grade B, source read and a local and live run).** Read from the pinned file
+(`dist/hanzi-writer.js` 3.7.3, SRI matched): `showOutline` / `showCharacter` only set layer opacity;
+`strokeMatches` grades against the stroke medians either way (with no outline the FIRST stroke even
+gets a looser distance threshold).
 
-Read from the pinned file (`dist/hanzi-writer.js` 3.7.3; the `.min.js` SRI hash matched the one
-Trace Race ships, `sha384-xd6VpwMU...51pm2`):
+**Superseded by review round 1 (Codex + Claude, 2026-09-28).** A quiz on the phone needs the whole
+character on the phone (the answer) and lets the phone decide what is right. The room now grades
+every stroke from the drawn points with `src/shared/matcher.ts`, the same file as Missing Stroke (a
+port of Hanzi Writer's MIT matcher), plus cost guards from Missing Stroke's review round 2. The phone
+runs no matcher and loads no third-party script. Hard = the room never sends the outline.
 
-- `showOutline` / `showCharacter` only set the opacity of the `outline` and `main` render layers
-  in the initial render state. Nothing in the quiz path reads them to decide whether to grade.
-- `Quiz.endUserStroke()` always calls `strokeMatches(userStroke, character, strokeIndex, {...})`,
-  which compares the drawn points with the character's stroke data (`stroke.points`, the medians)
-  for distance, start and end, direction, Frechet shape fit and length.
-- The only use of the outline in grading: `isOutlineVisible` is passed in, and
-  `getMatchData` uses `distMod = isOutlineVisible || strokeNum > 0 ? 0.5 : 1`. With the outline
-  hidden, the FIRST stroke of a character gets a looser distance threshold (it has nothing to
-  line up with). Every later stroke is graded exactly as with the outline.
-- `startQuiz` sets the `main` layer to opacity 1 with every stroke at 0, and `nextStroke()`
-  fades each accepted stroke in, so right strokes appear in ink even with `showCharacter: false`.
+## Feasibility check 2: speech and the client rules
 
-Live proof: the headless kid run wrote every word of the Hard round on the live site with real
-pointer drags into a blank box (`docs/demo/dictation-dash-kid-hard.png` shows the first stroke of
-上 in ink on a blank 田字格; `docs/evidence/2026-09-28-live-run.json`, `hard_state`).
+Speech server pattern read from the Bilingual Vocab Game's `src/worker/tts.ts` (MeloTTS via the `AI`
+binding, retry transient failures only, sniff the bytes). The client rules (one request per word, an
+8 s START deadline then Try again / Skip, SILENCE WINS on a late `play()`, a mute button that cancels
+the download, `?silent=1` for automation) were read in
+`/Users/joyd/Bilingual Vocab Game Generator/src/client/tts.ts` (main branch) and
+`src/client/games/sound-sprint.ts`, and **re-implemented here** in `src/client/speech.ts`: the pattern,
+not the code.
 
-No own median matcher was needed.
-
-## Feasibility check 2: speech (Workers AI) and the client rules
-
-Read from the Bilingual Vocab Game (`src/worker/tts.ts`, `src/client/tts.ts`,
-`src/client/games/sound-sprint.ts`) and copied as a pattern, not code:
-
-| Vocab app rule | Dictation Dash |
+| Vocab app | Dictation Dash |
 |---|---|
-| MeloTTS via the `AI` binding, `{ prompt, lang: 'zh' }`, retry transient failures only, sniff the bytes (it returns WAV, docs say MP3) | Same (`src/worker/tts.ts`). Live: 16-bit WAV, about 80 to 95 KB per word |
-| Cache the clip (Cache API) | **Changed.** Live check showed the Cache API does nothing on workers.dev: two requests for one word both came back MISS with different bytes. Clips are kept in the room's Durable Object storage, keyed by the word, with one in-flight synthesis per word. A class hearing a word makes one model call |
-| Open `GET /api/tts?text=` guarded by a daily quota | **Not copied.** No open speech route: only a player of a running round, for a word they have reached (`/say?r=&w=`). Cache misses rate-limited per IP (`TTS_LIMITER`) |
-| One request per word (a second tap joins the in-flight download) | Same (`src/client/speech.ts`) |
-| 8 s START deadline, then Try again / Skip | Same (`GAME.speakTimeoutMs`), the word clock only starts once the word played |
-| SILENCE WINS on a late `play()` | Same three-step rule, written in the file so a review cannot flip it |
-| Mute button, memory first then storage | Same, on the kid's pad; muting cancels the playing and the downloading word |
-| `?silent=1` for automation: never call `play()` | Same, and the clip is still downloaded so a silent run proves real bytes came back |
+| Cache API for clips | **Changed.** It does nothing on workers.dev (live: two requests, two MISSes, different bytes). One cached clip per unique room word, in the room's Durable Object storage, one synthesis in flight per word, up to `TTS_MAX_ATTEMPTS` model calls |
+| Open `GET /api/tts?text=` with a daily quota | **Not copied.** Only a player of a running round, for a word they reached, with the round named (`/say?r=&w=`, `r` required) |
+| Quota | **Every model call** must pass a per-IP limiter, a per-room daily budget and a global daily budget (`BudgetDO`); all FAIL CLOSED. Readback: `/api/rooms/:code/budget`, `/api/tts-budget` |
+| Word clock on the phone | **Changed.** The room starts a word's clock when it first serves that player the clip, refuses strokes before it and after the deadline, and closes a late word as skipped |
 
 ## Build map (what ran in parallel)
 

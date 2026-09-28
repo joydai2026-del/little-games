@@ -1,77 +1,69 @@
-# Dictation Dash 听写赛跑: build report (2026-09-28)
+# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 1)
 
-**What this is:** the first build of the grades 3 to 5 listening game JJ approved today. Momo says
-a word, kids write it from memory stroke by stroke, the fastest correct writer wins. Two levels
-on two big buttons (Easy = faint outline, Hard = blank box).
+**What this is:** the grades 3 to 5 listening game JJ approved today. Momo says a word, kids write
+it from memory stroke by stroke, the fastest correct writer wins. Two levels on two big buttons
+(Easy = faint outline, Hard = blank box). Review round 1 (Codex RETHINK, Claude FIX-FIRST) moved
+every rule that matters onto the server.
 
-Live: https://dictation-dash.joyd-ai-2026.workers.dev (workers.dev only). Branch
-`feat/dictation-dash`.
+Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `65f7f2d1-a870-4e86-8a94-92c08b118786`
+(commit `61e9cdd`), workers.dev only.
 
-Evidence grades: **A** = seen live on the deployed site or read in source/tests this session.
-**B** = follows from code and tests, not exercised live. **C** = assumed, not checked.
+Grades: **A** = seen on the live deployed version above, in this session, with a stored receipt.
+**B** = source, unit tests or a local run. **C** = assumed, not checked.
 
 ## Key takeaways
 
-1. **Hard mode works with the library as is (A).** Hanzi Writer 3.7.3 grades strokes with the
-   outline and the character hidden; read in its source and proven live (a real pointer drag
-   landed in ink on a blank box). No own matcher was needed.
-2. **Speech works live and costs one model call per word per room (A).** MeloTTS returns
-   16-bit WAV (about 80 to 95 KB). The live gate saved clips to disk (never played) and showed
-   the next listener gets the identical bytes from room storage.
-3. **Two real bugs were caught by the live runs, not the unit tests, and fixed (A):**
-   - The Cache API does nothing on workers.dev, so every "Hear it again" was a new paid call
-     with different audio. Clips now live in the room's Durable Object storage, with one
-     synthesis in flight per word.
-   - The browser cached `/say?w=0` from round 1 and played it for round 2's word 0 (the kid
-     would have heard the WRONG word). The round is now in the URL (`?r=&w=`), checked by the
-     room, and clips are `no-store`.
+1. **The room is now the referee (A).** The room grades a stroke from the points the finger drew. A
+   body that only says "correct" is refused. The live gate did both checks against the deployed
+   version. Two agents wrote Easy and Hard rounds by sending real stroke points, and the headless
+   kid wrote with pointer drags.
+2. **The answer never reaches a kid (A for the checks run, B for the full proof).** Live gate:
+   neither the lobby payload nor the mid-round payload names any word character or carries
+   `strokeCounts`, on both levels. Unit tests cover the rest: no next stroke's shape, the
+   teacher-only list, and closed words only.
+3. **Speech cannot run up a bill (A for readback, B for fail-closed).** Every model attempt passes
+   three budgets: a per-IP limiter, a per-room daily budget and a global daily budget. Each one
+   fails closed. The live readback showed the counts. The missing-binding and throwing-limiter
+   cases are unit-tested only, because the live deploy has every binding.
 
 ## Claims and grades
 
 | Claim | Grade | Evidence |
 |---|---|---|
-| Hanzi Writer quiz grades strokes with `showOutline:false, showCharacter:false` | A | Source read (`strokeMatches`, `getMatchData`, `startQuiz`); live Hard round written by the headless kid |
-| Easy shows a faint outline, Hard a blank box, both obvious on the teacher screen and the pad | A | `docs/demo/dictation-dash-teacher-levels.png`, `-kid-easy.png`, `-kid-hard.png`, looked at |
-| Speech returns real audio bytes, saved not played | A | `docs/evidence/2026-09-28-live-gate.json` (status 200, `audio/wav`, RIFF, sha256) |
-| One model call per word per room; later listeners get the same clip | A | Live gate `cache: HIT` + identical sha256; unit test with 3 parallel requests = 1 call |
-| Only players of the running round hear words, never ahead, never the teacher's board, never a stale round | A | Live gate 403/409 checks; unit tests |
-| Two AI agents play Easy then Hard rounds to the end; a late joiner waits, then writes the next round | A | Live gate |
-| A round ends on the clock with nobody polling (the alarm) | A | Live gate, `endedMinusEndsMs` |
-| Solo practice: host writes and hears; joins refused | A | Live gate |
-| Word fails to start: Try again / Skip shown, Try again recovers | A | Headless run (`hard_problem_text`, `hard_try_again_clicked`), `-kid-try-again.png` |
-| Stroke proxy mitigations copied intact (pin, sha256 manifest, one code point, 64 KB cap, schema, nosniff, licence) | A | Live gate + `tests/strokes.test.ts` |
-| Brand kit byte for byte, L4 header, plain header text for a writer mid-round | A (kit, check) / B (header in a live round) | `npm run check:brand` passes; header rule unit-tested, not screenshotted mid-round |
-| 8 s start deadline, one request per word, SILENCE WINS on late play, mute cancels download | B | Code follows the vocab rules; silent mode never reaches `play()`, so real-speaker timing was not exercised (house rule: no sound on this machine) |
-| Autoplay at the start of each word works on iPad Safari (unlocked by the first tap) | C | Same pattern as the vocab app; no iPad test this session |
-| MeloTTS pronunciation is right for every grade 3 to 5 word | C | Only byte-level checks; nobody listened (house rule) |
-| Class of 30 stays under the speech rate limit (30 misses/min/IP) | B | A class shares one school IP; misses are per NEW word per room, so 30 kids on 5 words = 5 misses. Many rooms in one school starting at once could hit it |
+| Strokes graded by the room from points; assertion-only refused | A | `docs/evidence/2026-09-28-live-gate.json` (41/41 on 65f7f2d1); tests: right, wrong, backwards, assertion-only |
+| Kid payload has the audio handle and box count, never the word or stroke counts (lobby, mid-round, Easy and Hard) | A | Live gate checks |
+| Hard never sends the outline; Easy sends it only after the word was heard | A (Hard null, Easy array) / B (timing) | Live gate; `tests/dash.test.ts` |
+| The room owns the word clock: no stroke before the clip, late stroke refused, late word closed as skipped | A | Live gate (solo room, 15 s word left alone); also seen in the kid run: 朋友 (12 strokes) timed out at 40 s because the test driver takes about 1.5 s per stroke over the network |
+| Every speech request must name the round | A | Live gate 400 |
+| Room and global speech budgets count every attempt; readback | A (readback) / B (limits reached, fail-closed) | Live gate; `tests/tts.test.ts` |
+| Room creation fails closed | B | `tests/room-do.test.ts` |
+| Skipped word scores 0 (strokes taken back); ties share a place | B | `tests/dash.test.ts` |
+| Hard stroke right only after the hint scores half, board shows "helped"; Easy full credit | B | `tests/dash.test.ts` (the kid run never needed a hint) |
+| Two tabs, same seq, different points: second is a no-op | B | `tests/dash.test.ts`, `tests/room-do.test.ts` |
+| New list resets the round cursor; words-per-round changes never skip or repeat | B | `tests/dash.test.ts` |
+| Parser: headings skipped by shape and reported, zero-width stripped | A (live paste) / B | Live gate paste check; `tests/parse.test.ts` |
+| Class lobby hides words until "Show words"; done screen has level, clock and list controls; Hard tapped in the real UI | A | `docs/demo/dictation-dash-teacher-levels.png`, `-winners-easy.png`, live run `hard_tapped_in_ui` |
+| A crafted stroke cannot freeze the room | B | Cost test: a stroke that loops back to its centre grades in under 20 ms. The unguarded matcher did not finish that stroke in 180 s locally (stopped) |
+| Word audio really plays on iPad, voice is right | C | Nothing may play sound here; nobody listened |
+| Speech limit fits several classes on one school IP at once | C | 30 calls/min/IP; one call per NEW word per room |
 
-## Known limits (honest list)
+## Known limits
 
-- The phone knows the round's words (the writing box needs each character's stroke data), so a
-  determined kid with developer tools could read them. Same for Trace Race. Grade A (by design).
-- A kid who closes the tab within 45 s of Start stays in that round's roster until the clock
-  ends it (Trace Race's presence rule, unchanged).
-- Mistakes are counted and shown to nobody; ranking ignores them by JJ's "no penalty" rule.
-- Not reviewed by Codex yet in this session (repo rule: Codex before JJ). Suggested next step.
+- The agent must be given the list it "studied" (`--words`): the room never tells it the word.
+- A word is closed the moment its clock runs out, even mid-stroke.
+- Demo: in both rounds the scripted kid runs out of time on 朋友 (12 strokes, about 1.5 s per stroke
+  over the network against a 40 s clock), so the demo shows the time-out path. A real kid gets the
+  same 40 s; the teacher can raise it.
+- Missing Stroke's matcher does not have the cost guards yet; the two files now differ only by those guards.
 
 ## Numbers
 
-- Tests: 63 vitest + 3 node:test, all green; typecheck, check:xss, check:palette, check:brand pass.
-- Live gate: 32 of 32 checks pass.
-- Demo: recorded live by `scripts/live-run.py --record`, gif under 8 MB.
-
-## Master plan and north star
-
-- **Master plan:** this game's plan is `docs/plans/2026-09-28-dictation-dash-plan.md`; the build
-  bar in it is met except the Codex review. Paid tier is a flag only, as asked.
-- **Ideal vs now:** ideal = a teacher runs a real Friday 听写 with it and kids ask for Hard.
-  Now = works end to end on the live site with agents and a headless kid; not yet tried with a
-  real class, a real iPad, or real ears on the voice.
-- **Drift check:** everything built was in the approved WHAT; nothing was trimmed.
+Tests: 70 vitest and 3 node:test, all passing. typecheck, check:xss, check:palette and check:brand
+all pass. The live gate passes 41 of 41 checks. The demo was re-recorded on 65f7f2d1 and the gif is
+under 8 MB.
 
 ## Summary of recommended action
 
-1. Listen to five words on a real device to judge the MeloTTS voice (grade C today).
-2. Run one real class or a parent-and-kid solo round on an iPad, Easy then Hard.
-3. Run the Codex review on `feat/dictation-dash` before merge.
+1. Listen to five words on a real device (the voice is still grade C).
+2. Run one class or parent-and-kid round on an iPad, Easy then Hard. Check that 40 s is enough for 12-stroke words.
+3. Carry the matcher cost guards over to Missing Stroke so both games' matchers match again.
