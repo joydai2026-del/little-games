@@ -23,6 +23,19 @@ stroke by stroke, in the right order, on their phones. Details in [`trace-race/R
 
 Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 
+## 补一笔 Missing Stroke
+
+Live at: **https://missing-stroke.joyd-ai-2026.workers.dev** · Momo forgot one stroke: kids race to
+draw it in the right spot, solo on one phone or as a class. Details in [`missing-stroke/README.md`](missing-stroke/README.md).
+
+![Missing Stroke demo: a kid draws the missing stroke on a phone while the class board updates](missing-stroke/docs/demo/missing-stroke-demo.gif)
+
+**Demo video (recorded on the live site 2026-09-28):**
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [missing-stroke-demo.mp4](missing-stroke/docs/demo/missing-stroke-demo.mp4) · [missing-stroke-demo.gif](missing-stroke/docs/demo/missing-stroke-demo.gif)
+
 ## Caption Wars
 
 Live at: **https://caption-wars.joyd-ai-2026.workers.dev**
