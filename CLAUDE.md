@@ -4,6 +4,8 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 
 ## Folder map
 - `caption-wars/` : one photo drops, everyone captions, vote the winner. Web app on Cloudflare.
+- `trace-race/` : 笔顺 stroke-order race for Mandarin immersion K-5 (Avery Studio). Web app on Cloudflare.
+- `tianzige-generator/` : paste Chinese characters, print a 田字格 stroke-order practice sheet. Avery Studio classroom tool on Cloudflare.
 - Each game owns its own `README.md`, `package.json`, tests, and `docs/plans/`.
 
 ## House rules for this repo
@@ -16,3 +18,18 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 - Every game ships a demo, recorded on the LIVE site by a script in the game's `scripts/` (Caption Wars: `scripts/record-demo.py`), never staged or mocked. Outputs go in `<game>/docs/demo/`: `<game>-demo.mp4`, `<game>-demo.gif` (under 8 MB), and 2-3 PNG stills. Raw recordings and event logs stay git-ignored. Both READMEs (root and the game's) embed the demo THREE ways, because GitHub renders each differently: (1) the gif as a normal image (plays inline everywhere), (2) the mp4 as a playable video: GitHub strips `<video>` tags and turns raw-file links into plain links, so upload the mp4 through GitHub's attachment uploader (drop it into an issue or PR comment box, do not post the comment, copy the `https://github.com/user-attachments/assets/<id>` URL it inserts) and put that URL alone on its own line, (3) plain links to the mp4 and gif files in the repo. Re-record and re-upload after any change a viewer would notice (UI, bot voice, flow). JJ set this on 2026-09-08 so she never has to ask for the video again.
 - Never work on `main`: branch `feat/<game>-<thing>`. Codex reviews before anything is handed to JJ.
 - Vault context lives in `.vault/` (a private vault symlink, not in this repo).
+
+## Avery Classroom Games (2026-09-28)
+
+Chinese K–5 classroom games for Avery Studio. **North star: student energy and fun.** Kids perform Chinese (laugh, race, teach Momo). They do not drill a worksheet.
+
+Full brief: [`docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md`](docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md). Read that before building. Docs only until a build task says otherwise.
+
+Brand guide: [`docs/avery/brand/AVERY-BRAND-GUIDE.md`](docs/avery/brand/AVERY-BRAND-GUIDE.md) (locked: Momo brush + L4 lockup).
+
+Locked product shape:
+
+- Paid is **$39/year**. Free forever is **1 saved list** (one vocab deck) and **1 play mode** on that list.
+- **Sound Sprint** (听一听) is a **vocab mode** inside Vocab Generator, not a standalone game or folder.
+- **Trace Race** (笔顺) is the **next standalone** game after Vocab Generator is polished for the classroom.
+- **Tianzige Generator** (田字格练习生成器) = paste → stroke-order 田字格 sheets. Teacher’s own characters only. Build after Vocab Generator polish, with List Lab.

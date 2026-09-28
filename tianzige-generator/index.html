@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#FDF6EC" />
+    <meta name="description" content="Paste Chinese characters, print a 田字格 writing practice sheet with stroke order." />
+    <title>田字格 Writing Sheets · Avery Studio</title>
+    <link rel="icon" href="/momo-icon.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700&family=Noto+Sans+SC:wght@400;700&display=swap" />
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/sheet.css" />
+  </head>
+  <body>
+    <header class="avery-header">
+      <a href="/" aria-label="Avery Studio home">
+        <img src="/momo-icon.png" alt="" width="44" height="44" />
+        <span class="avery-lockup">
+          <span class="avery-wordmark">Avery Studio</span>
+          <span class="avery-tagline">with 墨墨 Momo</span>
+        </span>
+      </a>
+    </header>
+    <div class="app-chrome">
+      <header class="top">
+        <img class="momo" src="/momo.png" alt="Momo the puppy" width="72" height="72" />
+        <div>
+          <h1>田字格 Writing Sheets</h1>
+          <p class="bubble" id="momo-says" aria-live="polite">Hi, I'm Momo! Paste your characters and I'll draw the practice grid.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <label for="chars" class="big-label">Paste your characters here</label>
+        <textarea id="chars" rows="4" placeholder="大 小 山" autocomplete="off" spellcheck="false"></textarea>
+        <p class="hint">Messy is fine: numbers, pinyin and English are skipped. Words you write together (like 学校) stay on one page when they fit.</p>
+
+        <div class="controls">
+          <fieldset>
+            <legend>Grid</legend>
+            <div class="seg" data-option="grid">
+              <label><input type="radio" name="grid" value="tian" checked /><span>田字格</span></label>
+              <label><input type="radio" name="grid" value="mi" /><span>米字格</span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Gray letters to trace</legend>
+            <div class="seg" data-option="trace">
+              <label><input type="radio" name="trace" value="0" /><span>0</span></label>
+              <label><input type="radio" name="trace" value="1" /><span>1</span></label>
+              <label><input type="radio" name="trace" value="2" checked /><span>2</span></label>
+              <label><input type="radio" name="trace" value="3" /><span>3</span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Boxes per row</legend>
+            <div class="seg" data-option="perRow">
+              <label><input type="radio" name="perRow" value="6" /><span>6 big</span></label>
+              <label><input type="radio" name="perRow" value="8" checked /><span>8</span></label>
+              <label><input type="radio" name="perRow" value="10" /><span>10 small</span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Paper</legend>
+            <div class="seg" data-option="paper">
+              <label><input type="radio" name="paper" value="letter" checked /><span>Letter</span></label>
+              <label><input type="radio" name="paper" value="a4" /><span>A4</span></label>
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <div class="print-bar">
+        <button id="print" class="btn-primary" type="button" disabled>Print</button>
+        <p class="hint">To save a PDF, pick <b>Save as PDF</b> in the print window.</p>
+      </div>
+    </div>
+
+    <main id="preview" class="sheet" aria-label="Sheet preview"></main>
+
+    <footer class="avery-footer">
+      <p class="avery-line"><b>Avery Studio</b> · 墨墨 Momo · averystudio.org</p>
+      <p class="avery-credits">Character stroke data:
+        <a href="/licenses/ARPHICPL.TXT">Make Me a Hanzi / Arphic Technology, Arphic Public License</a></p>
+    </footer>
+
+    <style id="page-css"></style>
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

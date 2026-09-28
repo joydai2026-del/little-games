@@ -6,6 +6,21 @@ README, tests, and build docs.
 | Game | What it is | Folder |
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
+| Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
+| 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+
+## Trace Race 笔顺比赛
+
+Live at: **https://trace-race.joyd-ai-2026.workers.dev** · Kids race to trace Chinese characters
+stroke by stroke, in the right order, on their phones. Details in [`trace-race/README.md`](trace-race/README.md).
+
+![Trace Race demo: a kid traces on a phone while the race board updates](trace-race/docs/demo/trace-race-demo.gif)
+
+**Demo video (29 sec, re-recorded 2026-09-28 with the official Momo puppy):**
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 
 ## Caption Wars
 
@@ -41,12 +56,22 @@ types a fixed one-liner each round and votes automatically. Round 2 was won by t
 
 ![Caption Wars demo: AI players caption a photo and vote](caption-wars/docs/demo/caption-wars-demo.gif)
 
-Video version (45 s, 1.5x speed):
+**44-second demo video:** [Watch three rounds with AI players](caption-wars/docs/demo/caption-wars-demo.mp4)
+
+https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
 
 https://github.com/user-attachments/assets/b13b171c-300f-4832-a689-572ff9945527
 
 Source files: [mp4](caption-wars/docs/demo/caption-wars-demo.mp4), [gif](caption-wars/docs/demo/caption-wars-demo.gif).
 Stills: [lobby](caption-wars/docs/demo/still-01-lobby.png), [vote](caption-wars/docs/demo/still-02-vote.png), [final scores](caption-wars/docs/demo/still-03-final.png).
+
+## Avery Classroom (planned)
+
+Chinese classroom games for Avery Studio, aimed at K–5 immersion and heritage teachers. **Not built yet.** The point is student energy: kids perform Chinese and have fun, instead of working another drill sheet.
+
+Pickup brief for the next build: [`docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md`](docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md).
+
+Paid plan is **$39/year**. Free keeps **1 word list** and **1 play mode**. Sound Sprint is a mode inside the vocab game, not its own game. Trace Race (stroke order) is the next standalone game. Caption Wars stays as it is above.
 
 ## Stack
 
@@ -54,3 +79,19 @@ One Cloudflare Worker (static assets + API) per game, a Durable Object per room,
 the AI players (Cloudflare Workers AI as the fallback), vitest for the game logic.
 
 Agent rules: `CLAUDE.md` (also `AGENTS.md`).
+
+## 田字格 Writing Sheets
+
+Live at: **https://tianzige-generator.joyd-ai-2026.workers.dev**. Paste Chinese characters (messy is
+fine), print a stroke-order practice sheet. AI agents get the same sheet from `POST /api/sheet`.
+Details in [`tianzige-generator/README.md`](tianzige-generator/README.md).
+
+Demo, recorded on the live site with `tianzige-generator/scripts/record-demo.py` (2026-09-28):
+
+![Tianzige Generator demo: paste a messy list, get a practice sheet](tianzige-generator/docs/demo/tianzige-generator-demo.gif)
+
+**Demo video (27 sec):**
+
+https://github.com/user-attachments/assets/fc43b356-a96b-4179-b52d-b3ad4891b9ae
+
+Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [gif](tianzige-generator/docs/demo/tianzige-generator-demo.gif).

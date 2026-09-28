@@ -1,0 +1,43 @@
+{
+  "url": "https://trace-race.joyd-ai-2026.workers.dev",
+  "deployed_version": "7fc83969-e497-4d82-ab14-a5e2c8e13d29",
+  "deployed_commit": "751a7ca554e5d24265c7296caf3094ba0d9670dd",
+  "args": {
+    "url": "https://trace-race.joyd-ai-2026.workers.dev",
+    "blip": false,
+    "cut": "abort",
+    "cut_seconds": 6.0,
+    "cut_scope": "strokes",
+    "record": false,
+    "no_agent": false
+  },
+  "started_at": "2026-09-28T16:12:04.217542+00:00",
+  "code": "ZXYC",
+  "missing_note": "We cannot trace 𠮷 yet, so we left it out.",
+  "roundChars": [
+    "山",
+    "水",
+    "火"
+  ],
+  "agent_output": [
+    "joined ZXYC as Robo",
+    "finished 山",
+    "finished 水",
+    "finished 火",
+    "{\"strokes\":11,\"mistakes\":2,\"charsDone\":3,\"place\":2,\"phase\":\"done\"}"
+  ],
+  "board": "1\nMia\n3 of 3 done\nDone!\n2\nRoboAI\n3 of 3 done, 2 oops\nDone!",
+  "kid_screen": "You are number 1!\n\nYou wrote 3 characters. 好棒!\n\n1\nMiayou\n3 of 3 done\nDone!\n2\nRoboAI\n3 of 3 done, 2 oops\nDone!",
+  "server_final": {
+    "charIndex": 3,
+    "strokeIndex": 0,
+    "charsDone": 3,
+    "mistakes": 0,
+    "finishedAt": 1790611947127,
+    "lastProgressAt": 1790611947127,
+    "strokesDone": 11,
+    "seq": 11
+  },
+  "phone_and_room_agree": true,
+  "finished_at": "2026-09-28T16:12:43.253012+00:00"
+}
