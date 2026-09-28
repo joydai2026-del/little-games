@@ -19,7 +19,7 @@
   // The only unauthenticated route that creates anything is POST /api/rooms.
   // Policy lives here, not in source. `period` may only be 10 or 60.
   "ratelimits": [
-    { "name": "ROOM_CREATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
+    { "name": "ROOM_CREATE_LIMITER", "namespace_id": "1051", "simple": { "limit": 20, "period": 60 } }
   ],
   "vars": {
     // The stroke-data SOURCE is not a var on purpose: it is pinned in

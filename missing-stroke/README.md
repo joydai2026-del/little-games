@@ -151,6 +151,18 @@ Security: the same mitigations as Trace Race (its two-round scan, 2026-09-28), c
 
 Characters with no stroke data are skipped with a note on the teacher screen.
 
+Room creation is rate-limited per IP (`ROOM_CREATE_LIMITER`, 20 per minute, `wrangler.jsonc`). Each
+game has its own rate-limit bucket, so the `namespace_id` must be unique across the repo:
+
+| Game | namespace_id |
+|---|---|
+| Caption Wars | 1001 |
+| Trace Race | 1002 |
+| Dictation Dash | 1011, 1012 |
+| Stroke Reveal | 1041 |
+| Missing Stroke | 1051 |
+| Tianzige Generator | 2001 |
+
 ## 墨墨 Momo
 
 Official Momo from `avery-brand/` (the brand guide is the law): `public/momo.png` in the game
