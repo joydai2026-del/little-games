@@ -54,6 +54,8 @@ export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
+  /** The alarm time last set, so a poll does not rewrite an unchanged alarm. */
+  private alarmAt: number | null = null;
 
   constructor(
     private readonly ctx: DurableObjectState,
@@ -74,12 +76,17 @@ export class RoomDO implements DurableObject {
   }
 
   private async armAlarm(now: number): Promise<void> {
-    if (this.room) await this.ctx.storage.setAlarm(nextAlarmAt(this.room, now));
+    if (!this.room) return;
+    const at = nextAlarmAt(this.room, now);
+    if (at === this.alarmAt) return;
+    this.alarmAt = at;
+    await this.ctx.storage.setAlarm(at);
   }
 
   private async destroy(): Promise<void> {
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
+    this.alarmAt = null;
     this.room = null;
     this.secrets = {};
   }
@@ -95,6 +102,7 @@ export class RoomDO implements DurableObject {
 
   async alarm(): Promise<void> {
     const now = Date.now();
+    this.alarmAt = null; // the alarm that fired is spent
     if (this.room && now >= this.room.expiresAt) {
       await this.destroy();
       return;

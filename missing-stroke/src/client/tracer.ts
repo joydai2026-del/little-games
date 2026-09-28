@@ -30,8 +30,9 @@ interface WriterStatic {
   getScalingTransform(width: number, height: number, padding?: number): { transform: string };
 }
 interface WriterInstance {
-  quiz(options: Record<string, unknown>): void;
+  quiz(options: Record<string, unknown>): Promise<void>;
   cancelQuiz(): void;
+  highlightStroke(strokeNum: number): Promise<void>;
 }
 interface StrokeInfo {
   strokeNum: number;
@@ -147,7 +148,7 @@ export interface PadHandle {
  */
 export function startPad(
   char: string,
-  opts: { size: number; hidden: number; hintAfterMisses: number },
+  opts: { size: number; hidden: number; hintAfterMisses: number; hintNow?: boolean },
   cb: PadCallbacks
 ): PadHandle {
   const writerEl = h('div', { class: 'writer', 'data-char': char, 'data-hidden': String(opts.hidden) });
@@ -180,7 +181,7 @@ export function startPad(
         charDataLoader: loadCharData,
         onLoadCharDataError: () => cb.onError(`no stroke data for ${char}`),
       });
-      writer.quiz({
+      const quizStarted = writer.quiz({
         leniency: GAME.leniency,
         quizStartStrokeNum: opts.hidden,
         showHintAfterMisses: opts.hintAfterMisses,
@@ -208,6 +209,12 @@ export function startPad(
           cb.onMistake();
         },
       });
+      // A pad rebuilt after the kid already earned the hint shows it again right away.
+      if (opts.hintNow) {
+        void quizStarted.then(() => {
+          if (!dead && !done) void writer?.highlightStroke(opts.hidden);
+        });
+      }
     })
     .catch(() => cb.onError('The drawing pad did not load. Check the internet and reload.'));
 

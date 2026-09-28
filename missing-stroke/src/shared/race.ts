@@ -77,6 +77,7 @@ export function createRoom(
     options: normalizeOptions(options),
     list,
     round: 0,
+    listPos: 0,
     roundChars: [],
     hidden: [],
     goAt: null,
@@ -93,7 +94,10 @@ export function createRoom(
 export function join(state: RoomState, who: { id: string; name: string; agent?: boolean }, now: number): Result {
   const name = cleanName(who.name);
   if (!name) return fail(state, 'please type your name', 400);
-  if (kids(state).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
+  // The cap counts kids who are HERE, so seats of kids who left are reused. The
+  // player list itself is bounded by maxPlayersEver (names only, for the room's life).
+  if (presentKids(state, now).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
+  if (state.players.length >= GAME.maxPlayersEver) return fail(state, 'this room is full, ask your teacher for a new one', 409);
   const player: Player = {
     id: who.id,
     name: uniqueName(state.players, name),
@@ -109,7 +113,8 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
 export function setList(state: RoomState, byId: string, list: CharList): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can change the list', 403);
   if (state.phase === 'racing') return fail(state, 'wait for this race to end', 409);
-  return { state: bump({ ...state, list, round: state.phase === 'lobby' ? 0 : state.round }) };
+  // A new list starts from its first character.
+  return { state: bump({ ...state, list, listPos: 0 }) };
 }
 
 export function setOptions(state: RoomState, byId: string, input: Partial<Record<keyof RaceOptions, unknown>>): Result {
@@ -118,11 +123,16 @@ export function setOptions(state: RoomState, byId: string, input: Partial<Record
   return { state: bump({ ...state, options: normalizeOptions({ ...state.options, ...input }) }) };
 }
 
-/** The characters for race number `round` (0-based): the next chunk of the list, wrapping, never repeating inside one race. */
-export function charsForRound(list: string[], round: number, perRound: number): string[] {
+/**
+ * The characters for the next game: `perRound` of them starting at list
+ * position `pos`, wrapping, never repeating inside one game. Starting from a
+ * stored position (not round x count) means changing "characters per game"
+ * between games never skips or repeats characters.
+ */
+export function charsForRound(list: string[], pos: number, perRound: number): string[] {
   if (list.length === 0) return [];
   const count = Math.min(perRound, list.length);
-  const startAt = (round * count) % list.length;
+  const startAt = ((pos % list.length) + list.length) % list.length;
   return Array.from({ length: count }, (_, i) => list[(startAt + i) % list.length]);
 }
 
@@ -179,7 +189,7 @@ export function startRace(state: RoomState, byId: string, now: number, seed: num
   if (state.list.chars.length === 0) return fail(state, 'the list has no characters we can use yet', 409);
   const active = presentKids(state, now);
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
-  const roundChars = charsForRound(state.list.chars, state.round, state.options.charsPerRound);
+  const roundChars = charsForRound(state.list.chars, state.listPos, state.options.charsPerRound);
   const hidden = roundChars.map((c, i) => hiddenStrokeFor(state.list.strokeCounts[c] ?? 1, seed >>> 0, i));
   const goAt = now + GAME.countdownSeconds * 1000;
   const progress: Record<string, Progress> = {};
@@ -190,6 +200,7 @@ export function startRace(state: RoomState, byId: string, now: number, seed: num
     ...state,
     phase: 'racing',
     round: state.round + 1,
+    listPos: state.list.chars.length ? (state.listPos + roundChars.length) % state.list.chars.length : 0,
     roundChars,
     hidden,
     goAt,

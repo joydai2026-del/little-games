@@ -69,6 +69,11 @@ describe('RoomDO', () => {
     const v = miss.state.version;
     const poll = (await (await room.fetch(new Request(`https://room/state?v=${v}`, { headers: { 'x-player-id': kid.playerId, 'x-player-secret': kid.playerSecret } }))).json()) as any;
     expect(poll.unchanged).toBe(true);
+    // Polls do not rewrite an alarm whose time has not changed (a storage write per poll otherwise).
+    const alarmsBefore = storage.alarms.length;
+    await room.fetch(new Request('https://room/state', { headers: { 'x-player-id': kid.playerId, 'x-player-secret': kid.playerSecret } }));
+    await room.fetch(new Request('https://room/state', { headers: { 'x-player-id': host.playerId, 'x-player-secret': host.playerSecret } }));
+    expect(storage.alarms.length).toBe(alarmsBefore);
 
     // The alarm closes the character on the clock with nobody polling, then runs the reveal, then the next one.
     vi.setSystemTime(s0.turn.closesAt + 1);

@@ -52,8 +52,10 @@ export const GAME = {
    * stops a script from winning every character instantly.
    */
   minAnswerMs: 700,
-  /** Kids per room. */
+  /** Kids here at once in one room. */
   maxKids: 40,
+  /** Everyone who ever joined one room (kids who left included), so the room stays small. */
+  maxPlayersEver: 200,
   /** Characters kept from one paste. */
   maxListChars: 60,
   /** Longest pasted text accepted, in characters. */
@@ -86,6 +88,8 @@ export const GAME = {
   roomCodeAttempts: 5,
   /** How stale a player's lastSeenAt may get on disk before a plain poll writes it. */
   lastSeenWriteMs: 15_000,
+  /** Solo mode looks up at most maxListChars x this many pasted characters (some may have no stroke data). */
+  soloLookupFactor: 2,
   /** Solo mode: the player's name on this phone. */
   soloName: 'You',
 } as const;

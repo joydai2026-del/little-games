@@ -85,6 +85,8 @@ export interface RoomState {
   list: CharList;
   /** Races run so far. 0 in the first lobby. */
   round: number;
+  /** Where the next game starts in list.chars (moves on by the characters each game used; 0 after a new list). */
+  listPos: number;
   roundChars: string[];
   /** The missing stroke of each character in roundChars. */
   hidden: number[];

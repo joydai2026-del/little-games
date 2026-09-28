@@ -21,19 +21,25 @@ function seed(): number {
 
 /** Looks up stroke data for each pasted character (through the same proxy), keeping the ones we can play. */
 export async function soloList(text: string): Promise<CharList> {
+  // Same order as the class room (src/worker/strokes.ts resolveList): drop characters with no
+  // stroke data FIRST, then keep the first GAME.maxListChars playable ones. Lookups are bounded.
   const parsed = parseCharList(text, Number.MAX_SAFE_INTEGER);
-  const wanted = parsed.chars.slice(0, GAME.maxListChars);
+  const wanted = parsed.chars.slice(0, GAME.maxListChars * GAME.soloLookupFactor);
   const found = await Promise.all(wanted.map((c) => charData(c).then((d) => d.strokes.length, () => 0)));
-  const chars: string[] = [];
+  const playable: string[] = [];
   const missing: string[] = [];
-  const strokeCounts: Record<string, number> = {};
+  const counts: Record<string, number> = {};
   wanted.forEach((c, i) => {
     if (found[i] > 0) {
-      chars.push(c);
-      strokeCounts[c] = found[i];
+      playable.push(c);
+      counts[c] = found[i];
     } else missing.push(c);
   });
-  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow: parsed.chars.slice(GAME.maxListChars) };
+  const chars = playable.slice(0, GAME.maxListChars);
+  const strokeCounts: Record<string, number> = {};
+  for (const c of chars) strokeCounts[c] = counts[c];
+  const overflow = [...playable.slice(GAME.maxListChars), ...parsed.chars.slice(wanted.length)];
+  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow };
 }
 
 /** Makes the solo game and starts it right away (3, 2, 1...). */

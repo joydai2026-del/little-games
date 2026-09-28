@@ -56,8 +56,27 @@ describe('options and list', () => {
   });
   it('race chunks wrap through the list without repeats inside a race', () => {
     expect(charsForRound(['a', 'b', 'c'], 0, 2)).toEqual(['a', 'b']);
-    expect(charsForRound(['a', 'b', 'c'], 1, 2)).toEqual(['c', 'a']);
+    expect(charsForRound(['a', 'b', 'c'], 2, 2)).toEqual(['c', 'a']);
     expect(charsForRound(['a'], 3, 5)).toEqual(['a']);
+  });
+  it('changing characters per game between games never skips a character; a new list starts at its top', () => {
+    const five: CharList = { chars: ['一', '二', '三', '四', '五'], missing: [], strokeCounts: { 一: 1, 二: 2, 三: 3, 四: 5, 五: 4 }, repeats: 0, overflow: [] };
+    let s = startRace(withKids(room({ charsPerRound: 2 }, five), 'A'), 'T', T0, SEED).state;
+    expect(s.roundChars).toEqual(['一', '二']);
+    s = advanceIfDue(s, T0 + 10 * 60_000);
+    s = setOptions(s, 'T', { charsPerRound: 3 }).state;
+    s = startRace(touch(s, 'A', T0 + 10 * 60_000), 'T', T0 + 10 * 60_000, SEED).state;
+    expect(s.roundChars).toEqual(['三', '四', '五']);
+    s = advanceIfDue(s, T0 + 30 * 60_000);
+    s = setList(s, 'T', LIST).state;
+    s = startRace(touch(s, 'A', T0 + 30 * 60_000), 'T', T0 + 30 * 60_000, SEED).state;
+    expect(s.roundChars).toEqual(['山', '水', '火']);
+  });
+  it('the room cap counts kids who are here, so a kid who left frees a seat', () => {
+    let s = room();
+    for (let i = 0; i < GAME.maxKids; i++) s = join(s, { id: `k${i}`, name: `Kid ${i}` }, T0).state;
+    expect(join(s, { id: 'x', name: 'Extra' }, T0).status).toBe(409);
+    expect(join(s, { id: 'x', name: 'Extra' }, T0 + GAME.rosterActiveMs + 1).error).toBeUndefined();
   });
 });
 

@@ -116,7 +116,8 @@ export async function playRace({
   let mistakes = 0;
   let sawRace = false;
   for (let step = 0; step < maxSteps; step++) {
-    if (state.phase === 'racing') sawRace = true;
+    // Only a race this agent is IN counts: joining mid-race means watching it and playing the next one.
+    if (state.phase === 'racing' && state.progress?.[state.you]) sawRace = true;
     if (state.phase === 'done' && sawRace) break;
     const plan = planStroke(state, { random, mistakeRate, thinkMs: paceMs });
     if (!plan) {
@@ -142,6 +143,7 @@ export async function playRace({
       state = (await client.state(code, undefined)).state;
     }
   }
+  // The room's own count wins over the local one (a lost answer may still have landed).
   const me = state.standings?.find((r) => r.playerId === state.you);
-  return { rights, mistakes, wins: me?.wins ?? 0, place: me?.place ?? null, phase: state.phase };
+  return { rights: me?.rights ?? rights, mistakes: me?.mistakes ?? mistakes, wins: me?.wins ?? 0, place: me?.place ?? null, phase: state.phase };
 }

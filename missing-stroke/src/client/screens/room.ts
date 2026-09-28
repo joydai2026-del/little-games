@@ -116,7 +116,10 @@ export function renderRoom(root: HTMLElement, backend: Backend): () => void {
       const full = force || ctx.forceFull || !s0 || (s0.role === 'teacher' && s0.phase !== 'racing');
       const res = await backend.poll(full ? undefined : s0!.version);
       ctx.offset = res.serverTime - Date.now();
-      if (res.state) {
+      // Polls and forced refreshes can overlap: an answer older than what we show is dropped.
+      if (res.state && ctx.state && res.state.version < ctx.state.version) {
+        wait = GAME.pollMs[ctx.state.phase];
+      } else if (res.state) {
         ctx.state = res.state;
         if (full) ctx.forceFull = false;
         render();
@@ -178,7 +181,9 @@ function turnPicture(s: PublicState, size: number): HTMLElement {
     glyph(t.char, t.hidden, size, closed),
     closed
       ? h('p', { class: 'reveal-line', text: winnerLine(names, t.winners.includes(s.you)) })
-      : h('p', { class: 'muted', text: `Which stroke is missing? Stroke ${t.hidden + 1} of ${s.list.strokeCounts[t.char] ?? '?'}.` }),
+      : h('p', { class: 'muted', text: 'Momo forgot one stroke. Who can draw it first?' }),
+    // The stroke number is part of the answer: only after the character closes.
+    closed ? h('p', { class: 'muted', text: `It was stroke ${t.hidden + 1} of ${s.list.strokeCounts[t.char] ?? '?'}.` }) : null,
   ]);
 }
 
@@ -481,8 +486,21 @@ class KidRace {
       }
     } else if (t && (stage === 'drawing' || stage === 'right')) {
       const key = `${this.round}:${t.index}`;
-      if (this.padKey !== key) this.mount(t);
-      this.viewKey = `pad:${key}`;
+      if (this.padKey === key) {
+        this.viewKey = `pad:${key}`;
+      } else if (stage === 'right') {
+        // Already right (the room says so) but no pad on this phone for it, e.g. after a reload:
+        // show the finished character, never a fresh pad that would take a second answer.
+        if (this.viewKey !== `got:${key}`) {
+          this.viewKey = `got:${key}`;
+          this.pad?.destroy();
+          this.pad = null;
+          this.stage.replaceChildren(glyph(t.char, t.hidden, Math.min(this.size(), 320), true), momo('bounce'));
+        }
+      } else {
+        this.mount(t);
+        this.viewKey = `pad:${key}`;
+      }
     } else if (t && stage === 'reveal') {
       const key = `reveal:${t.index}`;
       if (this.viewKey !== key) {
@@ -523,7 +541,7 @@ class KidRace {
     this.errorText = null;
     this.padKey = `${this.round}:${t.index}`;
     const hintAfter = hintMissesLeft(s.rules.hintAfterMisses, already);
-    const handle = startPad(t.char, { size: this.size(), hidden: t.hidden, hintAfterMisses: hintAfter }, {
+    const handle = startPad(t.char, { size: this.size(), hidden: t.hidden, hintAfterMisses: hintAfter, hintNow: this.hintShowing }, {
       onRight: () => {
         if (this.pad !== handle) return;
         this.localRight = { turn: t.index, ms: Math.max(0, serverNow(this.ctx) - t.opensAt) };
@@ -553,7 +571,7 @@ class KidRace {
     backoffMs: GAME.strokeRetryBackoffMs,
     isRetryable: (err) => !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500,
     onSent: (env) => {
-      this.ctx.state = env.state;
+      if (!this.ctx.state || env.state.version >= this.ctx.state.version) this.ctx.state = env.state;
       this.minVersion = Math.max(this.minVersion, env.state.version);
     },
     onDrained: (gaveUp) => {
