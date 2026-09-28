@@ -34,21 +34,27 @@ describe('RoomDO', () => {
   it('say: only players of the running round, only words they have reached', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
-    const { room } = await buildRoom();
+    const said: string[] = [];
+    const WAV = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45];
+    const env = { AI: { run: async (_m: string, o: Record<string, unknown>) => (said.push(String(o.prompt)), { audio: btoa(String.fromCharCode(...WAV)) }) } } as never;
+    const { room } = await buildRoom(env);
     const host = seat(await (await room.fetch(post('create', { code: 'ABCD', text: '人口 大 上下', options: { wordsPerRound: 2 } }))).json());
     const kid = seat(await (await room.fetch(post('join', { name: 'Mia' }))).json());
     expect((await room.fetch(get('say?w=0', kid))).status).toBe(403); // lobby: no round yet
     const started = (await (await room.fetch(post('start', {}, host))).json()) as any;
     const late = seat(await (await room.fetch(post('join', { name: 'Late' }))).json());
     const ok = await room.fetch(get('say?w=0', kid));
-    expect(await ok.json()).toEqual({ word: '人口' });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('content-type')).toBe('audio/wav');
+    expect(said).toEqual(['人口']);
     expect((await room.fetch(get('say?w=1', kid))).status).toBe(409); // not reached yet
     expect((await room.fetch(get('say?w=0', host))).status).toBe(403); // the teacher does not play
     expect((await room.fetch(get('say?w=0', late))).status).toBe(403); // late joiner: next round
     expect((await room.fetch(get('say?w=9', kid))).status).toBe(404);
     vi.setSystemTime(started.state.goAt + 1000);
     await room.fetch(post('skip', { race: 1, seq: 1, wordIndex: 0 }, kid));
-    expect(await (await room.fetch(get('say?w=1', kid))).json()).toEqual({ word: '大' });
+    expect((await room.fetch(get('say?w=1', kid))).status).toBe(200);
+    expect(said).toEqual(['人口', '大']);
     expect((await room.fetch(get('say?w=0', { ...kid, playerSecret: 'nope' }))).status).toBe(403);
   });
 

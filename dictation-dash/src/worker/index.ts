@@ -19,8 +19,6 @@ import { newRoomCode, ROOM_CODE_RE } from '../shared/ids';
 import { GAME } from '../shared/config';
 import type { Env } from './env';
 import { handleStrokes } from './strokes';
-import { speakWord } from './tts';
-import { ttsConfig } from './env';
 
 export { RoomDO } from './room-do';
 
@@ -78,6 +76,8 @@ function forward(env: Env, code: string, path: string, request: Request, bodyTex
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // The speech rate limit is per IP; the room only ever sees this header from the Worker.
+  headers.set('x-client-ip', request.headers.get('CF-Connecting-IP') ?? 'no-ip');
   const init: RequestInit =
     bodyText === undefined ? { method: 'GET', headers } : { method: 'POST', headers, body: bodyText || '{}' };
   return roomStub(env, code).fetch(new Request(`https://room/${path}`, init));
@@ -95,27 +95,11 @@ async function limited(request: Request, env: Env): Promise<Response | null> {
   return json({ error: 'too many new rooms from here at once, wait a minute and try again' }, 429, { 'Retry-After': '60' });
 }
 
-/** Per-IP cap on paid speech calls (cache misses). No limiter bound = allowed. */
-async function ttsAllowed(request: Request, env: Env): Promise<boolean> {
-  const limiter = env.TTS_LIMITER;
-  if (!limiter) return true;
-  try {
-    return (await limiter.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'no-ip' })).success;
-  } catch {
-    return true;
-  }
-}
-
-/** GET /api/rooms/:code/say?w=N: the room says which word (and whether this player may hear it), then the clip. */
-async function sayRoute(env: Env, code: string, request: Request, url: URL): Promise<Response> {
+/** GET /api/rooms/:code/say?w=N: the room checks the player and the word, and answers with the clip. */
+function sayRoute(env: Env, code: string, request: Request, url: URL): Promise<Response> {
   const w = url.searchParams.get('w') ?? '';
-  if (!/^\d{1,3}$/.test(w)) return json({ error: 'say which word: ?w=0, 1, 2...' }, 400);
-  const answer = await forward(env, code, `say?w=${w}`, request);
-  if (!answer.ok) return answer;
-  const { word } = (await answer.json()) as { word?: unknown };
-  if (typeof word !== 'string' || !word) return json({ error: 'no such word in this round' }, 404);
-  const cache = typeof caches !== 'undefined' ? caches.default : null;
-  return speakWord(word, ttsConfig(env), request.url, { ai: env.AI, cache, allowMiss: () => ttsAllowed(request, env) });
+  if (!/^\d{1,3}$/.test(w)) return Promise.resolve(json({ error: 'say which word: ?w=0, 1, 2...' }, 400));
+  return forward(env, code, `say?w=${w}`, request);
 }
 
 async function createRoomRoute(request: Request, env: Env): Promise<Response> {

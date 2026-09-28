@@ -6,9 +6,12 @@
 //     not retried: the same prompt gives the same junk.
 //   - The bytes are sniffed and the Content-Type set from what came back
 //     (MeloTTS has returned WAV while its docs say MP3).
-//   - caches.default first, keyed on the model and the exact word, so a word
-//     the class hears 30 times costs one call. The cache is an optimisation,
-//     never a dependency: a cache failure is a miss, not an error.
+//   - A cache first, keyed on the exact word, so a word the class hears 30
+//     times costs one call. The cache is an optimisation, never a dependency:
+//     a cache failure is a miss, not an error. The caller passes the room's
+//     Durable Object storage as the cache (room-do.ts `clip`), because the
+//     Cache API is a no-op on workers.dev (live-verified 2026-09-28: two
+//     requests for the same word both came back MISS with different bytes).
 //   - Only a real clip is ever cached.
 // What is different here: there is no open ?text= route. The Worker only
 // speaks a word of a round that is running in a real room, asked for by a

@@ -90,7 +90,37 @@ describe('GET /api/rooms/:code/say through the Worker', () => {
     expect(clip.status).toBe(200);
     expect(clip.headers.get('content-type')).toBe('audio/wav');
     expect(ai.run).toHaveBeenCalledWith('@cf/myshell-ai/melotts', { prompt: '朋友', lang: 'zh' });
+    // A second kid, and two more asking at the same moment: still ONE model call (room storage + in-flight join).
+    const kid2 = (await (await w.fetch(`/api/rooms/${made.code}/join`, { method: 'POST', body: JSON.stringify({ name: 'Leo' }) })).json()) as any;
+    expect(kid2.state.progress[kid2.playerId]).toBeUndefined(); // joined mid-round: next round
+    const again = await w.fetch(`/api/rooms/${made.code}/say?w=0`, { headers: h(kid) });
+    expect(again.headers.get('x-tts-cache')).toBe('HIT');
+    expect(new Uint8Array(await again.arrayBuffer())).toEqual(WAV);
+    expect(ai.run).toHaveBeenCalledTimes(1);
     expect((await w.fetch(`/api/rooms/${made.code}/say?w=0`)).status).toBe(403);
     expect((await w.fetch(`/api/rooms/${made.code}/say?w=1`, { headers: h(kid) })).status).toBe(409);
+  });
+});
+
+describe('one model call per word, even when a class asks at once', () => {
+  it('parallel first requests for a new word share one synthesis', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const ai: AiRunner = { run: vi.fn(async () => (await gate, { audio: b64(WAV) })) };
+    const w = buildWorker({ AI: ai });
+    const made = (await (await w.fetch('/api/rooms', { method: 'POST', body: JSON.stringify({ text: '学校' }) })).json()) as any;
+    const h = (d: any) => ({ 'x-player-id': d.playerId, 'x-player-secret': d.playerSecret });
+    const kids = [];
+    for (const name of ['A', 'B', 'C']) kids.push((await (await w.fetch(`/api/rooms/${made.code}/join`, { method: 'POST', body: JSON.stringify({ name }) })).json()) as any);
+    await w.fetch(`/api/rooms/${made.code}/start`, { method: 'POST', headers: h(made), body: '{}' });
+    const asks = kids.map((k) => w.fetch(`/api/rooms/${made.code}/say?w=0`, { headers: h(k) }));
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    const answers = await Promise.all(asks);
+    expect(answers.map((a) => a.status)).toEqual([200, 200, 200]);
+    for (const a of answers) expect(new Uint8Array(await a.arrayBuffer())).toEqual(WAV);
+    expect(ai.run).toHaveBeenCalledTimes(1);
   });
 });

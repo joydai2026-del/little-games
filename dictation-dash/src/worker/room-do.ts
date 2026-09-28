@@ -29,8 +29,12 @@ import {
 import type { Mode, RoomState } from '../shared/types';
 import type { Env } from './env';
 import { resolveWords } from './strokes';
+import { speakWord } from './tts';
+import { ttsConfig } from './env';
 
 const KEY_STATE = 'state';
+/** Word clips live in the room's own storage: the Cache API does nothing on workers.dev. */
+const CLIP_PREFIX = 'clip:';
 const KEY_SECRETS = 'secrets';
 const ROOM_GONE = 'that room is not around any more';
 const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
@@ -55,6 +59,8 @@ export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
+  /** One synthesis per word at a time: 30 kids hearing a new word make ONE model call. */
+  private readonly speaking = new Map<string, Promise<Response>>();
 
   constructor(
     private readonly ctx: DurableObjectState,
@@ -182,7 +188,7 @@ export class RoomDO implements DurableObject {
         if (!prog) response = json({ error: 'only players of this round can hear its words' }, 403);
         else if (word === null) response = json({ error: 'no such word in this round' }, 404);
         else if (prog.finishedAt == null && index > prog.wordIndex) response = json({ error: 'that word is still coming' }, 409);
-        else response = json({ word });
+        else response = await this.clip(word, request);
         break;
       }
       case 'start':
@@ -219,6 +225,42 @@ export class RoomDO implements DurableObject {
     }
     await this.armAlarm(Date.now());
     return response;
+  }
+
+  /**
+   * The audio for one word. Room storage first (keyed by the word, so every
+   * kid and every round shares one clip), else ONE model call that everyone
+   * asking for the same word waits on. Storage is cleared with the room.
+   */
+  private clip(word: string, request: Request): Promise<Response> {
+    const running = this.speaking.get(word);
+    if (running) return running.then((r) => r.clone());
+    const storage = this.ctx.storage;
+    const store = {
+      async match(): Promise<Response | undefined> {
+        const saved = await storage.get<{ bytes: ArrayBuffer }>(CLIP_PREFIX + word);
+        return saved ? new Response(saved.bytes) : undefined;
+      },
+      async put(_key: Request, res: Response): Promise<void> {
+        await storage.put(CLIP_PREFIX + word, { bytes: await res.arrayBuffer() });
+      },
+    } as unknown as Cache;
+    const limiter = this.env.TTS_LIMITER;
+    const ip = request.headers.get('x-client-ip') ?? 'no-ip';
+    const job = speakWord(word, ttsConfig(this.env), request.url, {
+      ai: this.env.AI,
+      cache: store,
+      allowMiss: async () => {
+        if (!limiter) return true;
+        try {
+          return (await limiter.limit({ key: ip })).success;
+        } catch {
+          return true;
+        }
+      },
+    }).finally(() => this.speaking.delete(word));
+    this.speaking.set(word, job);
+    return job.then((r) => r.clone());
   }
 
   private async handleCreate(request: Request, now: number): Promise<Response> {
