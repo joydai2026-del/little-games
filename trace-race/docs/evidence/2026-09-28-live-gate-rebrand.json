@@ -2,18 +2,18 @@
   "url": "https://trace-race.joyd-ai-2026.workers.dev",
   "deployedVersion": null,
   "deployedCommit": null,
-  "startedAt": "2026-09-28T19:20:21.744Z",
+  "startedAt": "2026-09-28T19:24:16.411Z",
   "checks": [
     {
       "name": "home page",
       "pass": true,
-      "at": "2026-09-28T19:20:23.325Z",
+      "at": "2026-09-28T19:24:16.909Z",
       "status": 200
     },
     {
       "name": "stroke proxy returns manifest bytes for 我",
       "pass": true,
-      "at": "2026-09-28T19:20:23.667Z",
+      "at": "2026-09-28T19:24:17.011Z",
       "status": 200,
       "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
       "contentType": "application/json; charset=utf-8",
@@ -23,7 +23,7 @@
     {
       "name": "stroke proxy rejects ..%2Fx",
       "pass": true,
-      "at": "2026-09-28T19:20:23.777Z",
+      "at": "2026-09-28T19:24:17.043Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -32,7 +32,7 @@
     {
       "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
       "pass": true,
-      "at": "2026-09-28T19:20:25.100Z",
+      "at": "2026-09-28T19:24:17.256Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -41,7 +41,7 @@
     {
       "name": "stroke proxy rejects %F0%A0%AE%B7",
       "pass": true,
-      "at": "2026-09-28T19:20:25.432Z",
+      "at": "2026-09-28T19:24:17.278Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -50,14 +50,14 @@
     {
       "name": "licence served",
       "pass": true,
-      "at": "2026-09-28T19:20:25.552Z",
+      "at": "2026-09-28T19:24:17.311Z",
       "status": 200,
       "firstLine": "ARPHIC PUBLIC LICENSE"
     },
     {
       "name": "malformed room code is 400",
       "pass": true,
-      "at": "2026-09-28T19:20:25.585Z",
+      "at": "2026-09-28T19:24:17.340Z",
       "status": 400,
       "body": {
         "error": "that is not a room code"
@@ -66,7 +66,7 @@
     {
       "name": "oversized body is 413 with a plain message",
       "pass": true,
-      "at": "2026-09-28T19:20:25.659Z",
+      "at": "2026-09-28T19:24:17.394Z",
       "status": 413,
       "body": {
         "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
@@ -75,7 +75,7 @@
     {
       "name": "over-long paste is 400 with a plain message",
       "pass": true,
-      "at": "2026-09-28T19:20:25.868Z",
+      "at": "2026-09-28T19:24:17.628Z",
       "status": 400,
       "body": {
         "error": "That paste is too long. Paste a shorter list (up to 4000 characters)."
@@ -84,9 +84,9 @@
     {
       "name": "room made, missing character noted",
       "pass": true,
-      "at": "2026-09-28T19:20:26.193Z",
+      "at": "2026-09-28T19:24:17.958Z",
       "status": 200,
-      "code": "WCWE",
+      "code": "QJGG",
       "list": {
         "chars": [
           "山",
@@ -106,34 +106,34 @@
     {
       "name": "race started",
       "pass": true,
-      "at": "2026-09-28T19:20:26.386Z",
+      "at": "2026-09-28T19:24:18.178Z",
       "status": 200,
       "round": 1,
-      "goAt": 1790623229309,
-      "endsAt": 1790623249309,
-      "expiresAt": 1790630449309
+      "goAt": 1790623461090,
+      "endsAt": 1790623481090,
+      "expiresAt": 1790630681090
     },
     {
       "name": "late joiner waits for the next race",
       "pass": true,
-      "at": "2026-09-28T19:20:29.850Z",
+      "at": "2026-09-28T19:24:21.532Z",
       "status": 409,
       "body": {
         "error": "this race started before you joined, you are in the next one",
-        "serverTime": 1790623229808
+        "serverTime": 1790623461525
       }
     },
     {
       "name": "retried stroke is a no-op",
       "pass": true,
-      "at": "2026-09-28T19:20:30.079Z",
+      "at": "2026-09-28T19:24:21.634Z",
       "first": {
         "charIndex": 0,
         "strokeIndex": 1,
         "charsDone": 0,
         "mistakes": 0,
         "finishedAt": null,
-        "lastProgressAt": 1790623229911,
+        "lastProgressAt": 1790623461563,
         "strokesDone": 1,
         "seq": 1
       },
@@ -143,7 +143,7 @@
     {
       "name": "retried mistake counts once",
       "pass": true,
-      "at": "2026-09-28T19:20:30.464Z",
+      "at": "2026-09-28T19:24:21.750Z",
       "first": [
         200,
         null
@@ -157,7 +157,7 @@
     {
       "name": "late joiner not on this race board",
       "pass": true,
-      "at": "2026-09-28T19:20:30.464Z",
+      "at": "2026-09-28T19:24:21.750Z",
       "board": [
         "Mia"
       ]
@@ -165,22 +165,22 @@
     {
       "name": "race ended on the clock by the alarm",
       "pass": true,
-      "at": "2026-09-28T19:20:52.613Z",
+      "at": "2026-09-28T19:24:44.254Z",
       "phase": "done",
-      "endsAt": 1790623249309,
-      "endedAt": 1790623249310,
-      "endedMinusEndsMs": 1,
-      "expiresAt": 1790630449310,
+      "endsAt": 1790623481090,
+      "endedAt": 1790623481094,
+      "endedMinusEndsMs": 4,
+      "expiresAt": 1790630681094,
       "expiresAfterEndMs": 7200000
     },
     {
       "name": "stroke from an earlier race is refused",
       "pass": true,
-      "at": "2026-09-28T19:20:52.792Z",
+      "at": "2026-09-28T19:24:44.397Z",
       "status": 409,
       "body": {
         "error": "that stroke was for a different race",
-        "serverTime": 1790623252785
+        "serverTime": 1790623484386
       },
       "race2": 2,
       "race2Chars": [
@@ -191,55 +191,55 @@
     {
       "name": "pace floor probe (first stroke right after GO)",
       "pass": true,
-      "at": "2026-09-28T19:20:55.687Z",
-      "goAt": 1790623255646,
-      "attempts": 47,
+      "at": "2026-09-28T19:24:47.328Z",
+      "goAt": 1790623487296,
+      "attempts": 55,
       "firstPastGo": {
         "status": 429,
         "error": "too fast, slow down a little",
-        "serverTime": 1790623255663
+        "serverTime": 1790623487313
       }
     },
     {
       "name": "pace floor boundary: stroke 1 at GO+250, stroke 2 at GO+500 (server clock)",
       "pass": true,
-      "at": "2026-09-28T19:20:56.190Z",
-      "goAt": 1790623255646,
+      "at": "2026-09-28T19:24:47.856Z",
+      "goAt": 1790623487296,
       "stroke1": {
-        "attempts": 4,
+        "attempts": 7,
         "lastRefused": {
           "status": 429,
-          "serverTime": 1790623255814,
+          "serverTime": 1790623487541,
           "error": "too fast, slow down a little"
         },
         "accepted": {
           "status": 200,
-          "serverTime": 1790623255950,
+          "serverTime": 1790623487574,
           "error": null
         },
-        "lastRefusedAtMs": 168,
-        "acceptedAtMs": 304
+        "lastRefusedAtMs": 245,
+        "acceptedAtMs": 278
       },
       "stroke2": {
-        "attempts": 2,
+        "attempts": 5,
         "lastRefused": {
           "status": 429,
-          "serverTime": 1790623256114,
+          "serverTime": 1790623487778,
           "error": "too fast, slow down a little"
         },
         "accepted": {
           "status": 200,
-          "serverTime": 1790623256150,
+          "serverTime": 1790623487815,
           "error": null
         },
-        "lastRefusedAtMs": 468,
-        "acceptedAtMs": 504
+        "lastRefusedAtMs": 482,
+        "acceptedAtMs": 519
       }
     },
     {
       "name": "late joiner races the next one",
       "pass": true,
-      "at": "2026-09-28T19:20:56.190Z",
+      "at": "2026-09-28T19:24:47.856Z",
       "lateProgress": {
         "charIndex": 0,
         "strokeIndex": 0,
@@ -252,7 +252,7 @@
       }
     }
   ],
-  "clockRoom": "WCWE",
-  "finishedAt": "2026-09-28T19:20:56.190Z",
+  "clockRoom": "QJGG",
+  "finishedAt": "2026-09-28T19:24:47.856Z",
   "allPass": true
 }
