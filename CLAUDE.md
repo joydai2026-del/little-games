@@ -4,6 +4,7 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 
 ## Folder map
 - `caption-wars/` : one photo drops, everyone captions, vote the winner. Web app on Cloudflare.
+- `tianzige-generator/` : paste Chinese characters, print a 田字格 stroke-order practice sheet. Avery Studio classroom tool on Cloudflare.
 - Each game owns its own `README.md`, `package.json`, tests, and `docs/plans/`.
 
 ## House rules for this repo

@@ -6,6 +6,7 @@ README, tests, and build docs.
 | Game | What it is | Folder |
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
+| 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
 
 ## Caption Wars
 
