@@ -35,6 +35,7 @@ This folder is the single source. Games copy the two asset files; they never edi
      </a>
    </header>
    ```
+   The header link is disabled on screens where leaving loses progress (a kid mid-race): render it as plain text there (drop the `href`), never a live link.
 7. **Footer on every screen**, the brand line first, the tool's own credits under it:
    ```html
    <footer class="avery-footer">
@@ -44,6 +45,7 @@ This folder is the single source. Games copy the two asset files; they never edi
    ```
    The header and footer hide themselves when printing. A printed worksheet keeps its own small print footer.
 8. **Buttons**: `.btn-primary` (mint-deep fill, INK text) and `.btn-secondary` (cream, mint border). Both are at least 64 px tall. White text on mint-deep fails contrast (2.9:1); ink on mint-deep is 4.3:1, which passes only as large text, so labels stay 19 px or bigger and bold.
+9. **Contrast pairs**: mint-deep is a FILL colour, never small text on white or cream (about 2.9:1). Status words like "Done!" and cheer text use ink, or ink on a mint chip. Links in body text use ink.
 
 ## Tokens
 
