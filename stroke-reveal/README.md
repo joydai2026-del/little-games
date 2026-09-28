@@ -15,7 +15,9 @@ No accounts, no ads, no tracking, no sound. A display name lives only as long as
 Recorded on the live site by `scripts/record-demo.py`: a real room, a browser kid (left, phone)
 tapping word cards with real clicks, an AI agent playing through the API, and the teacher's big
 screen on the right. On word 2 the kid taps a wrong card first (the K-2 "try again" pause).
-Silent, 1.25x speed.
+Silent, 1.25x speed. The browser kid is a scripted reader, not a person: it never looks at the
+teacher's page; from its own seat it reads `/drawing` and the public stroke data of its own four
+cards and taps the match once 2 strokes are up.
 
 ![Stroke Reveal demo: Momo draws on the big screen while a kid taps word cards](docs/demo/stroke-reveal-demo.gif)
 
@@ -27,7 +29,7 @@ Files: [stroke-reveal-demo.mp4](docs/demo/stroke-reveal-demo.mp4) · [stroke-rev
 ![Kid's word cards](docs/demo/stroke-reveal-kid-cards.png)
 ![Winners](docs/demo/stroke-reveal-winners.png)
 
-Live evidence: [`docs/evidence/2026-09-28-live-gate.json`](docs/evidence/2026-09-28-live-gate.json) (API gate, 22 of 22)
+Live evidence: [`docs/evidence/2026-09-28-live-gate.json`](docs/evidence/2026-09-28-live-gate.json) (API gate, 23 of 23)
 and [`docs/evidence/2026-09-28-live-run-record.json`](docs/evidence/2026-09-28-live-run-record.json) (the headless kid + teacher run that recorded the demo).
 
 ## Play it
@@ -42,22 +44,38 @@ and [`docs/evidence/2026-09-28-live-run-record.json`](docs/evidence/2026-09-28-l
 
 How words work: each card is one word from your list. Momo draws the FIRST character of the word
 (学校 means Momo draws 学). The wrong cards never start with the same character, so there is
-always exactly one right card. A word whose first character has no stroke data is left out, with
-a note on the teacher screen.
+always exactly one right card. A list needs at least 4 words that start with different
+characters (4 cards per word; fewer cards make blind tapping pay). A word whose first character
+has no stroke data is left out, with a note on the teacher screen.
 
-Scoring: a right tap when the first stroke appears is 1000 points, falling to 100 once the
-drawing is complete (`SCORING` in `src/shared/config.ts`). Most points wins; equal points and
-equal right answers share a place. Nothing is ever taken away.
+Surprise order: every round deals words from a private shuffled deck (no word repeats until all
+have played), and every phone gets the four cards in its own order. The pasted order, the card
+positions on the big screen and a neighbour's phone say nothing about the answer. Kids' phones
+never receive the list, the drawn character, its stroke count, the right card or any timing
+that would give one away while a word is open (the teacher's big screen does).
+
+Minimum reveal (`GAME.firstStrokeShowMs` 800 ms + `GAME.minRevealDelayMs` 600 ms): taps are
+refused until stroke 1 is fully on the screen plus 600 ms. Scoring starts at that moment: 1000
+points, falling in a straight line to 100 once the drawing is complete (`SCORING`). Most points
+wins; equal points and equal right answers share a place. Nothing is ever taken away.
 
 Levels (`LEVELS` in `src/shared/config.ts`):
 
 | Level | Momo draws a stroke every | A wrong tap |
 |---|---|---|
-| K-2 | 1.5 s | cards go grey for 2 s, then try again (the tried card is marked) |
+| K-2 | 1.5 s | no points lost; cards go grey for 2 s or 40% of the drawing, whichever is longer, then try again (the tried card is marked) |
 | Grades 3-5 | 0.9 s | you sit out that word |
 
-A word closes when time runs out (6 s after the drawing is complete) or when every kid has it
-right or is out. A kid who joins after Start watches and plays the next round. A kid whose phone
+Blind tapping never beats reading: `tests/reveal.test.ts` taps cards at random as fast as the
+rules allow and checks it scores below a kid who reads at mid-drawing, for 1 to 20 strokes at
+both levels. A flat 2 s pause failed that test on characters of 5 or more strokes, which is why
+the K-2 pause also stretches with the drawing (`wrongCooldownShare`).
+
+AI players are ranked in their own "Robo players" line under the kids, never in a kid's place,
+and they never hold a word open or close it early.
+
+A word closes when time runs out (6 s after the drawing is complete) or when every kid (not
+counting AI players) has it right or is out. A kid who joins after Start watches and plays the next round. A kid whose phone
 has not checked in for 45 seconds is left out of the next round.
 
 Fair play: kids' phones never receive the drawn character or the right card while a word is open
@@ -96,11 +114,15 @@ from create or join). Errors are always JSON `{ "error": "..." }`.
 | `GET /api/strokes/:char` | anyone | | one character's stroke JSON (hash-checked proxy) |
 
 Guess fields: `race` is `state.round`, `question` is `state.question.index`, `card` is the index
-in `state.question.cards`. `seq` is your own tap counter for the round: 1, 2, 3... (start from
+in YOUR `state.question.cards` (every phone has its own order). Taps before
+`state.question.openAt` get 409. `seq` is your own tap counter for the round: 1, 2, 3... (start from
 `state.score.seq + 1`); a `seq` already applied is accepted and changes nothing, so retries are
 safe. A guess for another round or a closed word gets 409; before the drawing starts, 409; during
 the K-2 pause, 429 (wait and resend). Your own tries are in `state.mine`; the right card
-(`state.question.answer`) and the drawn character (`state.question.char`) arrive once the word closes.
+(`state.question.answer`, an index into your own cards) and the drawn character
+(`state.question.char`) arrive once the word closes. `state.list`, `state.expiresAt` and
+`state.question.endsAt` are teacher only (null for players). Kids rank in `state.standings`,
+AI players in `state.robots`.
 
 ```
 U=https://stroke-reveal.joyd-ai-2026.workers.dev
