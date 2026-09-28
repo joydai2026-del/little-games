@@ -251,3 +251,21 @@ describe('scoring', () => {
     expect(parseStrokeInput({ race: 1, seq: 1, charIndex: 0, strokeIndex: 1, result: 'win' })).toBeNull();
   });
 });
+
+describe('who is here (one list for the lobby and the roster)', () => {
+  it('a kid unseen for 46 s is neither listed nor raced; a kid unseen for 30 s is both', async () => {
+    const { presentKids, publicView } = await import('../src/shared/race');
+    let s = lobby(); // Mia and Leo joined at T0
+    const now = T0 + 46_000;
+    s = touch(s, 'k1', T0 + 16_000); // Mia last seen 30 s before `now`
+    // Leo last seen at T0: 46 s before `now`
+    expect(presentKids(s, now).map((k) => k.name)).toEqual(['Mia']);
+    expect(publicView(s, 't', now).present).toEqual(['k1']);
+    const raced = startRace(s, 't', now).state;
+    expect(Object.keys(raced.progress)).toEqual(['k1']);
+    // Leo's phone wakes up: he polls, is listed again, and races the next one.
+    const woke = touch(raced, 'k2', now + 1000);
+    expect(publicView(woke, 't', now + 1000).present).toEqual(['k1', 'k2']);
+    expect(woke.progress.k2).toBeUndefined();
+  });
+});

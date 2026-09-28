@@ -44,6 +44,16 @@ export function kids(state: RoomState): Player[] {
   return state.players.filter((p) => p.role === 'kid');
 }
 
+/**
+ * THE list of kids who are here: what the teacher's "Kids here" shows AND who
+ * races when the teacher taps Start. One function, so the screen and the
+ * roster can never disagree. A kid drops off only when their phone has not
+ * checked in for GAME.rosterActiveMs (closed tab, gone home).
+ */
+export function presentKids(state: RoomState, now: number): Player[] {
+  return kids(state).filter((k) => now - k.lastSeenAt <= GAME.rosterActiveMs);
+}
+
 export function createRoom(
   code: string,
   host: { id: string; name: string },
@@ -119,7 +129,7 @@ export function startRace(state: RoomState, byId: string, now: number): Result {
   if (state.list.chars.length === 0) return fail(state, 'the list has no characters we can trace yet', 409);
   if (kids(state).length === 0) return fail(state, 'wait for at least one kid to join', 409);
   // Only kids seen recently race: a kid who closed the tab is not a ghost at 0 on the board.
-  const active = kids(state).filter((k) => now - k.lastSeenAt <= GAME.rosterActiveMs);
+  const active = presentKids(state, now);
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
   const roundChars = charsForRound(state.list.chars, state.round, state.options.charsPerRound);
   const goAt = now + GAME.countdownSeconds * 1000;
@@ -270,7 +280,14 @@ export function touch(state: RoomState, playerId: string, now: number): RoomStat
 
 export function publicView(state: RoomState, viewerId: string, now: number): PublicState {
   const me = state.players.find((p) => p.id === viewerId);
-  return { ...state, you: viewerId, role: me?.role ?? 'kid', standings: standings(state), serverNow: now };
+  return {
+    ...state,
+    you: viewerId,
+    role: me?.role ?? 'kid',
+    standings: standings(state),
+    present: presentKids(state, now).map((k) => k.id),
+    serverNow: now,
+  };
 }
 
 /** The single alarm: the race end while racing, otherwise the room's expiry. */

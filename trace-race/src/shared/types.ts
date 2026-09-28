@@ -83,6 +83,8 @@ export interface Standing {
 
 export interface PublicState extends RoomState {
   you: string;
+  /** Kids who are here right now: the teacher's "Kids here" list and the next Start roster (presentKids). */
+  present: string[];
   role: Role;
   standings: Standing[];
   serverNow: number;

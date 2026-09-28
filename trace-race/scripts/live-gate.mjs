@@ -8,7 +8,13 @@ import { createHash } from 'node:crypto';
 
 const argUrl = process.argv.indexOf('--url');
 const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://trace-race.joyd-ai-2026.workers.dev').replace(/\/+$/, '');
-const receipt = { url: U, startedAt: new Date().toISOString(), checks: [] };
+const receipt = {
+  url: U,
+  deployedVersion: process.env.TRACE_RACE_VERSION ?? null,
+  deployedCommit: process.env.TRACE_RACE_COMMIT ?? null,
+  startedAt: new Date().toISOString(),
+  checks: [],
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const note = (name, pass, detail) => receipt.checks.push({ name, pass, at: new Date().toISOString(), ...detail });
 

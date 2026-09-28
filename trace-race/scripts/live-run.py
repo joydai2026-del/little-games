@@ -51,7 +51,16 @@ async (c) => {
   const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c));
   const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
   const st = (await r.json()).state;
-  return { phase: st.phase, me: st.progress[st.you] || null, roundChars: st.roundChars };
+  return { phase: st.phase, me: st.progress[st.you] || null, roundChars: st.roundChars, you: st.you };
+}
+"""
+
+TEACHER_PROGRESS_JS = """
+async ([c, kid]) => {
+  const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c));
+  const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
+  const st = (await r.json()).state;
+  return { phase: st.phase, me: st.progress[kid] || null };
 }
 """
 
@@ -84,12 +93,16 @@ def main():
     ap.add_argument("--cut", choices=["abort", "hang"], default="abort",
                     help="abort: sends fail at once; hang: sends never answer (the phone's timeout must fire)")
     ap.add_argument("--cut-seconds", type=float, default=6.0, help="how long the cut lasts")
+    ap.add_argument("--cut-scope", choices=["strokes", "all"], default="strokes",
+                    help="strokes: only stroke sends; all: every room request, polls included (a full outage)")
     ap.add_argument("--record", action="store_true")
     args = ap.parse_args()
     raw = OUT / "_raw"
     base = args.url.rstrip("/")
     OUT.mkdir(parents=True, exist_ok=True)
-    log = {}
+    import os, datetime
+    log = {"url": base, "deployed_version": os.environ.get("TRACE_RACE_VERSION"), "deployed_commit": os.environ.get("TRACE_RACE_COMMIT"),
+           "args": vars(args), "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=["--mute-audio"])
         rec_t = {"record_video_dir": str(raw / "board"), "record_video_size": {"width": 1100, "height": 900}} if args.record else {}
@@ -122,7 +135,9 @@ def main():
         t.click("text=Start the race")
 
         k.wait_for_selector(".writer svg g", timeout=20000)
-        chars = k.evaluate(PROGRESS_JS, code)["roundChars"]
+        first = k.evaluate(PROGRESS_JS, code)
+        chars = first["roundChars"]
+        kid_id = first["you"]
         log["roundChars"] = chars
         # Trace whatever the pad shows next (character from data-char, stroke =
         # filled dots), so the loop follows the pad if it resyncs with the room.
@@ -132,12 +147,13 @@ def main():
         deadline = time.time() + 150
         while time.time() < deadline:
             if blip_started and time.time() - blip_started > args.cut_seconds and "unrouted" not in log.get("blip", {}):
-                k.unroute("**/stroke")
+                k.unroute(log["cut_pattern"])
                 log["blip"]["unrouted"] = True
                 log["blip"]["unrouted_after_s"] = round(time.time() - blip_started, 1)
                 log["blip"]["requests_left_hanging"] = len(hung)
-                log["blip"]["server_at_unroute"] = k.evaluate(PROGRESS_JS, code)["me"]
-            prog = k.evaluate(PROGRESS_JS, code)
+                log["blip"]["server_at_unroute"] = t.evaluate(TEACHER_PROGRESS_JS, [code, kid_id])["me"]
+                log["blip"]["phone_screen_at_unroute"] = k.inner_text("#app")[:120]
+            prog = t.evaluate(TEACHER_PROGRESS_JS, [code, kid_id])
             if prog["phase"] != "racing" or (prog["me"] and prog["me"]["finishedAt"]):
                 if not k.query_selector(".cheer"):
                     break
@@ -159,11 +175,13 @@ def main():
                 continue
             if args.blip and blip_started is None and ch == chars[1]:
                 blip_started = time.time()
+                pattern = "**/stroke" if args.cut_scope == "strokes" else "**/api/rooms/**"
+                log["cut_pattern"] = pattern
                 if args.cut == "abort":
-                    k.route("**/stroke", lambda route: route.abort())
+                    k.route(pattern, lambda route: route.abort())
                 else:
                     hung.clear()
-                    k.route("**/stroke", lambda route: hung.append(route))  # never answered
+                    k.route(pattern, lambda route: hung.append(route))  # never answered
                 log["blip"] = {"mode": args.cut, "seconds": args.cut_seconds, "char": ch, "cut_at_stroke": stroke, "cut_at": time.time()}
             drag(k, k.evaluate(TRACE_JS, [ch, stroke]))
             k.wait_for_timeout(450)
@@ -185,7 +203,7 @@ def main():
         log["board"] = t.inner_text(".board")
         k.wait_for_timeout(1500)
         log["kid_screen"] = k.inner_text("#app")[:200]
-        log["server_final"] = k.evaluate(PROGRESS_JS, code)["me"]
+        log["server_final"] = t.evaluate(TEACHER_PROGRESS_JS, [code, kid_id])["me"]
         log["phone_and_room_agree"] = ("You are number" in log["kid_screen"] or "finished" in log["kid_screen"].lower()) and bool(log["server_final"] and log["server_final"]["finishedAt"])
         kid_video = k.video.path() if args.record else None
         board_video = t.video.path() if args.record else None
@@ -194,6 +212,7 @@ def main():
         browser.close()
         if args.record:
             encode_demo(kid_video, board_video, log)
+    log["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     print(json.dumps(log, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":

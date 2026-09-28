@@ -1,6 +1,7 @@
 // The phone's side of the HTTP API, plus where this phone keeps its seat.
 import type { PublicState, StrokeResult } from '../shared/types';
 import { GAME } from '../shared/config';
+import { timeoutSignal } from './timeout';
 
 export interface Seat {
   playerId: string;
@@ -58,7 +59,7 @@ async function call<T>(method: string, path: string, body?: unknown, seat?: Seat
   try {
     // A deadline on the whole request, body included: a hung request on weak
     // classroom Wi-Fi must fail, so the retry and resync logic can run.
-    const signal = AbortSignal.timeout(GAME.requestTimeoutMs);
+    const signal = timeoutSignal(GAME.requestTimeoutMs);
     res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
     data = (await res.json().catch((err: unknown) => {
       if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) throw err;

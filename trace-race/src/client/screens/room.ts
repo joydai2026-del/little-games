@@ -1,11 +1,12 @@
 // One room. Polls the Worker and shows the right screen for this phone:
 // teacher (lobby, race board, results) or kid (waiting, tracing pad, results).
-import { ApiError, act, clearSeat, loadSeat, poll, sendStroke, setList, setOptions, type Seat } from '../api';
+import { ApiError, act, clearSeat, loadSeat, type Envelope, poll, sendStroke, setList, setOptions, type Seat } from '../api';
 import { GAME, OPTION_LIMITS } from '../../shared/config';
 import type { PublicState, StrokeResult } from '../../shared/types';
 import { startTrace, type TraceHandle } from '../tracer';
 import { brand, credits, h, momo } from '../ui';
 import { goTo } from '../route';
+import { StrokeSender } from '../sender';
 import { HICCUP_TEXT, kidStatusText } from '../status';
 import { board } from './board';
 
@@ -15,6 +16,8 @@ interface Ctx {
   seat: Seat;
   state: PublicState | null;
   offset: number; // serverTime - Date.now()
+  /** Set after a stroke send gave up: polls stay FULL (never "unchanged") until one succeeds. */
+  forceFull: boolean;
   refresh(): void;
 }
 
@@ -32,7 +35,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastKey = '';
   let kid: KidRace | null = null;
-  const ctx: Ctx = { root, code, seat, state: null, offset: 0, refresh: () => void tick(true) };
+  const ctx: Ctx = { root, code, seat, state: null, offset: 0, forceFull: false, refresh: () => void tick(true) };
 
   let teacherCounting = false;
   let endPolledRound = -1;
@@ -59,7 +62,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
       root.className = 'wide';
       if (s.phase === 'lobby') {
         // Keep typing and focus: only rebuild the lobby when something visible changed.
-        const lobbyKey = `${key}:${s.version}`;
+        const lobbyKey = `${key}:${s.version}:${s.present.join(',')}`;
         const active = document.activeElement;
         const typing = active instanceof HTMLTextAreaElement && root.contains(active);
         if (lobbyKey !== lastKey && !typing) {
@@ -100,15 +103,26 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
     clearTimeout(timer);
     let wait: number = GAME.pollMs.lobby;
     try {
-      const res = await poll(code, seat!, force || !ctx.state ? undefined : ctx.state.version);
+      // Full reads (no ?v) when forced, after a give-up, and for the teacher
+      // outside a race: "Kids here" changes with time, not only with the version.
+      const s0 = ctx.state;
+      const full = force || ctx.forceFull || !s0 || (s0.role === 'teacher' && s0.phase !== 'racing');
+      const res = await poll(code, seat!, full ? undefined : s0!.version);
       ctx.offset = res.serverTime - Date.now();
       if (res.state) {
         ctx.state = res.state;
+        if (full) ctx.forceFull = false;
         render();
       }
       wait = res.nextPollMs ?? GAME.pollMs[ctx.state?.phase ?? 'lobby'];
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
+      // Only the room's OWN answers mean the seat is dead; a stray 403 from the
+      // network (an edge challenge, a captive portal) must not delete a good seat.
+      const roomSaysGone =
+        err instanceof ApiError &&
+        ((err.status === 404 && err.message === 'that room is not around any more') ||
+          (err.status === 403 && err.message === 'not a player in this room'));
+      if (roomSaysGone) {
         // The saved seat is for a room that is gone (codes are reused): forget it, so the
         // join link works again instead of looping back here.
         clearSeat(code);
@@ -143,7 +157,8 @@ function stepper(label: string, value: number, min: number, max: number, step: n
 
 function teacherLobby(ctx: Ctx): HTMLElement {
   const s = ctx.state!;
-  const kids = s.players.filter((p) => p.role === 'kid');
+  // The SAME list Start races with (presentKids on the server).
+  const kids = s.players.filter((p) => s.present.includes(p.id));
   const link = `${location.origin}/#/join/${s.code}`;
   const err = h('p', { class: 'error', role: 'status' });
   const save = async (options: Record<string, unknown>) => {
@@ -234,7 +249,12 @@ function teacherRace(ctx: Ctx): HTMLElement {
         again.disabled = false;
       }
     });
-    footer = h('div', {}, [again, err]);
+    const next = s.players.filter((p) => s.present.includes(p.id)).map((p) => p.name);
+    footer = h('div', {}, [
+      again,
+      h('p', { class: 'muted', text: next.length ? `Next race: ${next.join(', ')}` : 'Nobody is here for the next race yet.' }),
+      err,
+    ]);
   }
   return h('div', {}, [
     h('div', { class: 'race-head' }, [
@@ -264,8 +284,8 @@ function kidLobby(ctx: Ctx): HTMLElement {
 function kidLate(ctx: Ctx): HTMLElement {
   return h('div', {}, [
     momo('bounce'),
-    h('h1', { text: 'This race already started', style: 'text-align:center' }),
-    h('p', { class: 'notice', text: 'Watch this one. You are in the next race!' }),
+    h('h1', { text: 'You will race next round', style: 'text-align:center' }),
+    h('p', { class: 'notice', text: 'This race started without you. Watch the board, and keep this screen on!' }),
     board(ctx.state!),
   ]);
 }
@@ -300,13 +320,10 @@ class KidRace {
   private seq = 0;
   private tracer: TraceHandle | null = null;
   private cheering = false;
-  private pending = 0;
   private hiccupUntil = 0;
   private errorText: string | null = null;
-  private gaveUp = false;
   /** Only states at least this new may be used to reconcile (drops a stale poll that crossed a send). */
   private minVersion = 0;
-  private queue: Promise<void> = Promise.resolve();
   private readonly head = h('div', { class: 'race-head' });
   private readonly stage = h('div');
   private readonly status = h('p', { class: 'muted', role: 'status', style: 'text-align:center' });
@@ -337,7 +354,7 @@ class KidRace {
 
   /** True when the pad and the room disagree and nothing is in flight to explain it. */
   private outOfStep(): boolean {
-    if (this.pending > 0 || this.cheering || this.state.version < this.minVersion) return false;
+    if (this.sender.pending > 0 || this.cheering || this.state.version < this.minVersion) return false;
     const mine = this.state.progress[this.state.you];
     if (!mine) return false;
     const localDone = this.charIndex >= this.state.roundChars.length;
@@ -350,7 +367,7 @@ class KidRace {
     this.tracer?.destroy();
     this.tracer = null;
     delete this.stage.dataset.fin;
-    this.gaveUp = false;
+    this.sender.reset();
     this.adoptServer();
     this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
     this.status.textContent = HICCUP_TEXT;
@@ -358,6 +375,9 @@ class KidRace {
 
   update(): void {
     if (this.outOfStep()) this.resync();
+    // A give-up whose strokes DID land (only the answers were lost): after a
+    // full read shows the pad and the room agree, stop skipping strokes.
+    else if (this.sender.gaveUp && this.sender.pending === 0 && !this.ctx.forceFull) this.sender.reset();
     const s = this.state;
     const total = s.roundChars.length;
     this.head.replaceChildren(
@@ -385,9 +405,15 @@ class KidRace {
       return;
     }
     if (!this.tracer && !this.cheering && this.charIndex < s.roundChars.length) this.mount();
-    if (this.charIndex >= s.roundChars.length && !this.cheering && this.stage.dataset.fin !== '1') {
-      this.stage.dataset.fin = '1';
-      this.stage.replaceChildren(momo('bounce'), h('h1', { text: 'You finished!', style: 'text-align:center' }), h('p', { class: 'notice', text: 'Look at the big screen to see the race.' }));
+    // Never say "You finished!" while strokes are still on their way to the room.
+    const fin = this.sender.pending > 0 ? 'sending' : 'done';
+    if (this.charIndex >= s.roundChars.length && !this.cheering && this.stage.dataset.fin !== fin) {
+      this.stage.dataset.fin = fin;
+      this.stage.replaceChildren(
+        momo('bounce'),
+        h('h1', { text: fin === 'done' ? 'You finished!' : 'Almost there...', style: 'text-align:center' }),
+        h('p', { class: 'notice', text: fin === 'done' ? 'Look at the big screen to see the race.' : 'Sending your strokes to the board.' })
+      );
       this.dots.replaceChildren();
     }
   }
@@ -426,37 +452,25 @@ class KidRace {
     this.stage.replaceChildren(handle.root);
   }
 
-  /** Sends one stroke in order, retrying with back-off; a refusal or give-up hands over to the room. */
+  private readonly sender = new StrokeSender<Envelope>({
+    send: (msg) => sendStroke(this.ctx.code, this.ctx.seat, msg),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    backoffMs: GAME.strokeRetryBackoffMs,
+    isRetryable: (err) => !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500,
+    onSent: (env) => {
+      this.ctx.state = env.state;
+      this.minVersion = Math.max(this.minVersion, env.state.version);
+    },
+    onDrained: (gaveUp) => {
+      // A give-up forces full reads until one succeeds, so the reconcile below
+      // runs even when nothing changed in the room (a whole-class outage).
+      if (gaveUp) this.ctx.forceFull = true;
+      this.ctx.refresh();
+    },
+  });
+
   private send(charIndex: number, strokeIndex: number, result: StrokeResult): void {
-    const seq = ++this.seq;
-    const race = this.round;
-    this.pending += 1;
-    this.queue = this.queue.then(async () => {
-      const waits = GAME.strokeRetryBackoffMs;
-      try {
-        // An earlier send already gave up: the room is behind this stroke, so it
-        // would only be refused. Skip it; the resync below puts the pad right.
-        if (this.gaveUp) return;
-        for (let attempt = 0; attempt <= waits.length; attempt++) {
-          try {
-            const env = await sendStroke(this.ctx.code, this.ctx.seat, { race, seq, charIndex, strokeIndex, result });
-            this.ctx.state = env.state;
-            this.minVersion = Math.max(this.minVersion, env.state.version);
-            return;
-          } catch (err) {
-            const retryable = !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500;
-            if (!retryable || attempt === waits.length) {
-              this.gaveUp = true; // refused or gave up: skip the rest, reconcile below
-              return;
-            }
-            await new Promise((r) => setTimeout(r, waits[attempt]));
-          }
-        }
-      } finally {
-        this.pending -= 1;
-        if (this.pending === 0) this.ctx.refresh(); // fresh room state; update() reconciles if needed
-      }
-    });
+    void this.sender.enqueue({ race: this.round, seq: ++this.seq, charIndex, strokeIndex, result });
   }
 
   private cheer(): void {
