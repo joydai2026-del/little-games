@@ -32,6 +32,21 @@ function pathsLayer(paths: string[], fill: string, size: number, cls: string): S
   ]);
 }
 
+/** The kid's own accepted strokes as ink lines (points in stroke-data coordinates). */
+export function inkLayer(strokes: number[][][], size: number, cls: string): SVGElement {
+  const { transform } = placement(size, padFor(size));
+  const ink = token('--ink');
+  return svg('svg', { class: cls, width: size, height: size, viewBox: `0 0 ${size} ${size}` }, [
+    svg(
+      'g',
+      { transform },
+      strokes.map((pts) =>
+        svg('polyline', { points: pts.map(([x, y]) => `${x},${y}`).join(' '), fill: 'none', stroke: ink, 'stroke-width': GAME.drawingWidth * 1.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+      )
+    ),
+  ]);
+}
+
 /** Keeps at most `max` points of a long drag, evenly spread, always with both ends. */
 export function thinPoints(points: Point[], max: number): Point[] {
   if (points.length <= max) return points;
@@ -41,8 +56,8 @@ export function thinPoints(points: Point[], max: number): Point[] {
 }
 
 export interface PadView {
-  /** Strokes the room accepted for this character, in ink. */
-  ink: string[];
+  /** Strokes the room accepted for this character: the kid's OWN points (stroke-data coordinates), in ink. */
+  ink: number[][][];
   /** Easy only: the whole character, faint. */
   outline: string[] | null;
   /** The hint stroke, after misses. */
@@ -67,7 +82,9 @@ export function startPad(opts: { size: number; level: string; view: PadView }, o
   const layers = h('div', { class: 'layers' });
   const penWidth = Math.max(6, GAME.drawingWidth * placement(size, pad).scale);
   const drawing = svg('svg', { class: 'drawing', width: size, height: size, viewBox: `0 0 ${size} ${size}` });
-  root.append(grid(size), layers, drawing);
+  // While the room checks a stroke the pad says so, and a new touch makes the sign blink (nothing vanishes silently).
+  const checking = h('span', { class: 'checking', 'aria-live': 'polite', text: 'Checking...' });
+  root.append(grid(size), layers, drawing, checking);
   let locked = false;
   let dead = false;
   let screen: [number, number][] = [];
@@ -78,7 +95,7 @@ export function startPad(opts: { size: number; level: string; view: PadView }, o
     layers.replaceChildren(
       ...(view.outline ? [pathsLayer(view.outline, token('--outline-easy'), size, 'outline')] : []),
       ...(view.hint ? [pathsLayer([view.hint], token('--pink'), size, 'hint flash')] : []),
-      pathsLayer(view.ink, token('--ink'), size, 'ink')
+      inkLayer(view.ink, size, 'ink')
     );
     root.dataset.inked = String(view.ink.length);
   };
@@ -91,7 +108,13 @@ export function startPad(opts: { size: number; level: string; view: PadView }, o
   const redraw = () => line?.setAttribute('points', screen.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '));
 
   drawing.addEventListener('pointerdown', (e) => {
-    if (locked || dead || active !== null) return;
+    if (locked) {
+      checking.classList.remove('blink');
+      void checking.getBoundingClientRect();
+      checking.classList.add('blink');
+      return;
+    }
+    if (dead || active !== null) return;
     e.preventDefault();
     active = e.pointerId;
     try {
@@ -118,6 +141,7 @@ export function startPad(opts: { size: number; level: string; view: PadView }, o
     screen = [];
     if (pts.length >= 2 && !locked && !dead) {
       locked = true;
+      root.classList.add('busy');
       onStroke(thinPoints(pts, GAME.maxStrokePoints));
     } else line?.remove();
   };

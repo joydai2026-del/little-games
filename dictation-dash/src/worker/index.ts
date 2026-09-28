@@ -103,8 +103,8 @@ async function limited(request: Request, env: Env): Promise<Response | null> {
 
 /** GET /api/tts-budget: today's paid speech calls for the whole game, and the policy. Read-only. */
 async function budgetRoute(env: Env): Promise<Response> {
-  const { roomDaily, globalDaily } = budgetConfig(env);
-  const base = { model: ttsConfig(env).model, maxAttemptsPerWord: ttsConfig(env).maxAttempts, roomDailyLimit: roomDaily, globalDailyLimit: globalDaily };
+  const { roomDaily, globalDaily, ipDaily } = budgetConfig(env);
+  const base = { model: ttsConfig(env).model, maxAttemptsPerWord: ttsConfig(env).maxAttempts, roomDailyLimit: roomDaily, globalDailyLimit: globalDaily, ipDailyLimit: ipDaily };
   if (!env.BUDGET) return json({ ...base, error: 'no budget counter bound: speech is off' }, 503);
   try {
     const r = await env.BUDGET.get(env.BUDGET.idFromName('global')).fetch(new Request('https://budget/read'));

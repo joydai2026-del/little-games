@@ -14,6 +14,7 @@ import {
   createRoom,
   join,
   markHeard,
+  markServeFailed,
   nextRoundChars,
   nextAlarmAt,
   parseSkipInput,
@@ -66,6 +67,8 @@ export class RoomDO implements DurableObject {
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
   private geom: Record<string, CharGeom> = {};
+  /** This room's paid speech calls today, held in memory so a reservation never awaits (persisted on every change). */
+  private ttsDay: { day: string; used: number } = { day: '', used: 0 };
   /** One synthesis per word at a time: 30 kids hearing a new word make ONE model call. */
   private readonly speaking = new Map<string, Promise<Response>>();
 
@@ -74,11 +77,13 @@ export class RoomDO implements DurableObject {
     private readonly env: Env
   ) {
     this.ctx.blockConcurrencyWhile(async () => {
-      const [room, secrets, geom] = await Promise.all([
+      const [room, secrets, geom, ttsDay] = await Promise.all([
         this.ctx.storage.get<RoomState>(KEY_STATE),
         this.ctx.storage.get<Record<string, string>>(KEY_SECRETS),
         this.ctx.storage.get<Record<string, CharGeom>>(KEY_GEOM),
+        this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS),
       ]);
+      this.ttsDay = ttsDay ?? { day: '', used: 0 };
       this.room = room ?? null;
       this.secrets = secrets ?? {};
       this.geom = geom ?? {};
@@ -221,10 +226,11 @@ export class RoomDO implements DurableObject {
         else if (this.room.phase !== 'racing' || (this.room.goAt != null && now < this.room.goAt)) response = json({ error: 'wait for GO' }, 409);
         else {
           response = await this.clip(word, request);
-          if (response.ok && this.room) {
-            const heard = markHeard(this.room, playerId, index, Date.now());
-            if (heard !== this.room) {
-              this.room = heard;
+          if (this.room) {
+            // Served: the word's clock starts. Not served: Skip is allowed without hearing.
+            const next = response.ok ? markHeard(this.room, playerId, index, Date.now()) : markServeFailed(this.room, playerId, index);
+            if (next !== this.room) {
+              this.room = next;
               await this.save();
             }
           }
@@ -233,8 +239,7 @@ export class RoomDO implements DurableObject {
       }
       case 'budget': {
         // Readback: this room's paid speech calls today (any player of the room may look).
-        const t = (await this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS)) ?? null;
-        response = json({ day: utcDay(now), used: t && t.day === utcDay(now) ? t.used : 0, limit: budgetConfig(this.env).roomDaily });
+        response = json({ day: utcDay(now), used: this.ttsDay.day === utcDay(now) ? this.ttsDay.used : 0, limit: budgetConfig(this.env).roomDaily });
         break;
       }
       case 'start':
@@ -311,19 +316,30 @@ export class RoomDO implements DurableObject {
     const limiter = this.env.TTS_LIMITER;
     const budgets = this.env.BUDGET;
     if (!limiter || !budgets) return false;
-    const { roomDaily, globalDaily } = budgetConfig(this.env);
+    const { roomDaily, globalDaily, ipDaily } = budgetConfig(this.env);
+    // 1. The room's slot: read, check, increment and persist in ONE synchronous
+    //    step (no await in between), so parallel misses for different words
+    //    cannot both see the last free slot (Codex review round 2).
+    const day = utcDay(Date.now());
+    const used = this.ttsDay.day === day ? this.ttsDay.used : 0;
+    if (used + 1 > roomDaily) return false;
+    this.ttsDay = { day, used: used + 1 };
+    void this.ctx.storage.put(KEY_TTS, this.ttsDay);
+    const release = () => {
+      if (this.ttsDay.day === day && this.ttsDay.used > 0) this.ttsDay = { day, used: this.ttsDay.used - 1 };
+      void this.ctx.storage.put(KEY_TTS, this.ttsDay);
+      return false;
+    };
+    // 2. The per-IP limiter, then the game's daily budget (and this IP's share of it). All fail closed.
     try {
-      if (!(await limiter.limit({ key: ip })).success) return false;
-      const day = utcDay(Date.now());
-      const mine = (await this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS)) ?? { day, used: 0 };
-      const used = mine.day === day ? mine.used : 0;
-      if (used + 1 > roomDaily) return false;
-      const global = await budgets.get(budgets.idFromName('global')).fetch(new Request(`https://budget/reserve?limit=${globalDaily}`, { method: 'POST' }));
-      if (!global.ok || !((await global.json()) as { ok?: boolean }).ok) return false;
-      await this.ctx.storage.put(KEY_TTS, { day, used: used + 1 });
+      if (!(await limiter.limit({ key: ip })).success) return release();
+      const global = await budgets
+        .get(budgets.idFromName('global'))
+        .fetch(new Request(`https://budget/reserve?limit=${globalDaily}&ipLimit=${ipDaily}&ip=${encodeURIComponent(ip)}`, { method: 'POST' }));
+      if (!global.ok || !((await global.json()) as { ok?: boolean }).ok) return release();
       return true;
     } catch {
-      return false;
+      return release();
     }
   }
 

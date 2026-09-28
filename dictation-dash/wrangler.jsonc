@@ -49,6 +49,8 @@
     // Paid speech calls (every model attempt, retries included) per UTC day.
     // Reaching either one switches speech off (fail closed) until tomorrow.
     "TTS_ROOM_DAILY_CALLS": "150",
-    "TTS_GLOBAL_DAILY_CALLS": "3000"
+    "TTS_GLOBAL_DAILY_CALLS": "3000",
+    // One IP's share of the day (below the global cap).
+    "TTS_IP_DAILY_CALLS": "400"
   }
 }

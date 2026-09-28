@@ -104,9 +104,10 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
  * the room already accepted. This is the agent "knowing the list" (like a kid
  * who studied it); the room never tells it the word.
  */
-export function candidates(me, words) {
+export function candidates(me, words, used = []) {
   if (!me || me.charCount == null) return [];
-  const closed = new Set((me.closed ?? []).map((c) => c.word));
+  // The room names a closed word only once everyone has closed it, so the agent also remembers its own.
+  const closed = new Set([...(me.closed ?? []).map((c) => c.word).filter(Boolean), ...used]);
   return words.filter((w) => [...w].length === me.charCount && !closed.has(w));
 }
 
@@ -148,6 +149,7 @@ export async function playRound({
   let mistakes = 0;
   const heard = [];
   const tried = new Map(); // wordIndex -> candidates ruled out
+  const used = []; // words this agent already wrote this round
   for (let step = 0; step < maxSteps; step++) {
     const me = state.me;
     if (state.phase === 'done' || me?.finishedAt != null) break;
@@ -171,7 +173,7 @@ export async function playRound({
       continue;
     }
     const out = tried.get(me.wordIndex) ?? new Set();
-    const cand = candidates(me, words).find((w) => !out.has(w));
+    const cand = candidates(me, words, used).find((w) => !out.has(w));
     if (!cand) {
       log(`word ${me.wordIndex + 1}: no word of mine fits, skipping`);
       state = (await client.skip(code, state.round, me.seq + 1, me.wordIndex)).state;
@@ -199,7 +201,10 @@ export async function playRound({
         }
       } else if (res.verdict === 'correct') {
         strokes += 1;
-        if (state.me && state.me.wordIndex !== me.wordIndex && state.me.closed.at(-1)?.result === 'written') log(`wrote ${cand}`);
+        if (state.me && state.me.wordIndex !== me.wordIndex && state.me.closed.at(-1)?.result === 'written') {
+          used.push(cand);
+          log(`wrote ${cand}`);
+        }
       }
     } catch (err) {
       // 429 = the server's pace floor; anything else, resync from the room.

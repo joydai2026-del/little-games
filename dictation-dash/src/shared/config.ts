@@ -8,7 +8,7 @@ export const LEVELS: readonly Level[] = ['easy', 'hard'];
 export interface DashOptions {
   /** Easy = a faint outline of the character shows in the box. Hard = a blank box, write from memory. */
   level: Level;
-  /** Seconds each word gets once it has been heard. The round clock is built from this too. */
+  /** Base seconds each word gets once it has been heard; the room adds time per stroke (WORD_CLOCK). */
   secondsPerWord: number;
   /** Words in one round, taken in order from the teacher's list. */
   wordsPerRound: number;
@@ -16,12 +16,12 @@ export interface DashOptions {
 
 export const DEFAULT_OPTIONS: DashOptions = {
   level: 'easy',
-  secondsPerWord: 40,
+  secondsPerWord: 15,
   wordsPerRound: 5,
 };
 
 export const OPTION_LIMITS = {
-  secondsPerWord: { min: 15, max: 120 },
+  secondsPerWord: { min: 5, max: 120 },
   wordsPerRound: { min: 1, max: 15 },
 } as const;
 
@@ -30,6 +30,18 @@ export const LEVEL_RULES: Record<Level, { showOutline: boolean; label: string; b
   // The room sends the outline ONLY on Easy, and only after the word was heard.
   easy: { showOutline: true, label: 'Easy', blurb: 'A faint outline shows in the box' },
   hard: { showOutline: false, label: 'Hard', blurb: 'Blank box. Write it from memory' },
+};
+
+/**
+ * The word clock (Claude review round 2): base seconds (the teacher's
+ * "Seconds per word") + seconds per stroke of the whole word, per level, so a
+ * 4-character idiom (聚精会神, 49 strokes) gets time for every stroke. The
+ * total is rounded UP to a whole bucket, so the clock a kid sees tells little
+ * about how many strokes the word has.
+ */
+export const WORD_CLOCK = {
+  secondsPerStroke: { easy: 3, hard: 4 } as Record<Level, number>,
+  bucketSeconds: 20,
 };
 
 /** Product flags. No paywall code reads these yet. */
@@ -67,8 +79,14 @@ export const GAME = {
    * 2026-09-28); on Easy the outline is there anyway, so full credit.
    */
   strokeScore: { easy: { plain: 1, helped: 1 }, hard: { plain: 1, helped: 0.5 } },
-  /** Joins one room accepts per minute (a script cannot flood a class list). */
-  joinsPerMinute: 60,
+  /** Joins one room accepts per minute. Kept BELOW maxKids and checked first, so a script cannot fill every seat at once. */
+  joinsPerMinute: 20,
+  /** Wrong strokes one player may make on one word; after that the room stops grading it (tap Skip). Stops using the grader as an answer oracle. */
+  maxMissesPerWord: 15,
+  /** Least time between two graded strokes (right or wrong) from one player, in ms, on the server clock. */
+  minStrokeGapMs: 200,
+  /** Points kept per accepted stroke when the room echoes the kid's own drawing back. */
+  echoPoints: 48,
   /** Client polling, in ms. */
   pollMs: { lobby: 1500, racing: 800, done: 2500 },
   /** How long the "your bean jumps" cheer shows between words, in ms. */

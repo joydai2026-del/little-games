@@ -34,6 +34,14 @@ export interface Progress {
   strokeMisses: number;
   /** Strokes accepted only after the hint on Hard (they score less). */
   helped: number;
+  /** Wrong strokes on the word in progress (capped by GAME.maxMissesPerWord). */
+  wordMisses: number;
+  /** When this player's last stroke was graded (the per-stroke gap). */
+  lastGradedAt: number | null;
+  /** The kid's OWN accepted drawing for the word in progress: per character, per stroke, [x, y] points (thinned). */
+  drawn: number[][][][];
+  /** The room tried to serve this word's clip to this player and could not (a skip is then allowed without hearing). */
+  serveFailed: boolean;
   /** Correct strokes this round, counted or not: the pace floor only. */
   strokesDone: number;
   /** Correct strokes that SCORE: strokes on written words plus the word in progress. A skipped word's strokes are taken back. */
@@ -132,8 +140,10 @@ export interface MyRound {
   audio: string | null;
   heard: boolean;
   deadlineAt: number | null;
-  /** Accepted strokes, as SVG paths, per character of the current word written so far. */
-  accepted: string[][];
+  /** How long this word's clock is, in ms (bucketed), or null before hearing. */
+  clockMs: number | null;
+  /** Accepted strokes as the kid's OWN drawn points (never the canonical shapes), per character written so far. */
+  accepted: number[][][][];
   /** Easy only, after hearing: the current character's outline paths. */
   outline: string[] | null;
   /** After GAME.hintAfterMisses misses on one stroke: that stroke's path, as a hint. */
@@ -143,8 +153,10 @@ export interface MyRound {
   mistakes: number;
   seq: number;
   finishedAt: number | null;
-  /** This player's closed words, with how each ended. */
-  closed: { word: string; result: 'written' | 'skipped' }[];
+  /** This player's closed words, with how each ended. The word text only once that word is closed for EVERYONE in the round. */
+  closed: { word: string | null; result: 'written' | 'skipped' }[];
+  /** Wrong strokes left on this word before the room stops grading it. */
+  missesLeft: number;
 }
 
 export interface PublicState {

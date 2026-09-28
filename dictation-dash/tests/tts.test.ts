@@ -143,3 +143,32 @@ describe('GET /api/rooms/:code/say through the Worker', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('budget races and the per-IP daily cap', () => {
+  it('two DIFFERENT new words at once with one room slot left: exactly one model call', async () => {
+    const { buildRoom, boundEnv } = await import('./harness');
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const run = vi.fn(async () => (await gate, { audio: b64(WAV) }));
+    const { room } = await buildRoom(boundEnv({ AI: { run }, TTS_ROOM_DAILY_CALLS: '1' }) as never);
+    const req = new Request('https://room/say?r=1&w=0', { headers: { 'x-client-ip': '203.0.113.9' } });
+    const clip = (word: string) => (room as unknown as { clip(w: string, r: Request): Promise<Response> }).clip(word, req);
+    const both = Promise.all([clip('大山'), clip('学校')]);
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    const statuses = (await both).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 429]);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('one IP cannot spend more than its daily share of the global budget', async () => {
+    const run = vi.fn(async () => ({ audio: b64(WAV) }));
+    const w = buildWorker({ AI: { run }, TTS_IP_DAILY_CALLS: '1', TTS_GLOBAL_DAILY_CALLS: '100' });
+    const a = await started(w, '朋友');
+    expect((await w.fetch(`/api/rooms/${a.made.code}/say?r=1&w=0`, { headers: a.h(a.kid) })).status).toBe(200);
+    const b = await started(w, '学校');
+    expect((await w.fetch(`/api/rooms/${b.made.code}/say?r=1&w=0`, { headers: b.h(b.kid) })).status).toBe(429);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(((await (await w.fetch('/api/tts-budget')).json()) as any).ipDailyLimit).toBe(1);
+  });
+});

@@ -4,6 +4,7 @@ import {
   createRoom,
   join,
   markHeard,
+  markServeFailed,
   nextAlarmAt,
   nextRoundChars,
   parseSkipInput,
@@ -17,10 +18,13 @@ import {
   startRound,
   submitStroke,
   touch,
+  wordClockMs,
+  wordStrokes,
   wordToSay,
   wordsForRound,
+  closedForAll,
 } from '../src/shared/dash';
-import { GAME } from '../src/shared/config';
+import { GAME, WORD_CLOCK } from '../src/shared/config';
 import type { RoomState, WordList } from '../src/shared/types';
 import { GEOM, asPairs, backwards, other, right } from './geom';
 
@@ -90,18 +94,33 @@ describe('the word clock belongs to the room', () => {
     expect(stroke(s, 'k1', right('人', 0), GO + 500).error).toBe('listen to the word first');
     expect(markHeard(s, 'k1', 0, GO - 1)).toBe(s); // not before GO
     const h1 = markHeard(s, 'k1', 0, GO + 100);
-    expect(h1.progress.k1).toMatchObject({ heardAt: GO + 100, deadlineAt: GO + 100 + 20_000 });
+    const clock = wordClockMs(s.options, wordStrokes('人口', s.list.strokeCounts));
+    expect(h1.progress.k1).toMatchObject({ heardAt: GO + 100, deadlineAt: GO + 100 + clock });
     expect(markHeard(h1, 'k1', 0, GO + 5000)).toBe(h1);
     expect(markHeard(h1, 'k1', 1, GO + 5000)).toBe(h1); // not ahead
   });
   it('a stroke after the deadline is refused, and the word closes as skipped (strokes taken back)', () => {
     let s = heard();
     ({ s } = write(s, 'k1', 1, GO + 1000));
-    const late = GO + 20_000;
+    const late = s.progress.k1.deadlineAt!;
     expect(stroke(s, 'k1', right('人', 1), late).error).toBe('time is up for that word');
     const settled = advanceIfDue(s, late);
     expect(settled.progress.k1).toMatchObject({ wordIndex: 1, wordsSkipped: 1, scoreStrokes: 0, strokesDone: 1, results: ['skipped'] });
-    expect(nextAlarmAt(s, GO)).toBe(GO + 20_000);
+    expect(nextAlarmAt(s, GO)).toBe(late);
+  });
+  it('the clock grows with the word\'s strokes (per level), bucketed: a 4-character idiom gets time for every stroke', () => {
+    const idiom = '聚精会神'; // 14 + 14 + 6 + 9 = 43 strokes in hanzi-writer-data 2.0.1
+    const counts = { 聚: 14, 精: 14, 会: 6, 神: 9 };
+    for (const level of ['easy', 'hard'] as const) {
+      const opts = { level, secondsPerWord: 15, wordsPerRound: 1 };
+      const ms = wordClockMs(opts, wordStrokes(idiom, counts));
+      expect(ms).toBeGreaterThanOrEqual((15 + WORD_CLOCK.secondsPerStroke[level] * 43) * 1000);
+      expect(ms % (WORD_CLOCK.bucketSeconds * 1000)).toBe(0);
+      expect(ms).toBeGreaterThan(wordClockMs(opts, wordStrokes('大', { 大: 3 })));
+    }
+    // Two words whose stroke counts fall in one bucket get the same clock (the clock hides the exact count).
+    const o = { level: 'hard' as const, secondsPerWord: 15, wordsPerRound: 1 };
+    expect(wordClockMs(o, 6)).toBe(wordClockMs(o, 2));
   });
 });
 
@@ -118,7 +137,10 @@ describe('levels: Easy sends the outline after hearing, Hard never does', () => 
     s = write(s, 'k1', 1, GO + 500).s;
     const v = publicView(s, 'k1', GO + 600, GEOM).me!;
     expect(v.outline).toBeNull();
-    expect(v.accepted).toEqual([[GEOM['人'].strokes[0]]]); // only what was accepted, as geometry
+    // Only what was accepted, echoed as the kid's OWN points, never the canonical shape.
+    expect(v.accepted[0]).toHaveLength(1);
+    expect(v.accepted[0][0][0]).toEqual(asPairs(right('人', 0)).map(([x, y]) => [Math.round(x), Math.round(y)])[0]);
+    expect(JSON.stringify(v)).not.toContain(GEOM['人'].strokes[0]);
   });
 });
 
@@ -137,15 +159,34 @@ describe('a writer cannot recover the word or its stroke count', () => {
     // The stroke count of the current character is not derivable: only accepted strokes are there.
     expect(me.accepted[0]).toHaveLength(1);
   });
-  it('closed words only: your own closed words during the round, all words once it is done', () => {
-    let s = heard({ level: 'hard', wordsPerRound: 2 });
-    s = write(s, 'k1', 5, GO + 500).s; // k1 wrote 人口
-    const k1 = JSON.stringify(publicView(s, 'k1', GO + 5000, GEOM));
-    expect(k1).toContain('人口');
-    expect(k1).not.toContain('"大"');
-    expect(JSON.stringify(publicView(s, 'k2', GO + 5000, GEOM))).not.toContain('人');
+  it('a sacrificial kid learns nothing mid-word: no skip before hearing, and a closed word is named only once EVERYONE closed it', () => {
+    let s = racing({ level: 'hard', wordsPerRound: 2 });
+    // Skip at GO+10 ms without hearing: refused.
+    expect(skipWord(s, 'k1', { race: 1, seq: 1, wordIndex: 0 }, GO + 10).error).toBe('listen to the word first');
+    // Hear, then skip: allowed, but the word is not named while k2 is still on it.
+    s = markHeard(s, 'k1', 0, GO + 10);
+    s = skipWord(s, 'k1', { race: 1, seq: 1, wordIndex: 0 }, GO + 20).state;
+    const k1 = publicView(s, 'k1', GO + 30, GEOM);
+    expect(k1.me!.closed).toEqual([{ word: null, result: 'skipped' }]);
+    expect(JSON.stringify(k1)).not.toMatch(/人|口|大/);
+    expect(closedForAll(s, 0)).toBe(false);
+    // Once k2 closes word 0 too, it may be named; word 1 stays secret.
+    s = markHeard(s, 'k2', 0, GO + 40);
+    s = skipWord(s, 'k2', { race: 1, seq: 1, wordIndex: 0 }, GO + 50).state;
+    expect(publicView(s, 'k1', GO + 60, GEOM).me!.closed[0].word).toBe('人口');
+    expect(JSON.stringify(publicView(s, 'k1', GO + 60, GEOM))).not.toContain('大');
+    // A word the room could not serve may be skipped without hearing.
+    let f = racing();
+    f = markServeFailed(f, 'k1', 0);
+    expect(skipWord(f, 'k1', { race: 1, seq: 1, wordIndex: 0 }, GO + 10).error).toBeUndefined();
     const done = advanceIfDue(s, s.endsAt!);
     expect(publicView(done, 'k2', s.endsAt!, GEOM).roundWords).toEqual(['人口', '大']);
+  });
+  it('the kid view hides the list report (headings, left-out words); the teacher sees it', () => {
+    const noisy = createRoom('ABCD', { id: 't', name: 'T' }, 'class', {}, { ...LIST, skipped: ['第三课'], missing: ['𠮷祥'], tooLong: ['中华人民共和国'] }, T0);
+    const withKid = join(noisy, { id: 'k', name: 'K' }, T0).state;
+    expect(publicView(withKid, 'k', T0).list).toEqual({ words: [], missing: [], tooLong: [], skipped: [], overflow: [], repeats: 0, count: 3 });
+    expect(publicView(withKid, 't', T0).list.skipped).toEqual(['第三课']);
   });
   it('the teacher sees the list and the round; a solo writer sees neither', () => {
     const s = racing();
@@ -163,13 +204,26 @@ describe('help and hints', () => {
   it('after hintAfterMisses misses the room shows that stroke; on Hard the helped stroke scores half, on Easy full', () => {
     for (const [level, score] of [['hard', 0.5], ['easy', 1]] as const) {
       let s = heard({ level, wordsPerRound: 2 });
-      for (let i = 0; i < GAME.hintAfterMisses; i++) s = stroke(s, 'k1', backwards('人', 0), GO + 500 + i).state;
-      expect(publicView(s, 'k1', GO + 600, GEOM).me!.hint).toBe(GEOM['人'].strokes[0]);
-      s = stroke(s, 'k1', right('人', 0), GO + 1000).state;
+      for (let i = 0; i < GAME.hintAfterMisses; i++) s = stroke(s, 'k1', backwards('人', 0), GO + 500 + i * GAME.minStrokeGapMs).state;
+      expect(publicView(s, 'k1', GO + 5000, GEOM).me!.hint).toBe(GEOM['人'].strokes[0]);
+      s = stroke(s, 'k1', right('人', 0), GO + 6000).state;
       expect(s.progress.k1.scoreStrokes).toBe(score);
       expect(standings(s).find((r) => r.playerId === 'k1')!.helped).toBe(level === 'hard' ? 1 : 0);
-      expect(publicView(s, 'k1', GO + 1100, GEOM).me!.hint).toBeNull();
+      expect(publicView(s, 'k1', GO + 6100, GEOM).me!.hint).toBeNull();
     }
+  });
+  it('pacing: a per-stroke gap (right or wrong), and the grader stops after maxMissesPerWord misses on one word', () => {
+    let s = heard();
+    s = stroke(s, 'k1', backwards('人', 0), GO + 1000).state;
+    expect(stroke(s, 'k1', right('人', 0), GO + 1000 + GAME.minStrokeGapMs - 1).status).toBe(429);
+    expect(stroke(s, 'k1', right('人', 0), GO + 1000 + GAME.minStrokeGapMs).verdict).toBe('correct');
+    let t = heard();
+    for (let i = 0; i < GAME.maxMissesPerWord; i++) t = stroke(t, 'k1', backwards('人', 0), GO + 1000 + i * GAME.minStrokeGapMs).state;
+    expect(publicView(t, 'k1', GO + 9000, GEOM).me!.missesLeft).toBe(0);
+    expect(stroke(t, 'k1', right('人', 0), GO + 9000).error).toBe('no more tries on this word, tap Skip');
+    // Skip still works, and the next word starts fresh.
+    t = skipWord(t, 'k1', { race: 1, seq: t.progress.k1.seq + 1, wordIndex: 0 }, GO + 9100).state;
+    expect(t.progress.k1.wordMisses).toBe(0);
   });
 });
 
@@ -211,8 +265,9 @@ describe('skips score 0', () => {
     expect(parseSkipInput({ race: 1, seq: 1 })).toBeNull();
   });
   it('skipping the last word finishes', () => {
-    let s = racing();
+    let s = markHeard(racing(), 'k1', 0, GO);
     s = skipWord(s, 'k1', { race: 1, seq: 1, wordIndex: 0 }, GO + 100).state;
+    s = markHeard(s, 'k1', 1, GO + 150);
     s = skipWord(s, 'k1', { race: 1, seq: 2, wordIndex: 1 }, GO + 200).state;
     expect(s.progress.k1.finishedAt).toBe(GO + 200);
   });
@@ -267,7 +322,7 @@ describe('rounds, lists and settings', () => {
   });
   it('the round clock, round end, late joiners', () => {
     let s = racing();
-    expect(s.endsAt).toBe(GO + roundMs(s.options, 2));
+    expect(s.endsAt).toBe(GO + roundMs(s.options, ['人口', '大'], LIST.strokeCounts));
     s = join(s, { id: 'late', name: 'Late Leo' }, GO + 100).state;
     expect(publicView(s, 'late', GO + 100, GEOM).me).toBeNull();
     expect(markHeard(s, 'late', 0, GO)).toBe(s);
@@ -276,11 +331,12 @@ describe('rounds, lists and settings', () => {
     const done = advanceIfDue(s, s.endsAt!);
     expect(done.phase).toBe('done');
   });
-  it('join rate limit per room', () => {
+  it('join rate limit per room fires before the room is full (429), and a minute later joins work again', () => {
+    expect(GAME.joinsPerMinute).toBeLessThan(GAME.maxKids);
     let s = createRoom('ABCD', { id: 't', name: 'T' }, 'class', {}, LIST, T0);
     for (let i = 0; i < GAME.joinsPerMinute; i++) s = join(s, { id: `k${i}`, name: `K${i}` }, T0 + i).state;
-    const r = join(s, { id: 'x', name: 'X' }, T0 + 100);
-    expect(GAME.joinsPerMinute >= GAME.maxKids ? [409, 429] : [429]).toContain(r.status);
+    expect(join(s, { id: 'x', name: 'X' }, T0 + 100).status).toBe(429);
+    expect(join(s, { id: 'x', name: 'X' }, T0 + 61_000).error).toBeUndefined();
   });
   it('what may be spoken: only words of a started round', () => {
     expect(wordToSay(lobby(), 0)).toBeNull();

@@ -6,9 +6,8 @@ import { GAME, OPTION_LIMITS, type Level } from '../../shared/config';
 import type { PublicState } from '../../shared/types';
 import { canRequest, cancelled, ended, failed, freshAudio, replaysLeft, requested, started, type WordAudio } from '../../shared/word-audio';
 import type { Point } from '../../shared/matcher';
-import { startPad, type PadHandle } from '../pad';
-import { brand, h, levelBadge, levelPicker, momo, setHeaderLink, svg, token } from '../ui';
-import { placement } from '../../shared/matcher';
+import { inkLayer, startPad, type PadHandle } from '../pad';
+import { brand, h, levelBadge, levelPicker, momo, setHeaderLink } from '../ui';
 import { goTo, headerLinkOn } from '../route';
 import { Sender, type SendMsg } from '../sender';
 import { newScreen, onMuteChange, releaseClips, sayWord, setUserMuted, userMuted } from '../speech';
@@ -49,6 +48,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   let showWords = false;
   const toggleWords = () => {
     showWords = !showWords;
+    lastKey = '';
     render();
   };
   let endPolledRound = -1;
@@ -83,9 +83,9 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
       }
       if (typing && s.phase === 'done') return;
       teacherCounting = s.phase === 'racing' && s.goAt != null && serverNow(ctx) < s.goAt;
-      const raceKey = `${key}:${s.version}:${s.present.join(',')}:${teacherCounting}`;
+      const raceKey = `${key}:${s.version}:${s.present.join(',')}:${teacherCounting}:${showWords}`;
       if (raceKey !== lastKey) {
-        root.replaceChildren(teacherRound(ctx));
+        root.replaceChildren(teacherRound(ctx, showWords, toggleWords));
         lastKey = raceKey;
       }
       return;
@@ -185,7 +185,7 @@ function settingsCard(ctx: Ctx, err: HTMLElement): HTMLElement {
     h('h2', { text: 'Pick the level' }),
     levelPicker(s.options.level, (level: Level) => void save({ level })),
     h('div', { class: 'row' }, [
-      stepper('Seconds per word', s.options.secondsPerWord, OPTION_LIMITS.secondsPerWord.min, OPTION_LIMITS.secondsPerWord.max, 5, (n) => void save({ secondsPerWord: n })),
+      stepper('Base seconds per word', s.options.secondsPerWord, OPTION_LIMITS.secondsPerWord.min, OPTION_LIMITS.secondsPerWord.max, 5, (n) => void save({ secondsPerWord: n })),
       stepper('Words per round', s.options.wordsPerRound, OPTION_LIMITS.wordsPerRound.min, OPTION_LIMITS.wordsPerRound.max, 1, (n) => void save({ wordsPerRound: n })),
     ]),
   ]);
@@ -264,7 +264,7 @@ function teacherLobby(ctx: Ctx, showWords: boolean, toggleWords: () => void): HT
   ]);
 }
 
-function teacherRound(ctx: Ctx): HTMLElement {
+function teacherRound(ctx: Ctx, showWords: boolean, toggleWords: () => void): HTMLElement {
   const s = ctx.state!;
   const err = h('p', { class: 'error', role: 'status' });
   const counting = s.phase === 'racing' && s.goAt != null && serverNow(ctx) < s.goAt;
@@ -287,7 +287,7 @@ function teacherRound(ctx: Ctx): HTMLElement {
       h('h2', { text: 'The words were' }),
       h('div', { class: 'chips' }, s.roundWords.map((w) => h('span', { class: 'chip', text: w }))),
       settingsCard(ctx, err),
-      listCard(ctx, err, { shown: false, toggle: () => ctx.refresh() }),
+      listCard(ctx, err, { shown: showWords, toggle: toggleWords }),
       h('section', { class: 'card' }, [
         again,
         h('p', { class: 'muted', text: next.length ? `Next round: ${next.join(', ')}` : 'Nobody is here for the next round yet.' }),
@@ -530,7 +530,7 @@ class KidRound {
   private paintListen(): void {
     const me = this.me;
     if (!me || this.finished || this.beforeGo) return;
-    const total = this.state.options.secondsPerWord * 1000;
+    const total = me.clockMs ?? 1;
     const msLeft = me.deadlineAt == null ? null : Math.max(0, me.deadlineAt - serverNow(this.ctx));
     this.wordBar.style.width = `${msLeft === null ? 100 : Math.round((msLeft / total) * 100)}%`;
     const max = GAME.replaysPerWord;
@@ -584,6 +584,7 @@ class KidRound {
   private paintPad(): void {
     const me = this.me!;
     const view = { ink: me.accepted[me.charIndex] ?? [], outline: me.outline, hint: me.hint };
+    this.pad?.root.classList.toggle('spent', me.missesLeft === 0);
     const charKey = `${me.wordIndex}:${me.charIndex}`;
     if (!this.pad || !this.padKey.startsWith(`${charKey}|`)) {
       this.dropPad();
@@ -650,7 +651,7 @@ class KidRound {
     if (this.errorText && !this.beforeGo) text = this.errorText;
     else if (Date.now() < this.hiccupUntil) text = HICCUP_TEXT;
     else if (!this.beforeGo && me && !this.finished && me.heard)
-      text = me.hint ? 'Look at the pink stroke, then write it.' : this.state.options.level === 'easy' ? 'Write it stroke by stroke. The faint outline helps you.' : 'Write it from memory, stroke by stroke.';
+      text = me.missesLeft === 0 ? 'No more tries on this word. Tap Skip for the next one.' : me.hint ? 'Look at the pink stroke, then write it.' : this.state.options.level === 'easy' ? 'Write it stroke by stroke. The faint outline helps you.' : 'Write it from memory, stroke by stroke.';
     if (this.status.textContent !== text) this.status.textContent = text;
   }
 
@@ -714,11 +715,9 @@ class KidRound {
   }
 }
 
-/** A tiny filled glyph for a written box, from the room's accepted stroke paths. */
-function miniInk(paths: string[]): SVGElement {
-  const size = 58;
-  const { transform } = placement(size, Math.round(size * 0.06));
-  return svg('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, 'aria-hidden': 'true' }, [
-    svg('g', { transform }, paths.map((d) => svg('path', { d, fill: token('--ink') }))),
-  ]);
+/** A tiny picture of a written box: the kid's own accepted strokes. */
+function miniInk(strokes: number[][][]): SVGElement {
+  const el = inkLayer(strokes, 58, 'mini');
+  el.setAttribute('aria-hidden', 'true');
+  return el;
 }

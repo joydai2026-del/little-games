@@ -60,11 +60,14 @@ describe('RoomDO', () => {
     expect(clip.status).toBe(200);
     expect(said).toEqual(['人口']);
     const view = (await (await room.fetch(get('state', kid))).json()) as any;
-    expect(view.state.me).toMatchObject({ heard: true, charCount: 2, deadlineAt: started.state.goAt + 100 + 20_000, outline: null });
+    expect(view.state.me).toMatchObject({ heard: true, charCount: 2, outline: null });
+    const deadline = view.state.me.deadlineAt;
+    expect(deadline).toBeGreaterThan(started.state.goAt + 100);
     expect(JSON.stringify(view.state)).not.toMatch(/人|口|大/);
     vi.setSystemTime(started.state.goAt + 1000);
     const wrong = (await (await room.fetch(m(backwards('人', 0), 1))).json()) as any;
     expect(wrong.verdict).toBe('mistake');
+    vi.setSystemTime(started.state.goAt + 1000 + GAME.minStrokeGapMs);
     const ok = (await (await room.fetch(m(right('人', 0), 2))).json()) as any;
     expect(ok.verdict).toBe('correct');
     expect(ok.state.me.accepted[0]).toHaveLength(1);
@@ -73,9 +76,9 @@ describe('RoomDO', () => {
     expect(again.state.version).toBe(ok.state.version);
     expect((await room.fetch(post('stroke', { race: 1, seq: 3, wordIndex: 0, charIndex: 0, strokeIndex: 1, result: 'correct' }, kid))).status).toBe(400);
     // Past the word's deadline the room closes it as skipped.
-    vi.setSystemTime(started.state.goAt + 100 + 20_000);
+    vi.setSystemTime(deadline);
     const after = (await (await room.fetch(get('state', kid))).json()) as any;
-    expect(after.state.me).toMatchObject({ wordIndex: 1, wordsSkipped: 1, closed: [{ word: '人口', result: 'skipped' }] });
+    expect(after.state.me).toMatchObject({ wordIndex: 1, wordsSkipped: 1, closed: [{ word: '人口', result: 'skipped' }] }); // Mia is the only writer: closed for all
     vi.setSystemTime(started.state.endsAt + 1);
     await room.alarm();
     expect(((await storage.get('state')) as any).phase).toBe('done');

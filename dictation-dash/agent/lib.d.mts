@@ -21,7 +21,7 @@ export interface AgentClient {
   next(code: string): Promise<any>;
 }
 export function createClient(opts: { baseUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): AgentClient;
-export function candidates(me: any, words: string[]): string[];
+export function candidates(me: any, words: string[], used?: string[]): string[];
 export function strokePoints(medians: number[][][], strokeIndex: number, opts?: { wrong?: boolean }): number[][] | null;
 export function playRound(opts: {
   client: AgentClient;

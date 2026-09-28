@@ -14,7 +14,7 @@
 //     word past its deadline closes as skipped.
 //   - A skipped word scores 0: correct strokes earned on it are taken back.
 
-import { GAME, normalizeOptions, type DashOptions } from './config';
+import { GAME, WORD_CLOCK, normalizeOptions, type DashOptions } from './config';
 import { gradeStroke, parsePoints, type Point } from './matcher';
 import type { CharGeom, Mode, MyRound, Player, Progress, PublicList, PublicState, RoomState, Standing, WordList } from './types';
 
@@ -62,6 +62,10 @@ export function freshProgress(): Progress {
     mistakes: 0,
     strokeMisses: 0,
     helped: 0,
+    wordMisses: 0,
+    lastGradedAt: null,
+    drawn: [],
+    serveFailed: false,
     strokesDone: 0,
     scoreStrokes: 0,
     wordStrokes: 0,
@@ -121,9 +125,10 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
   if (state.mode === 'solo') return fail(state, 'this is a practice room for one', 409);
   const name = cleanName(who.name);
   if (!name) return fail(state, 'please type your name', 400);
-  if (writers(state).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
+  // The rate is checked BEFORE fullness, and is below the seat count: a script cannot take every seat at once.
   const recent = state.players.filter((p) => p.role === 'kid' && now - p.joinedAt < 60_000).length;
   if (recent >= GAME.joinsPerMinute) return fail(state, 'too many people joined at once, wait a minute and try again', 429);
+  if (writers(state).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
   const player: Player = { id: who.id, name: uniqueName(state.players, name), role: 'kid', agent: who.agent === true, joinedAt: now, lastSeenAt: now };
   // No progress entry: a kid who joins mid-round watches and writes the next one.
   return { state: bump({ ...state, players: [...state.players, player] }) };
@@ -160,9 +165,23 @@ export function nextRoundChars(state: RoomState): string[] {
   return [...new Set(words.flatMap((w) => [...w]))];
 }
 
-/** How long a round with `words` words may run, in ms: each word's time plus time to hear it. */
-export function roundMs(options: DashOptions, words: number): number {
-  return (options.secondsPerWord + GAME.hearSlackSeconds) * words * 1000;
+/** Strokes in a whole word (0 for a character with no count). */
+export function wordStrokes(word: string, strokeCounts: Record<string, number>): number {
+  return [...word].reduce((n, ch) => n + (strokeCounts[ch] ?? 0), 0);
+}
+
+/**
+ * One word's clock, in ms: the teacher's base seconds + seconds per stroke
+ * (per level) x the word's strokes, rounded UP to a whole bucket.
+ */
+export function wordClockMs(options: DashOptions, strokes: number): number {
+  const raw = options.secondsPerWord + WORD_CLOCK.secondsPerStroke[options.level] * strokes;
+  return Math.ceil(raw / WORD_CLOCK.bucketSeconds) * WORD_CLOCK.bucketSeconds * 1000;
+}
+
+/** How long a round may run, in ms: every word's clock plus time to hear it. */
+export function roundMs(options: DashOptions, words: string[], strokeCounts: Record<string, number>): number {
+  return words.reduce((ms, w) => ms + wordClockMs(options, wordStrokes(w, strokeCounts)) + GAME.hearSlackSeconds * 1000, 0);
 }
 
 /** Lobby -> racing (Start) and done -> racing (Next round). */
@@ -174,7 +193,7 @@ export function startRound(state: RoomState, byId: string, now: number): Result 
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
   const roundWords = wordsForRound(state.list.words, state.cursor, state.options.wordsPerRound);
   const goAt = now + GAME.countdownSeconds * 1000;
-  const endsAt = goAt + roundMs(state.options, roundWords.length);
+  const endsAt = goAt + roundMs(state.options, roundWords, state.list.strokeCounts);
   const progress: Record<string, Progress> = {};
   for (const kid of active) progress[kid.id] = freshProgress();
   return {
@@ -210,6 +229,9 @@ function closeWord(state: RoomState, prog: Progress, now: number, written: boole
     charIndex: 0,
     strokeIndex: 0,
     strokeMisses: 0,
+    wordMisses: 0,
+    drawn: [],
+    serveFailed: false,
     heardAt: null,
     deadlineAt: null,
     wordsDone: prog.wordsDone + (written ? 1 : 0),
@@ -252,8 +274,22 @@ export function markHeard(state: RoomState, playerId: string, index: number, now
   const prog = state.progress[playerId];
   if (state.phase !== 'racing' || !prog || prog.finishedAt != null || prog.wordIndex !== index || prog.heardAt != null) return state;
   if (state.goAt != null && now < state.goAt) return state;
-  const heard = { ...prog, heardAt: now, deadlineAt: now + state.options.secondsPerWord * 1000 };
+  const clock = wordClockMs(state.options, wordStrokes(state.roundWords[index], state.list.strokeCounts));
+  const heard = { ...prog, heardAt: now, deadlineAt: now + clock };
   return bump({ ...state, progress: { ...state.progress, [playerId]: heard } });
+}
+
+/** The room tried to serve the current word's clip to this player and failed: Skip is allowed without hearing. */
+export function markServeFailed(state: RoomState, playerId: string, index: number): RoomState {
+  const prog = state.progress[playerId];
+  if (state.phase !== 'racing' || !prog || prog.wordIndex !== index || prog.heardAt != null || prog.serveFailed) return state;
+  return bump({ ...state, progress: { ...state.progress, [playerId]: { ...prog, serveFailed: true } } });
+}
+
+/** Keeps at most `max` points, evenly spread, both ends kept. */
+function thin(points: Point[], max: number): number[][] {
+  const pick = points.length <= max ? points : Array.from({ length: max }, (_, i) => points[Math.round((i * (points.length - 1)) / (max - 1))]);
+  return pick.map((p) => [Math.round(p.x), Math.round(p.y)]);
 }
 
 export interface StrokeInput {
@@ -325,16 +361,27 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
   if (prog.heardAt == null) return fail(state, 'listen to the word first', 409);
   if (prog.deadlineAt != null && now >= prog.deadlineAt) return fail(state, 'time is up for that word', 409);
   if (input.charIndex !== prog.charIndex) return fail(state, 'that is not the character you are on', 409);
+  if (prog.wordMisses >= GAME.maxMissesPerWord) return fail(state, 'no more tries on this word, tap Skip', 409);
+  if (prog.lastGradedAt != null && now - prog.lastGradedAt < GAME.minStrokeGapMs) return fail(state, 'too fast, slow down a little', 429);
   const char = [...state.roundWords[prog.wordIndex]][prog.charIndex];
   const data = geom[char];
   if (!data) return fail(state, 'the room is missing the stroke data for this word, try again in a moment', 503);
   const verdict = gradeStroke(input.points, data.medians, prog.strokeIndex);
   if (verdict === 'mistake') {
-    return commit(state, playerId, { ...prog, mistakes: prog.mistakes + 1, strokeMisses: prog.strokeMisses + 1, seq: input.seq }, now, 'mistake');
+    return commit(
+      state,
+      playerId,
+      { ...prog, mistakes: prog.mistakes + 1, strokeMisses: prog.strokeMisses + 1, wordMisses: prog.wordMisses + 1, lastGradedAt: now, seq: input.seq },
+      now,
+      'mistake'
+    );
   }
   const earliest = (state.goAt ?? 0) + (prog.strokesDone + 1) * GAME.minStrokeMs;
   if (now < earliest) return fail(state, 'too fast, slow down a little', 429);
   const helped = prog.strokeMisses >= GAME.hintAfterMisses;
+  const drawn = prog.drawn.map((c) => c.slice());
+  while (drawn.length <= prog.charIndex) drawn.push([]);
+  drawn[prog.charIndex].push(thin(input.points, GAME.echoPoints));
   const score = GAME.strokeScore[state.options.level][helped ? 'helped' : 'plain'];
   let next: Progress = {
     ...prog,
@@ -345,6 +392,8 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
     scoreStrokes: prog.scoreStrokes + score,
     wordStrokes: prog.wordStrokes + score,
     lastProgressAt: now,
+    lastGradedAt: now,
+    drawn,
     seq: input.seq,
   };
   if (next.strokeIndex >= data.strokes.length) {
@@ -358,6 +407,8 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
 export function skipWord(state: RoomState, playerId: string, input: SkipInput, now: number): Result {
   const g = gate(state, playerId, input, now);
   if ('state' in g) return g;
+  // Codex review round 2: no skipping a word you have not been served (it would close the word unheard).
+  if (g.heardAt == null && !g.serveFailed) return fail(state, 'listen to the word first', 409);
   return commit(state, playerId, closeWord(state, { ...g, seq: input.seq }, now, false), now);
 }
 
@@ -399,11 +450,8 @@ export function myRound(state: RoomState, playerId: string, geom: Record<string,
   if (!p || state.round === 0) return null;
   const done = p.finishedAt != null;
   const word = done ? [] : [...(state.roundWords[p.wordIndex] ?? '')];
-  const accepted: string[][] = [];
-  for (let c = 0; c <= p.charIndex && c < word.length; c++) {
-    const strokes = geom[word[c]]?.strokes ?? [];
-    accepted.push(strokes.slice(0, c < p.charIndex ? strokes.length : p.strokeIndex));
-  }
+  // The kid's OWN drawing, never the canonical shapes (those fingerprint the character).
+  const accepted: number[][][][] = done ? [] : Array.from({ length: Math.min(p.charIndex + 1, word.length) }, (_, c) => p.drawn[c] ?? []);
   const current = word[p.charIndex];
   const heard = p.heardAt != null;
   const outline = !done && heard && state.options.level === 'easy' && current ? geom[current]?.strokes ?? null : null;
@@ -415,6 +463,7 @@ export function myRound(state: RoomState, playerId: string, geom: Record<string,
     audio: done || state.phase !== 'racing' ? null : audioHandle(state.code, state.round, p.wordIndex),
     heard,
     deadlineAt: p.deadlineAt,
+    clockMs: p.deadlineAt != null && p.heardAt != null ? p.deadlineAt - p.heardAt : null,
     accepted,
     outline,
     hint,
@@ -423,13 +472,23 @@ export function myRound(state: RoomState, playerId: string, geom: Record<string,
     mistakes: p.mistakes,
     seq: p.seq,
     finishedAt: p.finishedAt,
-    closed: p.results.map((result, i) => ({ word: state.roundWords[i], result })),
+    closed: p.results.map((result, i) => ({ word: closedForAll(state, i) ? state.roundWords[i] : null, result })),
+    missesLeft: Math.max(0, GAME.maxMissesPerWord - p.wordMisses),
   };
 }
 
+/** True when word `i` is closed for EVERY player of the round (or the round is over): only then may its text reach a writer. */
+export function closedForAll(state: RoomState, i: number): boolean {
+  if (state.phase === 'done') return true;
+  const players = Object.values(state.progress);
+  return players.length > 0 && players.every((p) => p.finishedAt != null || p.wordIndex > i);
+}
+
+/** The teacher gets the whole list report; a writer (kid, agent, solo) only how many words there are. */
 function publicList(list: WordList, teacher: boolean): PublicList {
   const { strokeCounts: _counts, ...rest } = list;
-  return { ...rest, words: teacher ? list.words : [], count: list.words.length };
+  if (teacher) return { ...rest, count: list.words.length };
+  return { words: [], missing: [], tooLong: [], skipped: [], overflow: [], repeats: 0, count: list.words.length };
 }
 
 /**

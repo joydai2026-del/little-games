@@ -15,6 +15,8 @@ export interface Env {
   TTS_ROOM_DAILY_CALLS?: string;
   /** Paid speech calls the whole game may make per UTC day. */
   TTS_GLOBAL_DAILY_CALLS?: string;
+  /** Paid speech calls one IP may make per UTC day (below the global cap, so one IP cannot switch speech off for everyone). */
+  TTS_IP_DAILY_CALLS?: string;
   /** Seconds browsers and the edge keep one character's stroke JSON. */
   STROKE_CACHE_SECONDS?: string;
   /** Largest upstream stroke JSON accepted, in bytes (largest real file is 8,621). */
@@ -47,10 +49,11 @@ export function ttsConfig(env: Env): TtsConfig {
   };
 }
 
-export function budgetConfig(env: Env): { roomDaily: number; globalDaily: number } {
+export function budgetConfig(env: Env): { roomDaily: number; globalDaily: number; ipDaily: number } {
   return {
     roomDaily: numberVar(env.TTS_ROOM_DAILY_CALLS, 150, 0, 100_000),
     globalDaily: numberVar(env.TTS_GLOBAL_DAILY_CALLS, 3000, 0, 10_000_000),
+    ipDaily: numberVar(env.TTS_IP_DAILY_CALLS, 400, 0, 10_000_000),
   };
 }
 

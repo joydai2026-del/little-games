@@ -173,3 +173,9 @@ h3 { font-size: 1.15rem; margin: 16px 0 8px; }
 details > summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 700; }
 .btn.show-words { margin: 8px 0; }
 @media (prefers-reduced-motion: reduce) { .pad-wrap .hint.flash { animation: none; opacity: 0.7; } }
+
+.pad-wrap .checking { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: none; background: var(--ink); color: var(--paper); border-radius: 999px; padding: 4px 14px; font-weight: 800; pointer-events: none; }
+.pad-wrap.busy .checking { display: block; }
+.pad-wrap .checking.blink { animation: blink 0.4s ease-in-out 2; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.pad-wrap.spent { opacity: 0.6; }

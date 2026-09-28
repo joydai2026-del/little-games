@@ -80,7 +80,7 @@ const clients = [createClient({ baseUrl: U }), createClient({ baseUrl: U })];
 const joins = [];
 for (const [i, c] of clients.entries()) joins.push(await c.join(code, ['Robo', 'Bolt'][i]));
 const leakWords = (obj) => STUDIED.some((w) => [...w].some((ch) => JSON.stringify(obj).includes(ch)));
-note('a kid payload names no word and no stroke count (lobby)', !leakWords(joins[0].state) && !JSON.stringify(joins[0].state).includes('strokeCounts'), { listSeenByKid: joins[0].state.list });
+note('a kid payload names no word, no stroke count, no heading or left-out word (lobby)', !leakWords(joins[0].state) && !JSON.stringify(joins[0].state).includes('strokeCounts') && joins[0].state.list.skipped.length === 0 && joins[0].state.list.missing.length === 0, { listSeenByKid: joins[0].state.list });
 note('two agents joined', joins.every((j) => j.state.players.find((p) => p.id === j.state.you)?.agent === true), { names: joins.map((j) => j.state.players.find((p) => p.id === j.state.you).name) });
 const noRound = await req('GET', `/api/rooms/${code}/say?r=0&w=0`, undefined, seatOf(joins[0]));
 note('no speech before a round starts', noRound.status === 403, { status: noRound.status, body: noRound.json });
@@ -146,7 +146,7 @@ note('the late joiner wrote the Hard round', Boolean(lateRow?.finished), { late:
 // Budget readback: every model attempt is counted against the room and the game.
 const roomBudget = (await req('GET', `/api/rooms/${code}/budget`, undefined, teacher)).json;
 const globalBudget = (await req('GET', '/api/tts-budget')).json;
-note('budget readback: room and global counters, with the policy', roomBudget?.used >= 1 && roomBudget?.limit > 0 && globalBudget?.used >= roomBudget.used && globalBudget?.globalDailyLimit > 0, { roomBudget, globalBudget });
+note('budget readback: room, global and per-IP policy', roomBudget?.used >= 1 && roomBudget?.limit > 0 && globalBudget?.used >= roomBudget.used && globalBudget?.globalDailyLimit > 0 && globalBudget?.ipDailyLimit > 0 && globalBudget.ipDailyLimit < globalBudget.globalDailyLimit, { roomBudget, globalBudget });
 
 // 4. A round that ends on the clock (nobody writes, nobody polls): the alarm ends it.
 const clockRoom = await req('POST', '/api/rooms', { text: '大', options: { secondsPerWord: 15 } });
@@ -167,6 +167,23 @@ await sleep(Math.max(0, soloStart.goAt - Date.now()) + 200);
 const soloClip = await hearAndSave(solo.json.code, soloSeat, 0, 'solo-word0');
 const soloView = (await req('GET', `/api/rooms/${solo.json.code}`, undefined, soloSeat)).json.state;
 note('solo practice: host writes, hears the word (the room starts the word clock), sees no words, joins refused', soloStart.phase === 'racing' && soloClip.status === 200 && soloJoin.status === 409 && soloView.me.heard && soloView.me.deadlineAt > 0 && !JSON.stringify(soloView).includes('朋'), { soloClip, joinStatus: soloJoin.status, heard: soloView.me.heard, deadlineAt: soloView.me.deadlineAt });
+
+// 5b. A sacrificial kid learns nothing mid-word (Codex round 2): no skip before hearing, and a
+// word skipped by one kid is not named while another kid is still on it.
+const sac = await req('POST', '/api/rooms', { text: '朋友 学校', options: { level: 'hard', wordsPerRound: 2 } });
+const sacT = seatOf(sac.json);
+const sa = seatOf((await req('POST', `/api/rooms/${sac.json.code}/join`, { name: 'Sac' })).json);
+const sb = seatOf((await req('POST', `/api/rooms/${sac.json.code}/join`, { name: 'Other' })).json);
+const sacGo = (await req('POST', `/api/rooms/${sac.json.code}/start`, {}, sacT)).json.state;
+await sleep(Math.max(0, sacGo.goAt - Date.now()) + 20);
+const early = await req('POST', `/api/rooms/${sac.json.code}/skip`, { race: 1, seq: 1, wordIndex: 0 }, sa);
+await hearAndSave(sac.json.code, sa, 0, 'sac-word0');
+const skipped = await req('POST', `/api/rooms/${sac.json.code}/skip`, { race: 1, seq: 1, wordIndex: 0 }, sa);
+const sacView = skipped.json?.state;
+note('a sacrificial kid learns nothing mid-word: skip before hearing refused; after hearing and skipping, the word is not named while another kid is on it', early.status === 409 && skipped.status === 200 && sacView?.me?.closed?.[0]?.word === null && !/[朋友学校]/.test(JSON.stringify(sacView)) && sacView?.me?.accepted?.length >= 0, {
+  earlySkip: [early.status, early.json?.error], closedSeenBySkipper: sacView?.me?.closed,
+});
+void sb;
 
 // 6. The word clock is the room's: a word left alone past its deadline closes as skipped.
 const tick = await req('POST', '/api/rooms', { text: '大', mode: 'solo', options: { secondsPerWord: 15 } });
