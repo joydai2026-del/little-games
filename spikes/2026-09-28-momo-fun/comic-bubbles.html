@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Comic Bubbles</title>
+<style id="page-size">@page{size:letter;margin:0.5in}</style>
+<style>
+:root{
+  --cream:#FFF7E8; --mint:#BFE8D8; --mint-deep:#3FA88A; --coral:#FF7B6B; --ink:#2D3436;
+  --zh:"Kaiti SC","STKaiti","KaiTi","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--cream);color:var(--ink);font-family:var(--ui);-webkit-tap-highlight-color:transparent;display:flex;justify-content:center;min-height:100dvh}
+main{width:100%;max-width:620px;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
+h1{font-size:28px;margin:8px 0 4px;text-align:center}
+.sub{text-align:center;margin:0 0 14px;font-size:18px;opacity:.8}
+.screen{display:none}.screen.on{display:block}
+textarea{width:100%;min-height:200px;font:22px/1.5 var(--zh);padding:14px;border-radius:18px;border:3px solid var(--mint);background:#fff;color:var(--ink)}
+textarea:focus{outline:none;border-color:var(--mint-deep)}
+.big-btn{display:block;width:100%;min-height:76px;margin-top:16px;border:0;border-radius:22px;background:var(--mint-deep);color:#fff;
+  font:800 28px/1 var(--ui);cursor:pointer;box-shadow:0 6px 0 #2c7a64}
+.big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 #2c7a64}
+.note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:#b3473a}
+.link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
+.placeholder-note{font-size:13px;opacity:.55;text-align:center;margin-top:10px}
+/* Comic */
+.strip{display:grid;gap:12px}
+.panel{position:relative;height:250px;background:#fff;border:5px solid var(--ink);border-radius:10px;overflow:hidden}
+.panel .num{position:absolute;left:8px;top:6px;font:800 16px var(--ui);opacity:.4}
+.panel .ground{position:absolute;left:0;right:0;bottom:0;height:34px;background:var(--mint)}
+.char{position:absolute;bottom:16px;width:104px;height:114px}
+.char.l{left:8%}.char.r{right:8%}.char.c{left:50%;margin-left:-52px}
+.char.flip svg{transform:scaleX(-1)}
+.momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%}
+.friend{position:absolute;bottom:0;left:6px;width:92px;height:92px;border-radius:50% 50% 44% 44%;background:var(--coral)}
+.friend:before,.friend:after{content:"";position:absolute;top:34px;width:12px;height:16px;border-radius:50%;background:var(--ink)}
+.friend:before{left:26px}.friend:after{right:26px}
+.friend i{position:absolute;left:50%;top:56px;margin-left:-12px;width:24px;height:12px;border-bottom:4px solid var(--ink);border-radius:0 0 50% 50%}
+.friend b{position:absolute;left:30px;top:-14px;width:32px;height:24px;border-radius:50% 50% 0 0;background:var(--ink)}
+.bubble{position:absolute;top:18px;min-width:120px;min-height:76px;max-width:62%;padding:10px 16px;background:#fff;border:4px solid var(--ink);border-radius:30px;
+  display:flex;align-items:center;justify-content:center;font:700 42px/1.1 var(--zh);color:var(--ink);cursor:pointer;
+  transition:transform .2s cubic-bezier(.3,1.6,.5,1),background .15s}
+.bubble:after{content:"";position:absolute;bottom:-20px;border:12px solid transparent;border-top:20px solid var(--ink);border-bottom:0}
+.bubble.bl{left:6%}.bubble.bl:after{left:34px}
+.bubble.br{right:6%}.bubble.br:after{right:34px}
+.bubble.bc{left:50%;transform:translateX(-50%)}.bubble.bc:after{left:50%;margin-left:-12px}
+.bubble.empty{border-style:dashed;color:#b8b8b8;font:600 22px var(--ui)}
+.bubble.sel{background:#fff3c8;border-color:var(--coral);border-style:solid;animation:pulse .9s ease-in-out infinite alternate}
+.bubble.bc.sel{animation:pulsec .9s ease-in-out infinite alternate}
+.bubble.fill{animation:drop .4s cubic-bezier(.3,1.8,.5,1)}
+.bubble.bc.fill{animation:dropc .4s cubic-bezier(.3,1.8,.5,1)}
+@keyframes pulse{to{transform:scale(1.07)}}
+@keyframes pulsec{to{transform:translateX(-50%) scale(1.07)}}
+@keyframes drop{from{transform:scale(.4)}}
+@keyframes dropc{from{transform:translateX(-50%) scale(.4)}}
+.tray-title{font:700 20px var(--ui);margin:16px 0 8px}
+.tray{display:flex;flex-wrap:wrap;gap:8px}
+.tray button{min-height:64px;min-width:64px;padding:6px 14px;border-radius:16px;border:3px solid var(--mint-deep);background:#fff;color:var(--ink);font:700 32px var(--zh);cursor:pointer}
+.tray button:active{background:var(--mint)}
+.row{display:flex;gap:10px;margin-top:16px}
+.row .big-btn{margin-top:0;flex:1;font-size:24px}
+.row .big-btn.plain{background:#fff;color:var(--ink);border:3px solid var(--ink);box-shadow:0 6px 0 var(--ink)}
+.paper{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;font-size:16px}
+.paper button{min-height:64px;min-width:80px;border-radius:14px;border:3px solid var(--mint);background:#fff;font:700 18px var(--ui);color:var(--ink);cursor:pointer}
+.paper button[aria-pressed="true"]{background:var(--mint);border-color:var(--mint-deep)}
+.print-title{display:none}
+@media (min-width:900px){.strip{grid-template-columns:repeat(3,1fr)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{background:#fff;display:block;min-height:0}
+  main{max-width:none;padding:0}
+  .no-print,#s-paste,.placeholder-note,h1,.sub{display:none!important}
+  #s-comic{display:block!important}
+  .print-title{display:block;font:800 18pt var(--ui);margin:0 0 8pt}
+  .print-title span{font-weight:400;font-size:12pt;margin-left:12pt}
+  .strip{grid-template-columns:1fr;gap:8pt}
+  /* 3 panels fit inside both Letter (10in usable) and A4 (~10.7in usable) with 0.5in margins */
+  .panel{height:2.95in;break-inside:avoid;border-width:3pt}
+  .bubble{font-size:34pt;animation:none!important}
+  .bubble.empty{color:transparent}
+  .bubble.sel{background:#fff;border-color:var(--ink)}
+}
+</style>
+</head>
+<body>
+<main>
+  <section class="screen on" id="s-paste">
+    <h1>Comic Bubbles</h1>
+    <p class="sub">Put words in Momo's mouth. Then act out the comic!</p>
+    <textarea id="paste" placeholder="Paste your word list here.&#10;Numbers, pinyin and English are fine. Only the Chinese is kept."></textarea>
+    <p class="note" id="paste-note"></p>
+    <button class="big-btn" id="start">Make the comic</button>
+    <p class="placeholder-note">Momo drawing is a placeholder.</p>
+  </section>
+
+  <section class="screen" id="s-comic">
+    <div class="print-title">Act it out! <span>Name: ______________________</span></div>
+    <div class="no-print" style="display:flex;justify-content:space-between;align-items:center">
+      <button class="link" id="new-list">New list</button>
+      <button class="link" id="clear">Empty the bubbles</button>
+    </div>
+    <div class="strip" id="strip"></div>
+    <div class="no-print">
+      <div class="tray-title" id="tray-title">Tap a bubble, then tap a word</div>
+      <div class="tray" id="tray"></div>
+      <div class="row">
+        <button class="big-btn" id="shuffle">Shuffle</button>
+        <button class="big-btn plain" id="print">Print</button>
+      </div>
+      <div class="paper" id="paper">Paper:
+        <button data-size="letter" aria-pressed="true">Letter</button>
+        <button data-size="A4" aria-pressed="false">A4</button>
+      </div>
+      <p class="placeholder-note">Momo drawing is a placeholder.</p>
+    </div>
+  </section>
+</main>
+
+<template id="momo-svg">
+  <!-- MOMO SVG (placeholder, identical in all three spikes) -->
+  <svg class="momo" viewBox="0 0 120 130" role="img" aria-label="Momo, a little ink drop">
+    <path d="M60 4 C70 26 108 50 108 84 A48 44 0 0 1 12 84 C12 50 50 26 60 4 Z" fill="#2D3436"/>
+    <ellipse cx="40" cy="62" rx="6" ry="9" fill="#fff" opacity=".18"/>
+    <ellipse cx="44" cy="82" rx="9" ry="11" fill="#fff"/><ellipse cx="76" cy="82" rx="9" ry="11" fill="#fff"/>
+    <circle cx="46" cy="84" r="5" fill="#2D3436"/><circle cx="78" cy="84" r="5" fill="#2D3436"/>
+    <ellipse cx="32" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/><ellipse cx="88" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/>
+    <path class="m-happy" d="M50 102 Q60 112 70 102" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </svg>
+</template>
+
+<script>
+// Tunable settings. Change here, never inside the game logic.
+// Each panel: who stands where, and where the bubbles sit (bl = top left, br = top right, bc = top centre).
+var CONFIG = {
+  panels: [
+    { cast: [{ who: "momo", at: "c" }],                                  bubbles: ["bc"] },
+    { cast: [{ who: "momo", at: "l" }, { who: "friend", at: "r" }],      bubbles: ["bl", "br"] },
+    { cast: [{ who: "friend", at: "l" }, { who: "momo", at: "r", flip: true }], bubbles: ["bl", "br"] }
+  ],
+  emptyLabel: "tap me",
+  storageKey: "momo-spike-list"
+};
+
+// ---- Paste parser (same in all three spikes) ----
+var CJK = /[㐀-鿿豈-﫿]+/g;
+var TONE = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+function parseList(text){
+  var out = [], seen = {};
+  text.split(/\r?\n/).forEach(function(line){
+    line = line.replace(/^\s*[\(（\[]?\s*\d+\s*[\.\)、．:：）\]-]?\s*/, "");
+    line.split(/[,，、;；\/|\t]+/).forEach(function(seg){
+      var zh = seg.match(CJK) || [];
+      var py = (seg.match(/[A-Za-zÀ-ɏ]+[1-5]?/g) || []).filter(function(t){ return TONE.test(t) || /[a-z][1-5]$/i.test(t); });
+      zh.forEach(function(w, i){
+        if (seen[w]) return; seen[w] = 1;
+        var p = zh.length === 1 ? py.join(" ") : (py.length === zh.length ? py[i] : "");
+        out.push({ zh: w, py: p });
+      });
+    });
+  });
+  return out;
+}
+function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+// ---- Comic ----
+var $ = function(id){ return document.getElementById(id); };
+var words = [], fills = [], sel = 0, nBubbles = 0;
+function esc(s){ return s.replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
+
+function buildStrip(){
+  var momo = $("momo-svg").innerHTML, b = 0, html = "";
+  CONFIG.panels.forEach(function(p, pi){
+    html += '<div class="panel"><span class="num">' + (pi + 1) + '</span><div class="ground"></div>';
+    p.cast.forEach(function(c){
+      html += '<div class="char ' + c.at + (c.flip ? " flip" : "") + '">' + (c.who === "momo" ? momo : '<div class="friend"><b></b><i></i></div>') + "</div>";
+    });
+    p.bubbles.forEach(function(pos){ html += '<button class="bubble ' + pos + '" data-b="' + (b++) + '"></button>'; });
+    html += "</div>";
+  });
+  nBubbles = b; $("strip").innerHTML = html;
+}
+function paint(justFilled){
+  document.querySelectorAll(".bubble").forEach(function(el){
+    var i = +el.dataset.b, w = fills[i];
+    el.textContent = w || CONFIG.emptyLabel;
+    el.classList.toggle("empty", !w); el.classList.toggle("sel", i === sel);
+    el.classList.remove("fill"); if (i === justFilled){ void el.offsetWidth; el.classList.add("fill"); }
+  });
+}
+function nextEmpty(from){ for (var k = 1; k <= nBubbles; k++){ var i = (from + k) % nBubbles; if (!fills[i]) return i; } return -1; }
+
+$("start").onclick = function(){
+  words = parseList($("paste").value);
+  if (!words.length){ $("paste-note").textContent = "No Chinese words found. Paste a list with Chinese in it."; return; }
+  $("paste-note").textContent = ""; store(CONFIG.storageKey, $("paste").value);
+  buildStrip(); fills = []; sel = 0;
+  $("tray").innerHTML = words.map(function(w){ return "<button>" + esc(w.zh) + "</button>"; }).join("");
+  paint(); show("s-comic"); window.scrollTo(0, 0);
+};
+$("strip").onclick = function(e){ var b = e.target.closest(".bubble"); if (!b) return; sel = +b.dataset.b; paint(); };
+$("tray").onclick = function(e){
+  var b = e.target.closest("button"); if (!b) return;
+  if (sel < 0) sel = 0;
+  var i = sel; fills[i] = b.textContent;
+  var n = nextEmpty(i); sel = n < 0 ? i : n;   // hop to the next empty bubble so the kid can keep tapping words
+  paint(i);
+};
+$("shuffle").onclick = function(){
+  var pool = words.map(function(w){ return w.zh; });
+  for (var i = pool.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)); var t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+  for (var k = 0; k < nBubbles; k++) fills[k] = pool[k % pool.length];
+  sel = -1; paint(); document.querySelectorAll(".bubble").forEach(function(el){ void el.offsetWidth; el.classList.add("fill"); });
+};
+$("clear").onclick = function(){ fills = []; sel = 0; paint(); };
+$("paper").onclick = function(e){
+  var b = e.target.closest("button"); if (!b) return;
+  $("page-size").textContent = "@page{size:" + b.dataset.size + ";margin:0.5in}";
+  this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
+};
+$("print").onclick = function(){ window.print(); };
+$("new-list").onclick = function(){ show("s-paste"); };
+var saved = store(CONFIG.storageKey); if (saved) $("paste").value = saved;
+</script>
+</body>
+</html>

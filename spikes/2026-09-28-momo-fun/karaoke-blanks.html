@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Karaoke Blanks</title>
+<style>
+:root{
+  --cream:#FFF7E8; --mint:#BFE8D8; --mint-deep:#3FA88A; --coral:#FF7B6B; --ink:#2D3436;
+  --zh:"Kaiti SC","STKaiti","KaiTi","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif;
+  --word-ms:1500ms; /* set from CONFIG.speeds at play time */
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--cream);color:var(--ink);font-family:var(--ui);-webkit-tap-highlight-color:transparent;display:flex;justify-content:center;min-height:100dvh}
+main{width:100%;max-width:560px;padding:16px 16px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
+h1{font-size:28px;margin:8px 0 4px;text-align:center}
+h2{font-size:20px;margin:18px 0 8px}
+.sub{text-align:center;margin:0 0 14px;font-size:18px;opacity:.8}
+.screen{display:none;flex-direction:column;flex:1}
+.screen.on{display:flex}
+textarea{width:100%;min-height:170px;font:22px/1.5 var(--zh);padding:14px;border-radius:18px;border:3px solid var(--mint);background:#fff;color:var(--ink)}
+textarea:focus{outline:none;border-color:var(--mint-deep)}
+.big-btn{display:block;width:100%;min-height:76px;margin-top:16px;border:0;border-radius:22px;background:var(--mint-deep);color:#fff;
+  font:800 28px/1 var(--ui);cursor:pointer;box-shadow:0 6px 0 #2c7a64}
+.big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 #2c7a64}
+.big-btn.coral{background:var(--coral);box-shadow:0 6px 0 #c95a4c}
+.note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:#b3473a}
+.seg{display:flex;gap:8px}
+.seg button{flex:1;min-height:64px;border-radius:18px;border:3px solid var(--mint);background:#fff;color:var(--ink);font:700 22px var(--ui);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--mint-deep);border-color:var(--mint-deep);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:64px;min-width:64px;padding:6px 14px;border-radius:16px;border:3px solid var(--mint);background:#fff;color:var(--ink);font:700 30px var(--zh);cursor:pointer}
+.chip.blank{border-style:dashed;border-color:var(--coral);background:#ffe9e5;color:#b3473a}
+.hint{font-size:16px;opacity:.7;margin:6px 0 0}
+.link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
+/* Play screen */
+.strip-wrap{overflow:hidden;margin:6px -16px 0;padding:10px 0;background:var(--mint)}
+.strip{position:relative;display:flex;gap:18px;white-space:nowrap;padding:0 50%;transition:transform .5s ease}
+.strip span{font:700 34px var(--zh);opacity:.45}
+.strip span.now{opacity:1;color:var(--mint-deep)}
+.strip span.gap{color:var(--coral)}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px}
+.kword{position:relative;font:700 min(30vw,170px)/1.1 var(--zh);letter-spacing:.04em;
+  background:linear-gradient(90deg,var(--coral) 0 50%,var(--ink) 50% 100%) 100% 0/200% 100% no-repeat;
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.kword.long{font-size:min(20vw,120px)}
+.kword.sing{animation:sweep var(--word-ms) linear forwards}
+@keyframes sweep{to{background-position:0 0}}
+.kword.enter{animation:rise .3s ease-out}
+.kword.sing.enter{animation:rise .3s ease-out,sweep var(--word-ms) linear forwards}
+@keyframes rise{from{transform:translateY(30px);opacity:0}}
+.gapbox{display:none;min-width:min(60vw,300px);height:min(36vw,190px);border:6px dashed var(--coral);border-radius:28px;align-items:center;justify-content:center;
+  font:900 min(26vw,140px) var(--ui);color:var(--coral);animation:throb .8s ease-in-out infinite alternate}
+@keyframes throb{to{transform:scale(1.06)}}
+.shout{display:none;font:800 30px/1.2 var(--ui);text-align:center;margin-top:14px}
+.stage.is-gap .kword{display:none}.stage.is-gap .gapbox{display:flex}.stage.is-gap .shout{display:block}
+.reveal .kword{animation:popin .45s cubic-bezier(.3,1.8,.5,1);color:var(--mint-deep);background:none;-webkit-background-clip:initial;background-clip:initial}
+@keyframes popin{from{transform:scale(.3)}}
+.momo-row{display:flex;align-items:flex-end;justify-content:center;gap:10px;height:130px}
+.momo-wrap{width:110px;height:120px;position:relative}
+.momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%;animation:sway 1.4s ease-in-out infinite alternate}
+.momo .m-o{opacity:0}
+.momo-wrap.cheer .momo{animation:jump .6s cubic-bezier(.3,1.8,.5,1) 3}
+.momo-wrap.shouting .m-happy{opacity:0}.momo-wrap.shouting .m-o{opacity:1}
+.cheer-bubble{background:#fff;border:4px solid var(--ink);border-radius:22px;padding:8px 16px;font:800 26px var(--zh);opacity:0;transform:scale(.5);transition:all .25s cubic-bezier(.3,1.6,.5,1);margin-bottom:70px}
+.cheer-bubble.show{opacity:1;transform:scale(1)}
+@keyframes sway{from{transform:rotate(-6deg)}to{transform:rotate(6deg)}}
+@keyframes jump{40%{transform:translateY(-40px) scale(.94,1.08)}70%{transform:translateY(0) scale(1.1,.9)}}
+.done-title{font:800 34px/1.2 var(--ui);text-align:center;margin:40px 0 10px}
+.placeholder-note{font-size:13px;opacity:.55;text-align:center;margin-top:10px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.kword{color:var(--ink);background:none}}
+</style>
+</head>
+<body>
+<main>
+  <section class="screen on" id="s-setup">
+    <h1>Karaoke Blanks</h1>
+    <p class="sub">Read along. When a word goes missing, everybody shouts it!</p>
+    <textarea id="paste" placeholder="Paste your word list here.&#10;Numbers, pinyin and English are fine. Only the Chinese is kept."></textarea>
+    <p class="note" id="paste-note"></p>
+    <div id="more" hidden>
+      <h2>Which words go missing?</h2>
+      <div class="chips" id="chips"></div>
+      <p class="hint">Tap a word to make it a blank. Tap again to bring it back.</p>
+      <h2>How fast?</h2>
+      <div class="seg" id="speed">
+        <button data-speed="slow" aria-pressed="false">Slow</button>
+        <button data-speed="normal" aria-pressed="true">Normal</button>
+        <button data-speed="fast" aria-pressed="false">Fast</button>
+      </div>
+    </div>
+    <button class="big-btn" id="go">Next</button>
+    <p class="placeholder-note">Momo drawing is a placeholder.</p>
+  </section>
+
+  <section class="screen" id="s-play">
+    <button class="link" id="stop" style="align-self:flex-start">Stop</button>
+    <div class="strip-wrap"><div class="strip" id="strip"></div></div>
+    <div class="stage" id="stage">
+      <div class="kword" id="kword"></div>
+      <div class="gapbox">?</div>
+      <div class="shout">Everybody, shout it!</div>
+    </div>
+    <div class="momo-row">
+      <div class="momo-wrap" id="momo">
+        <!-- MOMO SVG (placeholder, identical in all three spikes) -->
+        <svg class="momo" viewBox="0 0 120 130" role="img" aria-label="Momo, a little ink drop">
+          <path d="M60 4 C70 26 108 50 108 84 A48 44 0 0 1 12 84 C12 50 50 26 60 4 Z" fill="#2D3436"/>
+          <ellipse cx="40" cy="62" rx="6" ry="9" fill="#fff" opacity=".18"/>
+          <ellipse cx="44" cy="82" rx="9" ry="11" fill="#fff"/><ellipse cx="76" cy="82" rx="9" ry="11" fill="#fff"/>
+          <circle cx="46" cy="84" r="5" fill="#2D3436"/><circle cx="78" cy="84" r="5" fill="#2D3436"/>
+          <ellipse cx="32" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/><ellipse cx="88" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/>
+          <path class="m-happy" d="M50 102 Q60 112 70 102" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+          <ellipse class="m-o" cx="60" cy="106" rx="5" ry="6" fill="#fff"/>
+        </svg>
+      </div>
+      <div class="cheer-bubble" id="cheer"></div>
+    </div>
+    <button class="big-btn coral" id="reveal" style="visibility:hidden">Show the word</button>
+  </section>
+
+  <section class="screen" id="s-done">
+    <div class="done-title">That's the song!</div>
+    <p class="sub" id="done-sub"></p>
+    <button class="big-btn" id="again">Sing again</button>
+    <button class="link" id="new-list" style="margin:10px auto 0">New list</button>
+  </section>
+</main>
+<script>
+// Tunable settings. Change here, never inside the game logic.
+var CONFIG = {
+  speeds: { slow: 2400, normal: 1600, fast: 1000 },   // ms each word stays on screen
+  defaultBlankEvery: 3,                                // on paste, every Nth word starts as a blank
+  cheers: ["好棒！", "对了！", "太棒了！", "Yes!"],
+  afterRevealMs: 1400,                                 // pause after a reveal before the song continues
+  storageKey: "momo-spike-list"
+};
+
+// ---- Paste parser (same in all three spikes) ----
+var CJK = /[㐀-鿿豈-﫿]+/g;
+var TONE = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+function parseList(text){
+  var out = [], seen = {};
+  text.split(/\r?\n/).forEach(function(line){
+    line = line.replace(/^\s*[\(（\[]?\s*\d+\s*[\.\)、．:：）\]-]?\s*/, "");
+    line.split(/[,，、;；\/|\t]+/).forEach(function(seg){
+      var zh = seg.match(CJK) || [];
+      var py = (seg.match(/[A-Za-zÀ-ɏ]+[1-5]?/g) || []).filter(function(t){ return TONE.test(t) || /[a-z][1-5]$/i.test(t); });
+      zh.forEach(function(w, i){
+        if (seen[w]) return; seen[w] = 1;
+        var p = zh.length === 1 ? py.join(" ") : (py.length === zh.length ? py[i] : "");
+        out.push({ zh: w, py: p });
+      });
+    });
+  });
+  return out;
+}
+function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+// ---- Game ----
+var $ = function(id){ return document.getElementById(id); };
+var words = [], blanks = {}, speed = "normal", idx = 0, timer = null, playing = false;
+function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
+function esc(s){ return s.replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+function renderChips(){
+  $("chips").innerHTML = words.map(function(w, i){
+    return '<button class="chip' + (blanks[i] ? " blank" : "") + '" data-i="' + i + '">' + esc(w.zh) + "</button>";
+  }).join("");
+}
+$("chips").onclick = function(e){ var b = e.target.closest(".chip"); if (!b) return; var i = +b.dataset.i; blanks[i] = !blanks[i]; renderChips(); };
+$("speed").onclick = function(e){ var b = e.target.closest("button"); if (!b) return; speed = b.dataset.speed;
+  this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); }); };
+$("paste").oninput = function(){ if (!$("more").hidden){ $("more").hidden = true; $("go").textContent = "Next"; } };
+
+$("go").onclick = function(){
+  if ($("more").hidden){   // step 1: read the paste
+    words = parseList($("paste").value);
+    if (!words.length){ $("paste-note").textContent = "No Chinese words found. Paste a list with Chinese in it."; return; }
+    $("paste-note").textContent = ""; store(CONFIG.storageKey, $("paste").value);
+    blanks = {}; words.forEach(function(_, i){ if ((i + 1) % CONFIG.defaultBlankEvery === 0) blanks[i] = true; });
+    renderChips(); $("more").hidden = false; $("go").textContent = "Play"; return;
+  }
+  start();                 // step 2: play
+};
+
+function start(){
+  document.documentElement.style.setProperty("--word-ms", CONFIG.speeds[speed] + "ms");
+  $("strip").innerHTML = words.map(function(w, i){ return '<span class="' + (blanks[i] ? "gap" : "") + '">' + (blanks[i] ? "＿＿" : esc(w.zh)) + "</span>"; }).join("");
+  idx = 0; playing = true; show("s-play"); step();
+}
+function moveStrip(){
+  var spans = $("strip").children;
+  for (var i = 0; i < spans.length; i++) spans[i].classList.toggle("now", i === idx);
+  var el = spans[idx]; if (!el) return;
+  $("strip").style.transform = "translateX(" + ($("strip").parentNode.offsetWidth / 2 - (el.offsetLeft + el.offsetWidth / 2)) + "px)";
+}
+function step(){
+  if (!playing) return;
+  if (idx >= words.length){ playing = false; $("done-sub").textContent = words.length + " words, " + Object.keys(blanks).filter(function(k){ return blanks[k]; }).length + " shouted by the class."; show("s-done"); return; }
+  var w = words[idx], k = $("kword"), stage = $("stage");
+  moveStrip(); stage.classList.remove("reveal"); $("cheer").classList.remove("show"); $("momo").classList.remove("cheer", "shouting");
+  k.textContent = w.zh; k.classList.toggle("long", w.zh.length > 2);
+  k.classList.remove("sing", "enter"); void k.offsetWidth;
+  if (blanks[idx]){
+    stage.classList.add("is-gap"); $("momo").classList.add("shouting"); $("reveal").style.visibility = "visible"; return;
+  }
+  stage.classList.remove("is-gap"); k.classList.add("sing", "enter");
+  timer = setTimeout(function(){ idx++; step(); }, CONFIG.speeds[speed]);
+}
+$("reveal").onclick = function(){
+  if (!playing || !blanks[idx]) return;
+  $("reveal").style.visibility = "hidden";
+  var stage = $("stage"); stage.classList.remove("is-gap"); stage.classList.add("reveal");
+  $("momo").classList.remove("shouting"); void $("momo").offsetWidth; $("momo").classList.add("cheer");
+  $("cheer").textContent = CONFIG.cheers[idx % CONFIG.cheers.length]; $("cheer").classList.add("show");
+  $("strip").children[idx].textContent = words[idx].zh;
+  timer = setTimeout(function(){ idx++; step(); }, CONFIG.afterRevealMs);
+};
+$("stop").onclick = function(){ playing = false; clearTimeout(timer); $("reveal").style.visibility = "hidden"; show("s-setup"); };
+$("again").onclick = start;
+$("new-list").onclick = function(){ show("s-setup"); };
+var saved = store(CONFIG.storageKey); if (saved) $("paste").value = saved;
+</script>
+</body>
+</html>
