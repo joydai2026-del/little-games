@@ -1,0 +1,156 @@
+{
+  "url": "https://dictation-dash.joyd-ai-2026.workers.dev",
+  "deployed_version": "debcef76-6c62-4eda-88b1-c49a7fc7f60a",
+  "deployed_commit": "6154f49",
+  "args": {
+    "url": "https://dictation-dash.joyd-ai-2026.workers.dev",
+    "record": true
+  },
+  "started_at": "2026-09-28T21:05:54.817636+00:00",
+  "code": "ZN2H",
+  "left_out_notes": [
+    "We cannot check strokes for 𠮷祥 yet, so we left it out."
+  ],
+  "easy_state": {
+    "phase": "racing",
+    "round": 1,
+    "level": "easy",
+    "words": [
+      "朋友",
+      "大山",
+      "学校"
+    ],
+    "me": {
+      "wordIndex": 3,
+      "charIndex": 0,
+      "strokeIndex": 0,
+      "wordsDone": 3,
+      "wordsSkipped": 0,
+      "mistakes": 0,
+      "strokesDone": 36,
+      "finishedAt": 1790629624529,
+      "lastProgressAt": 1790629624529,
+      "seq": 36
+    },
+    "you": "8adf7a03-8db8-47b3-87e6-59ca0c0bcad4",
+    "standings": [
+      {
+        "playerId": "8adf7a03-8db8-47b3-87e6-59ca0c0bcad4",
+        "name": "Mia",
+        "agent": false,
+        "wordsDone": 3,
+        "wordsSkipped": 0,
+        "finished": true,
+        "place": 1
+      },
+      {
+        "playerId": "c92d3564-08ca-4c9f-a744-039a25971841",
+        "name": "Robo",
+        "agent": true,
+        "wordsDone": 2,
+        "wordsSkipped": 0,
+        "finished": false,
+        "place": 2
+      }
+    ]
+  },
+  "hard_problem_text": "The word did not play. Check the sound, then try again, or skip this word.\n\n🔊 Try again\n⏭ Skip this word",
+  "hard_try_again_clicked": true,
+  "hard_state": {
+    "phase": "racing",
+    "round": 2,
+    "level": "hard",
+    "words": [
+      "上下",
+      "朋友",
+      "大山"
+    ],
+    "me": {
+      "wordIndex": 3,
+      "charIndex": 0,
+      "strokeIndex": 0,
+      "wordsDone": 3,
+      "wordsSkipped": 0,
+      "mistakes": 0,
+      "strokesDone": 24,
+      "finishedAt": 1790629718081,
+      "lastProgressAt": 1790629718081,
+      "seq": 24
+    },
+    "you": "8adf7a03-8db8-47b3-87e6-59ca0c0bcad4",
+    "standings": [
+      {
+        "playerId": "8adf7a03-8db8-47b3-87e6-59ca0c0bcad4",
+        "name": "Mia",
+        "agent": false,
+        "wordsDone": 3,
+        "wordsSkipped": 0,
+        "finished": true,
+        "place": 1
+      },
+      {
+        "playerId": "c92d3564-08ca-4c9f-a744-039a25971841",
+        "name": "Robo",
+        "agent": true,
+        "wordsDone": 2,
+        "wordsSkipped": 0,
+        "finished": false,
+        "place": 2
+      }
+    ]
+  },
+  "agent_output": [
+    "wrote 大山",
+    "wrote 学校",
+    "{\"strokes\":36,\"mistakes\":4,\"heard\":[{\"wordIndex\":0,\"bytes\":84326,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":87398,\"type\":\"audio/wav\",\"cache\":\"HIT\"},{\"wordIndex\":2,\"bytes\":92518,\"type\":\"audio/wav\",\"cache\":\"HIT\"}],\"wordsDone\":3,\"place\":2,\"phase\":\"done\"}",
+    "joined ZN2H as Robo",
+    "wrote 上下",
+    "wrote 朋友",
+    "wrote 大山",
+    "{\"strokes\":24,\"mistakes\":8,\"heard\":[{\"wordIndex\":0,\"bytes\":88422,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":84326,\"type\":\"audio/wav\",\"cache\":\"HIT\"},{\"wordIndex\":2,\"bytes\":87398,\"type\":\"audio/wav\",\"cache\":\"HIT\"}],\"wordsDone\":3,\"place\":2,\"phase\":\"done\"}"
+  ],
+  "kid_screen_end": "You are number 1!\n\nYou wrote 3 of 3 words. 好棒!\n\nThe words were\n上下\n朋友\n大山\n1\nMiayou\nM\n3 of 3 words written\nDone!\n2\nRoboAI\nR\n3 of 3 words written\nDone!",
+  "board_end": "1\nMia\nM\n3 of 3 words written\nDone!\n2\nRoboAI\nR\n3 of 3 words written\nDone!",
+  "kid_heard_clips": [
+    {
+      "key": "ZN2H:1:0",
+      "bytes": 84326,
+      "type": "audio/wav"
+    },
+    {
+      "key": "ZN2H:1:1",
+      "bytes": 87398,
+      "type": "audio/wav"
+    },
+    {
+      "key": "ZN2H:1:2",
+      "bytes": 92518,
+      "type": "audio/wav"
+    },
+    {
+      "key": "ZN2H:2:0",
+      "bytes": 88422,
+      "type": "audio/wav"
+    },
+    {
+      "key": "ZN2H:2:1",
+      "bytes": 84326,
+      "type": "audio/wav"
+    },
+    {
+      "key": "ZN2H:2:2",
+      "bytes": 87398,
+      "type": "audio/wav"
+    }
+  ],
+  "play_called": "stubbed: HTMLMediaElement.prototype.play and speechSynthesis.speak replaced before any page script",
+  "demo": {
+    "mp4": "dictation-dash-demo.mp4",
+    "mp4_bytes": 2058983,
+    "gif": "dictation-dash-demo.gif",
+    "gif_bytes": 7011700,
+    "gif_width": 820,
+    "gif_fps": 8
+  },
+  "finished_at": "2026-09-28T21:10:40.848529+00:00"
+}

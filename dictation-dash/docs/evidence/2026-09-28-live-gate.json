@@ -1,19 +1,19 @@
 {
   "url": "https://dictation-dash.joyd-ai-2026.workers.dev",
-  "deployedVersion": "3d9a81e4-d69c-4b6b-98b5-68b5faa24a8d",
-  "deployedCommit": "c190fd0+wip",
-  "startedAt": "2026-09-28T20:38:06.019Z",
+  "deployedVersion": "debcef76-6c62-4eda-88b1-c49a7fc7f60a",
+  "deployedCommit": "6154f49",
+  "startedAt": "2026-09-28T20:57:14.331Z",
   "checks": [
     {
       "name": "home page",
       "pass": true,
-      "at": "2026-09-28T20:38:06.675Z",
+      "at": "2026-09-28T20:57:19.342Z",
       "status": 200
     },
     {
       "name": "stroke proxy returns manifest bytes for 我",
       "pass": true,
-      "at": "2026-09-28T20:38:06.830Z",
+      "at": "2026-09-28T20:57:19.766Z",
       "status": 200,
       "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
       "contentType": "application/json; charset=utf-8",
@@ -22,36 +22,36 @@
     {
       "name": "stroke proxy rejects ..%2Fx",
       "pass": true,
-      "at": "2026-09-28T20:38:06.941Z",
+      "at": "2026-09-28T20:57:20.529Z",
       "status": 400
     },
     {
       "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
       "pass": true,
-      "at": "2026-09-28T20:38:07.130Z",
+      "at": "2026-09-28T20:57:28.585Z",
       "status": 400
     },
     {
       "name": "stroke proxy rejects %F0%A0%AE%B7",
       "pass": true,
-      "at": "2026-09-28T20:38:07.158Z",
+      "at": "2026-09-28T20:57:35.618Z",
       "status": 400
     },
     {
       "name": "licence served",
       "pass": true,
-      "at": "2026-09-28T20:38:07.202Z",
+      "at": "2026-09-28T20:57:41.218Z",
       "status": 200
     },
     {
       "name": "malformed room code is 400",
       "pass": true,
-      "at": "2026-09-28T20:38:07.228Z"
+      "at": "2026-09-28T20:57:43.483Z"
     },
     {
       "name": "oversized body is 413 with a plain message",
       "pass": true,
-      "at": "2026-09-28T20:38:07.296Z",
+      "at": "2026-09-28T20:57:43.791Z",
       "status": 413,
       "body": {
         "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
@@ -60,7 +60,7 @@
     {
       "name": "messy paste: words kept, the rest reported",
       "pass": true,
-      "at": "2026-09-28T20:38:07.551Z",
+      "at": "2026-09-28T20:57:44.253Z",
       "list": {
         "words": [
           "第三课",
@@ -95,7 +95,7 @@
     {
       "name": "teacher replaces the list",
       "pass": true,
-      "at": "2026-09-28T20:38:07.650Z",
+      "at": "2026-09-28T20:57:44.339Z",
       "words": [
         "朋友",
         "学校",
@@ -105,7 +105,7 @@
     {
       "name": "two agents joined",
       "pass": true,
-      "at": "2026-09-28T20:38:07.779Z",
+      "at": "2026-09-28T20:57:44.494Z",
       "names": [
         "Robo",
         "Bolt"
@@ -114,7 +114,7 @@
     {
       "name": "no speech before a round starts",
       "pass": true,
-      "at": "2026-09-28T20:38:07.815Z",
+      "at": "2026-09-28T20:57:44.548Z",
       "status": 403,
       "body": {
         "error": "only players of this round can hear its words"
@@ -123,7 +123,7 @@
     {
       "name": "easy round started",
       "pass": true,
-      "at": "2026-09-28T20:38:07.995Z",
+      "at": "2026-09-28T20:57:44.717Z",
       "round": 1,
       "level": "easy",
       "words": [
@@ -131,17 +131,17 @@
         "学校"
       ],
       "roster": 2,
-      "goAt": 1790627890842,
-      "endsAt": 1790628022842
+      "goAt": 1790629067580,
+      "endsAt": 1790629199580
     },
     {
       "name": "easy: word 1 speech returns audio bytes (saved, never played)",
       "pass": true,
-      "at": "2026-09-28T20:38:12.362Z",
+      "at": "2026-09-28T20:57:49.035Z",
       "status": 200,
       "type": "audio/wav",
-      "bytes": 81254,
-      "sha256": "74dacf8df28d5d0fc5cc5888cc59b538f75b8fd84776f1aa9066f4b8987f47cb",
+      "bytes": 78182,
+      "sha256": "58e5196a968e054115ede1f697c542d737e7117db38ed5ad4a6479adfcf60511",
       "magic": "RIFF",
       "cache": "MISS",
       "file": "docs/evidence/_audio/round1-word0-first.wav",
@@ -150,14 +150,14 @@
     {
       "name": "easy: the next listener gets the SAME clip from room storage (no second model call)",
       "pass": true,
-      "at": "2026-09-28T20:38:12.363Z",
+      "at": "2026-09-28T20:57:49.035Z",
       "cache": "HIT",
-      "sha256": "74dacf8df28d5d0fc5cc5888cc59b538f75b8fd84776f1aa9066f4b8987f47cb"
+      "sha256": "58e5196a968e054115ede1f697c542d737e7117db38ed5ad4a6479adfcf60511"
     },
     {
       "name": "easy: nobody can listen ahead",
       "pass": true,
-      "at": "2026-09-28T20:38:12.394Z",
+      "at": "2026-09-28T20:57:49.077Z",
       "status": 409,
       "body": {
         "error": "that word is still coming"
@@ -166,13 +166,13 @@
     {
       "name": "easy: the teacher's board never speaks",
       "pass": true,
-      "at": "2026-09-28T20:38:12.435Z",
+      "at": "2026-09-28T20:57:49.123Z",
       "status": 403
     },
     {
       "name": "late joiner waits: no speech, no strokes, not on this board",
       "pass": true,
-      "at": "2026-09-28T20:38:12.560Z",
+      "at": "2026-09-28T20:57:49.375Z",
       "say": 403,
       "stroke": [
         409,
@@ -182,10 +182,10 @@
     {
       "name": "easy round played to the end by every agent in it",
       "pass": true,
-      "at": "2026-09-28T20:38:33.009Z",
+      "at": "2026-09-28T20:58:09.981Z",
       "standings": [
         {
-          "playerId": "f38a38b2-3494-461a-ab33-6355dd6b76d0",
+          "playerId": "e9729af4-d11d-469b-abfa-30fa7dd9a64e",
           "name": "Robo",
           "agent": true,
           "wordsDone": 2,
@@ -194,7 +194,7 @@
           "place": 1
         },
         {
-          "playerId": "cf87c39b-f777-4bc9-84d6-0f16b3ae09dc",
+          "playerId": "5a69ae4b-0816-431b-8370-53b7e59aa630",
           "name": "Bolt",
           "agent": true,
           "wordsDone": 2,
@@ -212,13 +212,13 @@
           "heard": [
             {
               "wordIndex": 0,
-              "bytes": 81254,
+              "bytes": 78182,
               "type": "audio/wav",
               "cache": "HIT"
             },
             {
               "wordIndex": 1,
-              "bytes": 87398,
+              "bytes": 93542,
               "type": "audio/wav",
               "cache": "MISS"
             }
@@ -232,13 +232,13 @@
           "heard": [
             {
               "wordIndex": 0,
-              "bytes": 81254,
+              "bytes": 78182,
               "type": "audio/wav",
               "cache": "HIT"
             },
             {
               "wordIndex": 1,
-              "bytes": 87398,
+              "bytes": 93542,
               "type": "audio/wav",
               "cache": "HIT"
             }
@@ -249,7 +249,7 @@
     {
       "name": "teacher switches to Hard between rounds",
       "pass": true,
-      "at": "2026-09-28T20:38:33.158Z",
+      "at": "2026-09-28T20:58:10.041Z",
       "options": {
         "level": "hard",
         "secondsPerWord": 60,
@@ -259,7 +259,7 @@
     {
       "name": "hard round started",
       "pass": true,
-      "at": "2026-09-28T20:38:33.241Z",
+      "at": "2026-09-28T20:58:10.116Z",
       "round": 2,
       "level": "hard",
       "words": [
@@ -267,17 +267,17 @@
         "朋友"
       ],
       "roster": 3,
-      "goAt": 1790627916181,
-      "endsAt": 1790628048181
+      "goAt": 1790629093074,
+      "endsAt": 1790629225074
     },
     {
       "name": "hard: word 1 speech returns audio bytes (saved, never played)",
       "pass": true,
-      "at": "2026-09-28T20:38:37.257Z",
+      "at": "2026-09-28T20:58:14.451Z",
       "status": 200,
       "type": "audio/wav",
-      "bytes": 86374,
-      "sha256": "1a65b3d7c563a14ab99c83d538d022c74238b4c899e85c9ed831bb92ace0e025",
+      "bytes": 89446,
+      "sha256": "07223e61ae29ed4aaaf8d0a3ae13f1e38771a41395ebd1d5e8930799a38e4564",
       "magic": "RIFF",
       "cache": "MISS",
       "file": "docs/evidence/_audio/round2-word0-first.wav",
@@ -286,32 +286,47 @@
     {
       "name": "hard: the next listener gets the SAME clip from room storage (no second model call)",
       "pass": true,
-      "at": "2026-09-28T20:38:37.257Z",
+      "at": "2026-09-28T20:58:14.451Z",
       "cache": "HIT",
-      "sha256": "1a65b3d7c563a14ab99c83d538d022c74238b4c899e85c9ed831bb92ace0e025"
+      "sha256": "07223e61ae29ed4aaaf8d0a3ae13f1e38771a41395ebd1d5e8930799a38e4564"
     },
     {
       "name": "hard: nobody can listen ahead",
       "pass": true,
-      "at": "2026-09-28T20:38:37.374Z",
+      "at": "2026-09-28T20:58:14.576Z",
       "status": 409,
       "body": {
         "error": "that word is still coming"
       }
     },
     {
+      "name": "hard: a URL from the last round never gets this round's word",
+      "pass": true,
+      "at": "2026-09-28T20:58:14.873Z",
+      "status": 409,
+      "body": {
+        "error": "that was for a different round"
+      }
+    },
+    {
+      "name": "hard: clips are never browser-cached",
+      "pass": true,
+      "at": "2026-09-28T20:58:14.944Z",
+      "cacheControl": "no-store"
+    },
+    {
       "name": "hard: the teacher's board never speaks",
       "pass": true,
-      "at": "2026-09-28T20:38:37.415Z",
+      "at": "2026-09-28T20:58:14.944Z",
       "status": 403
     },
     {
       "name": "hard round played to the end by every agent in it",
       "pass": true,
-      "at": "2026-09-28T20:38:52.912Z",
+      "at": "2026-09-28T20:58:30.626Z",
       "standings": [
         {
-          "playerId": "f38a38b2-3494-461a-ab33-6355dd6b76d0",
+          "playerId": "e9729af4-d11d-469b-abfa-30fa7dd9a64e",
           "name": "Robo",
           "agent": true,
           "wordsDone": 2,
@@ -320,7 +335,7 @@
           "place": 1
         },
         {
-          "playerId": "cf87c39b-f777-4bc9-84d6-0f16b3ae09dc",
+          "playerId": "5a69ae4b-0816-431b-8370-53b7e59aa630",
           "name": "Bolt",
           "agent": true,
           "wordsDone": 2,
@@ -329,7 +344,7 @@
           "place": 2
         },
         {
-          "playerId": "cd596e5e-b6e9-4130-bb8f-2734579a695b",
+          "playerId": "9fc5bb2b-f993-4563-bab9-c94ccf13dfad",
           "name": "Late Leo",
           "agent": true,
           "wordsDone": 2,
@@ -347,13 +362,13 @@
           "heard": [
             {
               "wordIndex": 0,
-              "bytes": 86374,
+              "bytes": 89446,
               "type": "audio/wav",
               "cache": "HIT"
             },
             {
               "wordIndex": 1,
-              "bytes": 81254,
+              "bytes": 78182,
               "type": "audio/wav",
               "cache": "HIT"
             }
@@ -367,13 +382,13 @@
           "heard": [
             {
               "wordIndex": 0,
-              "bytes": 86374,
+              "bytes": 89446,
               "type": "audio/wav",
               "cache": "HIT"
             },
             {
               "wordIndex": 1,
-              "bytes": 81254,
+              "bytes": 78182,
               "type": "audio/wav",
               "cache": "HIT"
             }
@@ -387,13 +402,13 @@
           "heard": [
             {
               "wordIndex": 0,
-              "bytes": 86374,
+              "bytes": 89446,
               "type": "audio/wav",
               "cache": "HIT"
             },
             {
               "wordIndex": 1,
-              "bytes": 81254,
+              "bytes": 78182,
               "type": "audio/wav",
               "cache": "HIT"
             }
@@ -404,7 +419,7 @@
     {
       "name": "Hard round used the next words",
       "pass": true,
-      "at": "2026-09-28T20:38:52.912Z",
+      "at": "2026-09-28T20:58:30.626Z",
       "easy": [
         "朋友",
         "学校"
@@ -417,7 +432,7 @@
     {
       "name": "the late joiner wrote the Hard round",
       "pass": true,
-      "at": "2026-09-28T20:38:52.912Z",
+      "at": "2026-09-28T20:58:30.626Z",
       "late": {
         "wordIndex": 2,
         "charIndex": 0,
@@ -426,28 +441,28 @@
         "wordsSkipped": 0,
         "mistakes": 3,
         "strokesDone": 18,
-        "finishedAt": 1790627932183,
-        "lastProgressAt": 1790627932183,
+        "finishedAt": 1790629109899,
+        "lastProgressAt": 1790629109899,
         "seq": 21
       }
     },
     {
       "name": "round ended on the clock by the alarm",
       "pass": true,
-      "at": "2026-09-28T20:39:20.509Z",
-      "endsAt": 1790627957384,
-      "endedAt": 1790627957386,
-      "endedMinusEndsMs": 2
+      "at": "2026-09-28T20:58:58.203Z",
+      "endsAt": 1790629135081,
+      "endedAt": 1790629135082,
+      "endedMinusEndsMs": 1
     },
     {
       "name": "solo practice: host writes, hears the word, joins refused",
       "pass": true,
-      "at": "2026-09-28T20:39:25.095Z",
+      "at": "2026-09-28T20:59:02.457Z",
       "soloClip": {
         "status": 200,
         "type": "audio/wav",
-        "bytes": 80230,
-        "sha256": "0f107ee02852bfbb526bb0c014be3729ade95c5186813805a3b9e70ae891f8e6",
+        "bytes": 76134,
+        "sha256": "c66c3e094ada61d6951936d1e7e21c5a5d372e49185d1e4b582682b87680379d",
         "magic": "RIFF",
         "cache": "MISS",
         "file": "docs/evidence/_audio/solo-word0.wav",
@@ -456,7 +471,7 @@
       "joinStatus": 409
     }
   ],
-  "room": "Y7FP",
-  "finishedAt": "2026-09-28T20:39:25.095Z",
+  "room": "C4XE",
+  "finishedAt": "2026-09-28T20:59:02.457Z",
   "allPass": true
 }
