@@ -366,6 +366,7 @@ export function publicView(state: RoomState, viewerId: string, now: number): Pub
     list: state.list,
     round: state.round,
     endedAt: state.endedAt,
+    expiresAt: state.expiresAt,
     players: state.players,
     you: viewerId,
     role,

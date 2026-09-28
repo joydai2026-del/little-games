@@ -1,0 +1,24 @@
+{
+  "name": "stroke-reveal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run && node --test tests/agent-lib.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
+    "check:xss": "! grep -rnE 'innerHTML|outerHTML|insertAdjacentHTML|document\\.write|eval\\(|new Function' src/client",
+    "check:palette": "node scripts/check-palette.mjs",
+    "check:brand": "bash ../scripts/check-brand.sh",
+    "deploy": "npm run build && wrangler deploy",
+    "cf:dev": "npm run build && wrangler dev"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0",
+    "wrangler": "4.128.0",
+    "@cloudflare/workers-types": "^5.20260907.1"
+  }
+}

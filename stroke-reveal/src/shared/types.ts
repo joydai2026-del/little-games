@@ -138,6 +138,8 @@ export interface PublicState {
   list: WordList;
   round: number;
   endedAt: number | null;
+  /** The room is gone after this moment. */
+  expiresAt: number;
   players: Player[];
   you: string;
   role: Role;
