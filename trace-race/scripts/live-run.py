@@ -55,6 +55,14 @@ async (c) => {
 }
 """
 
+TEACHER_VERSION_JS = """
+async (c) => {
+  const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c));
+  const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
+  return (await r.json()).state.version;
+}
+"""
+
 TEACHER_PROGRESS_JS = """
 async ([c, kid]) => {
   const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c));
@@ -96,6 +104,7 @@ def main():
     ap.add_argument("--cut-scope", choices=["strokes", "all"], default="strokes",
                     help="strokes: only stroke sends; all: every room request, polls included (a full outage)")
     ap.add_argument("--record", action="store_true")
+    ap.add_argument("--no-agent", action="store_true", help="solo kid: nothing else changes the room during a cut")
     args = ap.parse_args()
     raw = OUT / "_raw"
     base = args.url.rstrip("/")
@@ -126,11 +135,11 @@ def main():
         k.click("text=Join the race")
         k.wait_for_selector("text=You're in")
 
-        agent = subprocess.Popen(
+        agent = None if args.no_agent else subprocess.Popen(
             ["node", str(ROOT / "agent" / "play.mjs"), "--url", base, "--room", code, "--name", "Robo",
              "--pace-ms", "1800", "--mistakes", "0.15", "--seed", "5"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        t.wait_for_function("document.body.innerText.includes('Kids here (2)')", timeout=20000)
+        t.wait_for_function(f"document.body.innerText.includes('Kids here ({1 if args.no_agent else 2})')", timeout=20000)
         t.screenshot(path=str(OUT / "trace-race-lobby.png"))
         t.click("text=Start the race")
 
@@ -153,6 +162,7 @@ def main():
                 log["blip"]["requests_left_hanging"] = len(hung)
                 log["blip"]["server_at_unroute"] = t.evaluate(TEACHER_PROGRESS_JS, [code, kid_id])["me"]
                 log["blip"]["phone_screen_at_unroute"] = k.inner_text("#app")[:120]
+                log["blip"]["room_version_at_unroute"] = t.evaluate(TEACHER_VERSION_JS, code)
             prog = t.evaluate(TEACHER_PROGRESS_JS, [code, kid_id])
             if prog["phase"] != "racing" or (prog["me"] and prog["me"]["finishedAt"]):
                 if not k.query_selector(".cheer"):
@@ -182,6 +192,7 @@ def main():
                 else:
                     hung.clear()
                     k.route(pattern, lambda route: hung.append(route))  # never answered
+                log["room_version_at_cut"] = t.evaluate(TEACHER_VERSION_JS, code)
                 log["blip"] = {"mode": args.cut, "seconds": args.cut_seconds, "char": ch, "cut_at_stroke": stroke, "cut_at": time.time()}
             drag(k, k.evaluate(TRACE_JS, [ch, stroke]))
             k.wait_for_timeout(450)
@@ -194,12 +205,13 @@ def main():
         t.wait_for_selector("text=Winners!", timeout=120000)
         t.wait_for_timeout(1200)
         t.screenshot(path=str(OUT / "trace-race-winners.png"))
-        try:
-            out, _ = agent.communicate(timeout=60)
-        except subprocess.TimeoutExpired:
-            agent.kill()
-            out, _ = agent.communicate()
-        log["agent_output"] = out.strip().splitlines()[-6:]
+        if agent:
+            try:
+                out, _ = agent.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                agent.kill()
+                out, _ = agent.communicate()
+            log["agent_output"] = out.strip().splitlines()[-6:]
         log["board"] = t.inner_text(".board")
         k.wait_for_timeout(1500)
         log["kid_screen"] = k.inner_text("#app")[:200]

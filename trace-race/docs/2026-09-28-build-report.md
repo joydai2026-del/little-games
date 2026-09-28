@@ -8,13 +8,13 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 ## Key takeaways
 1. **The core loop works live, with a receipt.** Every A below is backed by
    [`evidence/2026-09-28-live-receipt.md`](evidence/2026-09-28-live-receipt.md) (deployed
-   commit `4d7b757`, version `d59a95e2`, room codes, timestamps, raw JSON).
+   commit `5d45fb6`, version `25d11942`, room codes, timestamps, raw JSON).
 2. **Review round 1 fixes are in** (both reviewers said FIX-FIRST): the phone resyncs with the
    room after a lost send, one ranking key, race id + stroke sequence (retries and replays are
    no-ops), roster frozen at Start, a server pace floor, input hardening, 64 px taps.
 3. **Demo recorded live**: `docs/demo/trace-race-demo.mp4` and `.gif` (1.8 MB), embedded in both
    READMEs. The playable mp4 link (GitHub attachment upload) is pending, done by the coordinator.
-4. **Tests green**: 47 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
+4. **Tests green**: 52 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
 5. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
 
 ## Recommended action
@@ -22,22 +22,18 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 2. Decide on real Momo art (swap `public/momo.svg`).
 3. Upload the mp4 to a GitHub attachment and replace the pending comment in both READMEs.
 
-## Verified live vs assumed (after round 3, deployed version d59a95e2, commit 4d7b757)
-| Claim | Grade | Evidence (all in the receipt) |
+## Verified live vs assumed (after round 4, deployed version 25d11942, commit 5d45fb6)
+| Claim | Grade | Evidence (receipt + raw JSON) |
 |---|---|---|
-| Site, closed stroke proxy, licence served | A | live gate: 我 hash = manifest, bad paths 400, licence 200 |
-| Malformed code 400, oversized body 413, long paste 400 | A | live gate |
-| Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP | A | `live-run.py`, rooms 69Y7 and 875M |
-| Phone and room agree after a 14 s HUNG network (requests never answered) | A | `live-run.py --blip --cut hang`, room U37B, raw JSON |
-| Race ends on the clock via the alarm, nobody polling | A | room VKG2: endedAt - endsAt = 2 ms |
-| Retried stroke / mistake count once; race-1 stroke refused in race 2 | A | room VKG2 |
-| Late joiner waits for the next race | A | room VKG2 |
-| A stale saved seat leads back to the join form (Join again) | A | room TQHQ, `live-stale-seat.json` |
-| Reopening the join link resumes a valid saved seat; a gone kid is left out of the next race; hiccup notice clears after 3.5 s | B | `tests/route.test.ts`, `tests/race.test.ts` |
-| Pace floor (GO + n x 250 ms) | A | room VKG2: stroke 2 refused at GO+426, accepted at GO+527 (server clock) |
-| Ranking order (chars, strokes into current, mistakes once progressed, time) | B | `tests/race.test.ts` scoring tests |
-| Room expiry pushed past Start and race end | A/B | live: expiresAt = endedAt + 2 h; Start push unit-tested |
-| Real touch on a real phone; 25 phones at once | C | not tested |
+| Site, closed stroke proxy, licence, %E0 400, oversized body 413, long paste 400 | A | live gate |
+| Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP | A | round-1 runs (69Y7, 875M), full-outage run RKP5 |
+| Phone and room agree after a 45 s FULL outage with nothing else changing the room | A | run RKP5, room version 6 before and after |
+| Race ends on the clock via the alarm, nobody polling | A | room R8HA: 2 ms |
+| Retries and replays never count twice; late joiner waits | A | room R8HA |
+| Pace floor (GO + n x 250 ms) | A | stroke 2 refused at GO+450, accepted at GO+569 |
+| A stale seat entered through the join link leads back to the join form | A | room VEFT |
+| One presence list for "Kids here" and Start; ranking incl. zero-progress rule; outbox skip/reset; timeout fallback; hiccup clears | B | unit tests |
+| Old Safari / Chrome devices; real phone touch; 25 phones at once | C | not tested |
 
 ## Library verdict and version
 - hanzi-writer **3.7.3** (MIT), classic script from jsDelivr with SRI
