@@ -1,19 +1,19 @@
 {
   "url": "https://stroke-reveal.joyd-ai-2026.workers.dev",
-  "deployedVersion": null,
-  "deployedCommit": null,
-  "startedAt": "2026-09-28T20:30:27.727Z",
+  "deployedVersion": "a6a38409-1f13-48ec-b073-c4190796ca70",
+  "deployedCommit": "4e7dcb1",
+  "startedAt": "2026-09-28T20:40:54.075Z",
   "checks": [
     {
       "name": "home page",
       "pass": true,
-      "at": "2026-09-28T20:30:27.961Z",
+      "at": "2026-09-28T20:40:54.276Z",
       "status": 200
     },
     {
       "name": "stroke proxy returns manifest bytes for 我",
       "pass": true,
-      "at": "2026-09-28T20:30:28.014Z",
+      "at": "2026-09-28T20:40:54.368Z",
       "status": 200,
       "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
       "contentType": "application/json; charset=utf-8",
@@ -23,7 +23,7 @@
     {
       "name": "stroke proxy rejects ..%2Fx",
       "pass": true,
-      "at": "2026-09-28T20:30:28.038Z",
+      "at": "2026-09-28T20:40:54.386Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -32,7 +32,7 @@
     {
       "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
       "pass": true,
-      "at": "2026-09-28T20:30:28.115Z",
+      "at": "2026-09-28T20:40:54.447Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -41,7 +41,7 @@
     {
       "name": "stroke proxy rejects %F0%A0%AE%B7",
       "pass": true,
-      "at": "2026-09-28T20:30:28.141Z",
+      "at": "2026-09-28T20:40:54.465Z",
       "status": 400,
       "body": {
         "error": "no stroke data for that"
@@ -50,19 +50,19 @@
     {
       "name": "licence served",
       "pass": true,
-      "at": "2026-09-28T20:30:28.274Z",
+      "at": "2026-09-28T20:40:54.496Z",
       "status": 200,
       "firstLine": "ARPHIC PUBLIC LICENSE"
     },
     {
       "name": "malformed room code is 400",
       "pass": true,
-      "at": "2026-09-28T20:30:28.300Z"
+      "at": "2026-09-28T20:40:54.521Z"
     },
     {
       "name": "oversized body is 413 with a plain message",
       "pass": true,
-      "at": "2026-09-28T20:30:28.368Z",
+      "at": "2026-09-28T20:40:54.571Z",
       "status": 413,
       "body": {
         "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
@@ -71,7 +71,7 @@
     {
       "name": "over-long paste is 400 with a plain message",
       "pass": true,
-      "at": "2026-09-28T20:30:28.832Z",
+      "at": "2026-09-28T20:40:54.847Z",
       "status": 400,
       "body": {
         "error": "That paste is too long. Paste a shorter list (up to 4000 characters)."
@@ -80,9 +80,9 @@
     {
       "name": "room made from a messy paste: heading skipped and reported, missing word noted",
       "pass": true,
-      "at": "2026-09-28T20:30:29.154Z",
+      "at": "2026-09-28T20:40:55.111Z",
       "status": 200,
-      "code": "VM8C",
+      "code": "GRXK",
       "list": {
         "words": [
           "大人",
@@ -109,43 +109,43 @@
     {
       "name": "round started, teacher sees the drawn character",
       "pass": true,
-      "at": "2026-09-28T20:30:29.458Z",
+      "at": "2026-09-28T20:40:55.374Z",
       "status": 200,
       "round": 1,
       "question": {
         "index": 0,
         "total": 1,
         "cards": [
-          "人",
-          "大人",
           "学校",
-          "山"
+          "山",
+          "大人",
+          "人"
         ],
-        "startAt": 1790627432389,
-        "endsAt": 1790627441089,
+        "startAt": 1790628058324,
+        "endsAt": 1790628067024,
         "closedAt": null,
         "nextAt": null,
         "strokeMs": 900,
         "char": "大",
         "strokes": 3,
-        "answer": 1
+        "answer": 2
       }
     },
     {
       "name": "kids never see the character or the right card while the word is open",
       "pass": true,
-      "at": "2026-09-28T20:30:29.559Z",
+      "at": "2026-09-28T20:40:55.484Z",
       "question": {
         "index": 0,
         "total": 1,
         "cards": [
-          "人",
-          "大人",
           "学校",
-          "山"
+          "山",
+          "大人",
+          "人"
         ],
-        "startAt": 1790627432389,
-        "endsAt": 1790627441089,
+        "startAt": 1790628058324,
+        "endsAt": 1790628067024,
         "closedAt": null,
         "nextAt": null,
         "strokeMs": 900,
@@ -157,17 +157,17 @@
     {
       "name": "guess before Momo starts drawing is refused",
       "pass": true,
-      "at": "2026-09-28T20:30:29.604Z",
+      "at": "2026-09-28T20:40:55.522Z",
       "status": 409,
       "body": {
         "error": "wait for Momo to start drawing",
-        "serverTime": 1790627429584
+        "serverTime": 1790628055498
       }
     },
     {
       "name": "/drawing shows only the strokes on the big screen, never the character",
       "pass": true,
-      "at": "2026-09-28T20:30:32.750Z",
+      "at": "2026-09-28T20:40:58.690Z",
       "status": 200,
       "shown": 1,
       "complete": false
@@ -175,29 +175,29 @@
     {
       "name": "the agent sees exactly one card that matches the drawing",
       "pass": true,
-      "at": "2026-09-28T20:30:33.056Z",
+      "at": "2026-09-28T20:40:58.958Z",
       "plan": {
         "race": 1,
         "question": 0,
         "seq": 1,
-        "card": 1
+        "card": 2
       },
       "matches": [
-        1
+        2
       ],
       "cards": [
-        "人",
-        "大人",
         "学校",
-        "山"
+        "山",
+        "大人",
+        "人"
       ]
     },
     {
       "name": "a right guess before the drawing is complete scores above the minimum (100); the same guess again changes nothing",
       "pass": true,
-      "at": "2026-09-28T20:30:33.235Z",
-      "points": 768,
-      "guessedMsAfterStart": 697,
+      "at": "2026-09-28T20:40:59.070Z",
+      "points": 779,
+      "guessedMsAfterStart": 662,
       "drawMs": 2700,
       "version": 6,
       "retryVersion": 6,
@@ -205,50 +205,50 @@
         "tried": [],
         "locked": false,
         "coolUntil": null,
-        "correctAt": 1790627433086,
-        "points": 768,
-        "rightCard": 1
+        "correctAt": 1790628058986,
+        "points": 779,
+        "rightCard": 2
       }
     },
     {
       "name": "late joiner waits for the next round",
       "pass": true,
-      "at": "2026-09-28T20:30:33.275Z",
+      "at": "2026-09-28T20:40:59.110Z",
       "status": 409,
       "body": {
         "error": "this round started before you joined, you play the next one",
-        "serverTime": 1790627433264
+        "serverTime": 1790628059092
       }
     },
     {
       "name": "the word closed on the clock (alarm), and kids now see the answer",
       "pass": true,
-      "at": "2026-09-28T20:30:44.383Z",
-      "endsAt": 1790627441089,
-      "closedAt": 1790627441089,
-      "answer": 1,
+      "at": "2026-09-28T20:41:10.142Z",
+      "endsAt": 1790628067024,
+      "closedAt": 1790628067024,
+      "answer": 2,
       "word": "大人",
       "phase": "playing"
     },
     {
       "name": "round ended after the answer showed; early guesser first, waiting agent second with 0",
       "pass": true,
-      "at": "2026-09-28T20:30:47.732Z",
+      "at": "2026-09-28T20:41:13.647Z",
       "phase": "done",
-      "endedAt": 1790627445089,
-      "nextAt": 1790627445089,
+      "endedAt": 1790628071024,
+      "nextAt": 1790628071024,
       "standings": [
         {
-          "playerId": "146930e8-7b64-4147-9a25-fb1c08643b50",
+          "playerId": "f3828ff3-7b39-4570-a6a8-d96a13c43c52",
           "name": "Robo Quick",
           "agent": true,
-          "points": 768,
+          "points": 779,
           "correct": 1,
           "place": 1,
           "status": "got"
         },
         {
-          "playerId": "5521df20-1e3c-4626-8290-09463d223ac8",
+          "playerId": "75cff2f1-e280-4256-8f44-78aa705640b8",
           "name": "Robo Slow",
           "agent": true,
           "points": 0,
@@ -261,7 +261,7 @@
     {
       "name": "late joiner plays round 2",
       "pass": true,
-      "at": "2026-09-28T20:30:47.836Z",
+      "at": "2026-09-28T20:41:13.717Z",
       "standings": [
         "Robo Quick",
         "Robo Slow",
@@ -272,17 +272,17 @@
     {
       "name": "a guess for round 1 is refused in round 2",
       "pass": true,
-      "at": "2026-09-28T20:30:51.121Z",
+      "at": "2026-09-28T20:41:17.021Z",
       "status": 409,
       "body": {
         "error": "that guess was for a different round",
-        "serverTime": 1790627451110
+        "serverTime": 1790628077009
       }
     },
     {
       "name": "Grades 3-5: a wrong guess locks you out of that word",
       "pass": true,
-      "at": "2026-09-28T20:30:51.388Z",
+      "at": "2026-09-28T20:41:17.262Z",
       "wrong": [
         200,
         {
@@ -302,7 +302,7 @@
       ]
     }
   ],
-  "room": "VM8C",
-  "finishedAt": "2026-09-28T20:30:51.388Z",
+  "room": "GRXK",
+  "finishedAt": "2026-09-28T20:41:17.262Z",
   "allPass": true
 }

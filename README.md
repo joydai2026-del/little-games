@@ -8,6 +8,7 @@ README, tests, and build docs.
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+| 猜猜我是谁 Stroke Reveal | Momo draws a Chinese character one stroke at a time on the big screen; kids race to tap the right word on their phones. | `stroke-reveal/` |
 
 ## Trace Race 笔顺比赛
 
@@ -21,6 +22,18 @@ stroke by stroke, in the right order, on their phones. Details in [`trace-race/R
 <!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
+
+## 猜猜我是谁 Stroke Reveal
+
+Live at: **https://stroke-reveal.joyd-ai-2026.workers.dev** · Momo draws a character one stroke at a
+time, and the first kid to tap the right word wins the most points. Details in
+[`stroke-reveal/README.md`](stroke-reveal/README.md).
+
+![Stroke Reveal demo: Momo draws on the big screen while a kid taps word cards on a phone](stroke-reveal/docs/demo/stroke-reveal-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [stroke-reveal-demo.mp4](stroke-reveal/docs/demo/stroke-reveal-demo.mp4) · [stroke-reveal-demo.gif](stroke-reveal/docs/demo/stroke-reveal-demo.gif)
 
 ## Caption Wars
 
