@@ -25,6 +25,8 @@ Chinese K–5 classroom games for Avery Studio. **North star: student energy and
 
 Full brief: [`docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md`](docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md). Read that before building. Docs only until a build task says otherwise.
 
+Brand guide: [`docs/avery/brand/AVERY-BRAND-GUIDE.md`](docs/avery/brand/AVERY-BRAND-GUIDE.md) (locked: Momo brush + L4 lockup).
+
 Locked product shape:
 
 - Paid is **$39/year**. Free forever is **1 saved list** (one vocab deck) and **1 play mode** on that list.
