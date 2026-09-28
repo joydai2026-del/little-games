@@ -4,6 +4,7 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 
 ## Folder map
 - `caption-wars/` : one photo drops, everyone captions, vote the winner. Web app on Cloudflare.
+- `trace-race/` : 笔顺 stroke-order race for Mandarin immersion K-5 (Avery Studio). Web app on Cloudflare.
 - Each game owns its own `README.md`, `package.json`, tests, and `docs/plans/`.
 
 ## House rules for this repo

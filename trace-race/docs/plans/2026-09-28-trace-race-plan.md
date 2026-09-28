@@ -32,9 +32,9 @@ Characters finished (more is better), then mistakes (fewer is better), then who 
 | hints | on | yes ("Show stroke hints, best for K-2") |
 | countdownSeconds | 3 | no |
 | maxKids | 40 | no |
-| maxListChars | 30 | no (also keeps stroke lookups under the free-plan request cap) |
+| maxListChars | 60 | no (stroke counts are bundled, so the room makes no CDN calls) |
 | roomTtlMinutes | 120 | no |
-Stroke data base URL and cache time are Worker vars in `wrangler.jsonc`.
+Stroke cache time, fetch timeout and upstream size cap are Worker vars in `wrangler.jsonc`. The stroke data source is pinned in code next to its sha256 manifest (security scan requirement).
 
 ## Agent API (same HTTP API the phones use)
 `POST /api/rooms` (teacher), `POST /api/rooms/:code/join`, `GET /api/rooms/:code?v=N`, `POST /api/rooms/:code/stroke {charIndex, strokeIndex, result: "correct"|"mistake"}`, plus teacher-only `start`, `list`, `next`. `agent/play.mjs` joins a room and traces at a human-ish pace with a few mistakes.

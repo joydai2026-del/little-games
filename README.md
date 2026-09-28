@@ -6,6 +6,7 @@ README, tests, and build docs.
 | Game | What it is | Folder |
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
+| Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 
 ## Caption Wars
 
