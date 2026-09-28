@@ -43,6 +43,12 @@ export const GAME = {
   pollMs: { lobby: 1500, racing: 800, done: 2500 },
   /** How long the Momo cheer shows between characters, in ms. */
   cheerMs: 900,
+  /** How forgiving stroke matching is (hanzi-writer leniency; 1 = library default, higher = easier for small hands). */
+  leniency: 1.3,
+  /** Pen width while a kid draws, in grid units of the tracer. */
+  drawingWidth: 34,
+  /** Times the phone retries one stroke send before resyncing with the room. */
+  strokeSendRetries: 3,
 } as const;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

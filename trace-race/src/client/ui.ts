@@ -1,0 +1,62 @@
+// DOM helpers. Nothing in src/client assigns raw markup: every name and every
+// character reaches the page as a text node (npm run check:xss keeps it so).
+
+type Handler = (event: Event) => void;
+type AttrValue = string | number | boolean | Handler | undefined | null;
+export type Attrs = Record<string, AttrValue>;
+export type Child = Node | string | null | undefined | false;
+
+export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, children: Child[] = []): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value as Handler);
+    else if (key === 'class') node.className = String(value);
+    else if (key === 'text') node.textContent = String(value);
+    else if (key === 'value' && (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) node.value = String(value);
+    else if (value === true) node.setAttribute(key, '');
+    else node.setAttribute(key, String(value));
+  }
+  for (const child of children) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(typeof child === 'string' ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+export function svg(tag: string, attrs: Record<string, string | number> = {}, children: Element[] = []): SVGElement {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  node.append(...children);
+  return node;
+}
+
+export function momo(extraClass = ''): HTMLImageElement {
+  return h('img', { class: `momo ${extraClass}`.trim(), src: '/momo.svg', alt: 'Momo the ink drop' });
+}
+
+export function brand(subtitle: string): HTMLElement {
+  return h('div', { class: 'brand' }, [
+    h('img', { src: '/momo.svg', alt: '' }),
+    h('div', {}, [h('h1', { text: 'Trace Race 笔顺比赛' }), h('p', { class: 'sub', text: subtitle })]),
+  ]);
+}
+
+export function credits(): HTMLElement {
+  return h('p', { class: 'footer' }, [
+    'Character stroke data: ',
+    h('a', {
+      href: 'https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/ARPHICPL.TXT',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      text: 'Make Me a Hanzi / Arphic Technology, Arphic Public License',
+    }),
+    '. Stroke checking: Hanzi Writer (MIT). An Avery Studio game.',
+  ]);
+}
+
+/** Reads a colour token from theme.css so no colour literal lives in TS. */
+export function token(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
