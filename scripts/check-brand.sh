@@ -8,7 +8,8 @@
 #      avery-brand/ by sha256;
 #   2. the retired ink-drop momo.svg must be gone (file AND every reference);
 #   3. no retired colour (the old cream/mint/coral/ink kit) may appear in the
-#      game's shipped surface (index.html, public/, src/, scripts/, tests/, README.md);
+#      game's shipped surface and its docs (index.html, public/, src/, scripts/, tests/,
+#      README.md, docs/; docs/avery/brand/, the guide itself, is never scanned);
 #      check-palette.mjs is exempt because it lists them in order to reject them;
 #   4. index.html must carry the title suffix, paper theme-color, the Momo PNG
 #      favicon, the Baloo 2 + Quicksand + Noto Sans SC fonts link, /theme.css,
@@ -39,10 +40,11 @@ for dir in "$root"/*/; do
   done
   [ -f "$dir/public/momo.svg" ] && bad "$game: public/momo.svg is the retired ink drop: delete it"
   surface=()
-  for p in index.html public src scripts tests README.md; do [ -e "$dir/$p" ] && surface+=("$dir/$p"); done
-  hits="$(grep -rIl --exclude-dir=node_modules 'momo\.svg' "${surface[@]}" 2>/dev/null)"
+  for p in index.html public src scripts tests README.md docs; do [ -e "$dir/$p" ] && surface+=("$dir/$p"); done
+  # docs/avery/brand/ is the locked guide itself (it may name retired things); never scanned.
+  hits="$(grep -rIl --exclude-dir=node_modules 'momo\.svg' "${surface[@]}" 2>/dev/null | grep -v '/docs/avery/brand/')"
   [ -n "$hits" ] && bad "$game: still references momo.svg in: $(echo "$hits" | sed "s|$dir||" | tr '\n' ' ')"
-  hits="$(grep -rIilE --exclude-dir=node_modules --exclude=check-palette.mjs "$retired" "${surface[@]}" 2>/dev/null)"
+  hits="$(grep -rIilE --exclude-dir=node_modules --exclude=check-palette.mjs "$retired" "${surface[@]}" 2>/dev/null | grep -v '/docs/avery/brand/')"
   [ -n "$hits" ] && bad "$game: retired colour ($retired) in: $(echo "$hits" | sed "s|$dir||" | tr '\n' ' ')"
   html="$dir/index.html"
   if [ ! -f "$html" ]; then bad "$game: index.html is missing"; continue; fi

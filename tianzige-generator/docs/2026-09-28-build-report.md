@@ -51,7 +51,7 @@ Tests: 79 passing (`npm test`), typecheck clean (client + worker), `check:xss` c
 | PDF look-alikes (⼈) | NFKC before parsing |
 | Demo | Live-recorded mp4 + gif, embedded in both READMEs |
 | Evidence | This regrade plus the receipt script and receipt |
-| Should-fixes | One duplicate rule; hardest-first fill; input cut reported; palette via theme (momo.svg documented exception); render and worker numbers moved to config; setAttribute taint tests |
+| Should-fixes | One duplicate rule; hardest-first fill; input cut reported; palette via theme; render and worker numbers moved to config; setAttribute taint tests |
 
 ## Placeholders
 

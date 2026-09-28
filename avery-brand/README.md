@@ -57,6 +57,7 @@ and `L4-official-square-tpt.png`.
    ```
    Every in-game Momo `<img>` carries the 2x source too: `srcset="/momo.png 1x, /momo@2x.png 2x"`
    (retina phones and iPads would otherwise show a soft puppy).
+   In games and tools the header is the L4 lockup with the guide's optional character line 'with 墨墨 Momo' in place of the store tagline 'printable classroom materials' (guide section 2 allows this line in games and copy). The store tagline is for the site, TPT and covers. Do not reopen this in review.
    **Header link rule**: the header is disabled on screens where leaving loses progress (a kid mid-race):
    render it as plain text there (drop the `href`), never a live link.
 7. **Footer on every screen**, the brand line first, the tool's own credits under it:
@@ -118,7 +119,7 @@ the check fails if any of them appears in a game.
 From the repo root: `bash scripts/check-brand.sh`. From a game folder: `npm run check:brand`.
 It looks at every game folder that ships `public/theme.css`, `public/momo.png` or the retired `public/momo.svg`, and fails when:
 `theme.css` differs from this folder; any of the four Momo PNGs differs by sha256; `momo.svg` still exists or is still
-referenced; a retired colour appears in `index.html`, `public/`, `src/`, `scripts/`, `tests/` or `README.md`; or the page
+referenced; a retired colour appears in `index.html`, `public/`, `src/`, `scripts/`, `tests/`, `README.md` or `docs/` (never `docs/avery/brand/`); or the page
 lacks the title suffix, paper theme-color, PNG favicon, fonts link, `/theme.css`, the header lockup, or the footer.
 
 ## Changing the brand
