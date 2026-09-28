@@ -5,7 +5,7 @@ Live at: **https://trace-race.joyd-ai-2026.workers.dev**
 An Avery Studio classroom game for Mandarin immersion K-5. The teacher pastes a character list,
 kids join on their phones, and everyone races to trace each character stroke by stroke, in the
 right order. Correct strokes fill in with ink, a wrong stroke wiggles and shows the hint, and
-墨墨 (Momo, the ink drop) cheers every finished character. The teacher's screen is a live race
+墨墨 (Momo, the Avery Studio mint puppy) cheers every finished character. The teacher's screen is a live race
 board for the classroom projector.
 
 No accounts, no ads, no tracking, no sound. A display name lives only as long as the room (2 hours).
@@ -18,7 +18,7 @@ teacher's race board on the right. Silent, 1.25x speed.
 
 ![Trace Race demo: a kid traces on a phone while the race board updates](docs/demo/trace-race-demo.gif)
 
-<!-- mp4 user-attachments URL: pending, commander adds -->
+<!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Files: [trace-race-demo.mp4](docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](docs/demo/trace-race-demo.gif)
 
@@ -136,8 +136,11 @@ Characters with no stroke data are skipped with a note on the teacher screen.
 
 ## 墨墨 Momo
 
-`public/momo.svg` is a **placeholder** (round ink drop, two eyes, a smile). No official Momo art
-exists yet. Replace that one file and every screen picks it up.
+Official Momo, locked 2026-09-24: the mint puppy with a calligraphy brush, from
+`docs/avery/brand/` (the brand guide is the law). `public/momo.png` is the in-game Momo (lobby,
+finish, winners, the full-screen 好棒! cheer), animated with CSS only (bounce, tilt, pop).
+`public/momo-icon.png` is the header lockup icon and favicon. Both are copied unedited from
+`avery-brand/`; `npm run check:brand` compares them by sha256.
 
 ## Develop
 
@@ -147,7 +150,7 @@ npm test              # vitest (reducer, parser, Durable Object, stroke proxy, a
 npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
 npm run check:palette # colours only from public/theme.css (Avery kit) and src/client/game.css (static files may repeat a token value)
-npm run check:brand   # public/momo.svg + public/theme.css identical to avery-brand/, title/favicon/header/footer present
+npm run check:brand   # theme.css + Momo PNGs identical to avery-brand/, no retired colours or ink-drop file, title/favicon/header/footer present
 npm run deploy        # build + wrangler deploy (workers.dev only)
 node scripts/live-gate.mjs    # live API gate, prints a JSON receipt
 python3 scripts/live-run.py   # live headless run (--blip: network cut, --record: demo mp4 + gif)
@@ -161,4 +164,3 @@ Plan: `docs/plans/2026-09-28-trace-race-plan.md`. Build report: `docs/2026-09-28
 - Saved teacher lists and modes (the later free and paid plans). No paywall, no accounts now.
 - Cheat resistance beyond the order check and the pace floor (honor-based by design for K-5).
 - Teacher "remove player" button.
-- Real Momo art.

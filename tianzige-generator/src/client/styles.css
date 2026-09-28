@@ -2,32 +2,33 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  background: var(--cream);
+  background: var(--paper);
   color: var(--ink);
   font: 17px/1.45 var(--font-ui);
 }
 .app-chrome { max-width: 760px; margin: 0 auto; padding: 0 16px 16px; }
 .top { display: flex; gap: 12px; align-items: flex-start; }
-.momo { flex: none; width: 64px; height: 64px; animation: bob 3s ease-in-out infinite; }
+.momo { flex: none; width: 72px; height: 72px; object-fit: contain; transform-origin: 50% 90%; animation: bob 3s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
 @media (prefers-reduced-motion: reduce) { .momo { animation: none; } }
-h1 { font-size: 1.5rem; margin: 4px 0 6px; letter-spacing: -0.01em; }
+.nowrap { white-space: nowrap; } /* a Chinese word never splits across lines */
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 4px 0 6px; }
 .bubble {
   margin: 0; padding: 10px 14px; border-radius: 16px 16px 16px 4px;
-  background: var(--white); box-shadow: 0 2px 0 var(--mint);
-  font-size: 0.98rem;
+  background: var(--card); box-shadow: 0 2px 0 var(--mascot);
+  font-size: 0.98rem; font-weight: 600;
 }
 .card {
   margin-top: 16px; padding: 16px; border-radius: 20px;
-  background: var(--white); box-shadow: 0 3px 0 var(--mint), 0 8px 24px var(--shadow);
+  background: var(--card); box-shadow: 0 3px 0 var(--mascot), 0 8px 24px var(--shadow);
 }
 .big-label { display: block; font-weight: 800; font-size: 1.2rem; margin-bottom: 8px; }
 textarea {
   width: 100%; min-height: 110px; padding: 12px 14px; resize: vertical;
-  border: 3px solid var(--mint); border-radius: 14px; background: var(--cream);
+  border: 3px solid var(--mascot); border-radius: 14px; background: var(--paper);
   font: 1.6rem/1.4 "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", sans-serif; color: var(--ink);
 }
-textarea:focus { outline: none; border-color: var(--mint-deep); }
+textarea:focus { outline: none; border-color: var(--pink); }
 .hint { margin: 8px 2px 0; font-size: 0.88rem; color: var(--ink-soft); }
 .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
 @media (max-width: 480px) { .controls { grid-template-columns: 1fr; } }
@@ -39,15 +40,15 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
 .seg span {
   display: flex; align-items: center; justify-content: center; min-height: 64px; min-width: 64px;
   text-align: center; padding: 8px 6px; border-radius: 14px; cursor: pointer;
-  background: var(--cream); border: 2px solid var(--mint); font-weight: 700; font-size: 0.95rem;
+  background: var(--paper); border: 2px solid var(--mascot); font-weight: 700; font-size: 0.95rem;
   transition: transform 0.08s;
 }
-.seg input:checked + span { background: var(--mint); border-color: var(--mint-deep); }
-.seg input:focus-visible + span { outline: 3px solid var(--coral); outline-offset: 2px; }
+.seg input:checked + span { background: var(--mascot); border-color: var(--mascot-2); }
+.seg input:focus-visible + span { outline: 3px solid var(--pink-deep); outline-offset: 2px; }
 .seg span:active { transform: scale(0.96); }
 .print-bar {
   position: sticky; bottom: 0; z-index: 2; margin: 16px -16px 0; padding: 12px 16px;
-  background: var(--cream); box-shadow: 0 -6px 12px var(--cream);
+  background: var(--paper); box-shadow: 0 -6px 12px var(--paper);
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
 }
 .print-bar .hint { margin: 0; flex: 1; min-width: 180px; }
@@ -57,7 +58,7 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
 #print:disabled { box-shadow: none; }
 .sheet { max-width: 760px; margin: 8px auto 0; padding: 0 16px 16px; display: grid; gap: 16px; }
 .sheet .sheet-page {
-  padding: 3%; border-radius: 6px; box-shadow: 0 2px 0 var(--mint), 0 10px 30px var(--shadow);
+  padding: 3%; border-radius: 6px; box-shadow: 0 2px 0 var(--mascot), 0 10px 30px var(--shadow);
 }
 .sheet.loading { opacity: 0.45; transition: opacity 0.15s; }
 

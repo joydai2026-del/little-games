@@ -1,23 +1,24 @@
 /* The printed worksheet. Shared by the app preview and the /api/sheet page.
    Brand colours come from theme.css (the Avery Studio kit, never edited here);
-   the game-only tokens below derive from it. Page size comes from pageCss(). */
+   the game-only tokens below derive from it. Page size comes from pageCss().
+   Never redefine a kit token here (--paper, --ink-soft...): the whole app page
+   would change with it. */
 :root {
   --white: var(--card);
-  --paper: var(--card);
-  --ink-soft: var(--muted);
-  --grid-border: var(--mint-deep);
+  --sheet-paper: #FFFFFF; /* printed paper stays plain white: no tint on the page */
+  --grid-border: var(--mascot-2);
   --grid-guide: #8FD0B8;
   --grid-diag: #CDEBDF;
   --stroke-build: #B9C1C7;
   --stroke-trace: #DCE1E4;
   --rule: #B9C1C7;
-  --shadow: rgba(45, 52, 54, 0.12);
+  --shadow: rgba(66, 41, 29, 0.12);
 }
 .sheet-page {
   display: block;
   width: 100%;
   height: auto;
-  background: var(--paper);
+  background: var(--sheet-paper);
   overflow: visible;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
@@ -39,6 +40,8 @@
   fill: var(--ink-soft);
   font-family: "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", "Noto Sans CJK SC", sans-serif;
 }
+/* The footer wordmark is the one brand mark on paper: Baloo 2, like the header. */
+.sheet-page .sheet-brand { font-family: var(--font-head); font-weight: 700; }
 .sheet-page .sheet-rule { stroke: var(--rule); }
 .sheet-page .sheet-count {
   fill: var(--ink-soft);

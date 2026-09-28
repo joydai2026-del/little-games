@@ -148,9 +148,9 @@ async function handleSheet(request: Request, env: Env, fetcher: typeof fetch): P
 ${theme}
 ${sheetCss}
 ${pageCss(spec.options.paper)}
-body { margin: 0; background: var(--cream); }
+body { margin: 0; background: var(--paper); }
 main { max-width: 820px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-.credits { font: 12px/1.4 system-ui, sans-serif; color: var(--ink-soft); text-align: center; }
+.credits { font: 12px/1.4 var(--font-ui); color: var(--ink-soft); text-align: center; }
 @media print { body { background: none; } main { padding: 0; display: block; max-width: none; } .credits { display: none; } }
 </style>
 </head>

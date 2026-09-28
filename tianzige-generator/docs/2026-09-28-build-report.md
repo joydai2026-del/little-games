@@ -51,12 +51,12 @@ Tests: 79 passing (`npm test`), typecheck clean (client + worker), `check:xss` c
 | PDF look-alikes (⼈) | NFKC before parsing |
 | Demo | Live-recorded mp4 + gif, embedded in both READMEs |
 | Evidence | This regrade plus the receipt script and receipt |
-| Should-fixes | One duplicate rule; hardest-first fill; input cut reported; palette via theme (momo.svg documented exception); render and worker numbers moved to config; setAttribute taint tests |
+| Should-fixes | One duplicate rule; hardest-first fill; input cut reported; palette via theme; render and worker numbers moved to config; setAttribute taint tests |
 
 ## Placeholders
 
-- **Momo is a placeholder**: `public/momo.svg`, hand-drawn ink drop. Swap that one file.
-- Grid colour is brand mint (`--grid-border`), one token to change.
+- **Momo is the official puppy, locked 2026-09-24** (`public/momo.png`, `public/momo-icon.png`; rebrand 2026-09-28).
+- Grid border is Momo's outline mint (`--grid-border` = `--mascot-2`), one token to change.
 - The mp4 needs its GitHub user-attachments URL; both READMEs hold a marked placeholder line.
 
 ## Round 3 (review round 2) changes

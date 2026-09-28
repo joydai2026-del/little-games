@@ -36,7 +36,7 @@ const env = {
   ASSETS: {
     fetch: async (req: Request) => {
       const path = new URL(req.url).pathname;
-      if (path === '/theme.css') return new Response(':root { --ink: #2D3436; }');
+      if (path === '/theme.css') return new Response(':root { --ink: #42291D; }');
       if (path === '/sheet.css') return new Response('.sheet-page { display: block; }');
       return new Response('asset', { status: 200 });
     },
@@ -160,7 +160,7 @@ describe('POST /api/sheet (the agent path)', () => {
     const html = await res.text();
     expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
     expect(html).toContain('size: A4');
-    expect(html).toContain('--ink: #2D3436');
+    expect(html).toContain('--ink: #42291D');
     expect(html).toContain('Arphic Public License');
     expect(html).toContain('href="https://t.test/licenses/ARPHICPL.TXT"');
     expect((html.match(/class="ink-model"/g) ?? []).length).toBe(3);

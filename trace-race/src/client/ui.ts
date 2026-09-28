@@ -32,14 +32,17 @@ export function svg(tag: string, attrs: Record<string, string | number> = {}, ch
   return node;
 }
 
+/** 1x for ordinary screens, @2x (512 px) for retina phones and iPads. */
+const MOMO_SRCSET = '/momo.png 1x, /momo@2x.png 2x';
+
 export function momo(extraClass = ''): HTMLImageElement {
-  return h('img', { class: `momo ${extraClass}`.trim(), src: '/momo.svg', alt: 'Momo the ink drop' });
+  return h('img', { class: `momo ${extraClass}`.trim(), src: '/momo.png', srcset: MOMO_SRCSET, alt: 'Momo the puppy' });
 }
 
 export function brand(subtitle: string): HTMLElement {
   return h('div', { class: 'brand' }, [
-    h('img', { src: '/momo.svg', alt: '' }),
-    h('div', {}, [h('h1', { text: 'Trace Race 笔顺比赛' }), h('p', { class: 'sub', text: subtitle })]),
+    h('img', { src: '/momo.png', srcset: MOMO_SRCSET, alt: '' }),
+    h('div', {}, [h('h1', {}, ['Trace Race ', h('span', { class: 'nowrap', text: '笔顺比赛' })]), h('p', { class: 'sub', text: subtitle })]),
   ]);
 }
 

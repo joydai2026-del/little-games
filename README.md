@@ -16,9 +16,9 @@ stroke by stroke, in the right order, on their phones. Details in [`trace-race/R
 
 ![Trace Race demo: a kid traces on a phone while the race board updates](trace-race/docs/demo/trace-race-demo.gif)
 
-**Demo video (29 sec):**
+**Demo video (29 sec, re-recorded 2026-09-28 with the official Momo puppy):**
 
-https://github.com/user-attachments/assets/1c61a22c-04d1-467c-a0d9-ebecc2bd6169
+<!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 

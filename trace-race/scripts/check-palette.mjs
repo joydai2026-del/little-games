@@ -30,6 +30,13 @@ for (const file of statics) {
     if (!tokens.has(hit.toUpperCase())) problems.push(`${file}: ${hit} is not a token`);
   }
 }
+// The locked Avery palette (docs/avery/brand/AVERY-BRAND-GUIDE.md section 3) must all be
+// tokens, and the retired kit colours must be gone from every token source.
+const LOCKED = ['#FDF6EC', '#F6E9D8', '#FFFCF6', '#42291D', '#6B5142', '#F4869C', '#C85B73', '#FBDCE3',
+  '#A9D3B8', '#DEEFE4', '#F4D894', '#FBEECB', '#A5C9E8', '#DDEAF7', '#BEE1D4', '#9CCEBC'];
+const RETIRED = ['#FFF7E8', '#BFE8D8', '#3FA88A', '#FF7B6B', '#2D3436', '#636E72', '#B2BEC3'];
+for (const c of LOCKED) if (!tokens.has(c)) problems.push(`theme.css: locked token ${c} is missing`);
+for (const c of RETIRED) if (tokens.has(c)) problems.push(`retired colour ${c} is still a token`);
 if (problems.length) {
   console.error(problems.join('\n'));
   process.exit(1);
