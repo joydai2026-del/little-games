@@ -7,7 +7,8 @@
 //   - Then empty cells to the end of the row. The grid wraps across rows, so a
 //     14-stroke character behaves like a 1-stroke one.
 //   - A two-character word gets two grids, kept together.
-//   - Pages break between WORDS, so 学校 never splits across two pages.
+//   - Pages break between WORDS, so 学校 never splits across two pages. Only a
+//     word taller than a whole page runs onto the next page (and is reported).
 //   - Page fill: leftover space on every page becomes extra practice rows,
 //     most-strokes-first. No dead lower half.
 //
@@ -27,6 +28,9 @@ export interface Cell {
 
 export interface Block {
   char: string;
+  /** The word this grid belongs to, and its position in the list. */
+  word: string;
+  wordIndex: number;
   hasData: boolean;
   strokeCount: number;
   firstInWord: boolean;
@@ -51,6 +55,8 @@ export interface Sheet {
   pages: Page[];
   /** Characters with no stroke data: drawn from the font, no build-up. */
   missing: string[];
+  /** Words taller than one page at this size, so they run onto the next page. */
+  splitWords: string[];
 }
 
 /** The cell sequence for one character, before it is cut into rows. */
@@ -111,9 +117,9 @@ export function buildSheet(words: ParsedWord[], strokes: StrokeMap, options: Opt
   const missing: string[] = [];
 
   // One group per word; a character too tall for a page is split at a row
-  // boundary (rare: 60+ strokes at 6 squares a row), each piece its own block.
+  // boundary (for example 鱻, 33 strokes, at 6 squares a row), each piece its own block.
   const groups: Block[][] = [];
-  for (const word of words) {
+  for (const [wordIndex, word] of words.entries()) {
     const group: Block[] = [];
     word.chars.forEach((char, i) => {
       const paths = strokes.get(char);
@@ -124,6 +130,8 @@ export function buildSheet(words: ParsedWord[], strokes: StrokeMap, options: Opt
       for (let r = 0; r < rows.length; r += maxRows) {
         group.push({
           char,
+          word: word.text,
+          wordIndex,
           hasData,
           strokeCount,
           firstInWord: i === 0 && r === 0,
@@ -137,7 +145,9 @@ export function buildSheet(words: ParsedWord[], strokes: StrokeMap, options: Opt
   }
 
   // Pagination by WORD: a word moves to the next page whole when it does not
-  // fit. Only a word taller than a whole page is placed character by character.
+  // fit there but fits on a page of its own. A word taller than a whole page
+  // starts wherever the current page has room and continues onto the next
+  // page(s), character by character (saves paper); it is reported in splitWords.
   const pages: Page[] = [];
   let current: Block[] = [];
   const fits = (blocks: Block[]) => stack(blocks, layout) <= size.avail;
@@ -184,7 +194,13 @@ export function buildSheet(words: ParsedWord[], strokes: StrokeMap, options: Opt
     stack(page.blocks, layout);
   }
 
+  const splitWords: string[] = [];
+  const pagesOfWord = new Map<number, Set<number>>();
+  pages.forEach((page, p) => page.blocks.forEach((b) => pagesOfWord.set(b.wordIndex, (pagesOfWord.get(b.wordIndex) ?? new Set()).add(p))));
+  for (const [wordIndex, set] of pagesOfWord) if (set.size > 1) splitWords.push(words[wordIndex].text);
+
   return {
+    splitWords,
     options,
     paper: size.paper,
     width: size.width,

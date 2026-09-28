@@ -112,7 +112,12 @@ async function handleSheet(request: Request, env: Env, fetcher: typeof fetch): P
 
   const spec: SheetSpec = { version: 1, chars: body.chars, options: normalizeOptions(body.options) };
   const parsed = parseChars(spec.chars);
-  if (parsed.chars.length === 0) return json({ error: 'no Chinese characters found in "chars"' }, 400);
+  if (parsed.chars.length === 0) {
+    const error = parsed.skipped.length
+      ? `no Chinese characters found in "chars" after skipping these headings: ${parsed.skipped.join(', ')}`
+      : 'no Chinese characters found in "chars"';
+    return json({ error, skipped: parsed.skipped }, 400);
+  }
 
   const strokes = await loadStrokes(parsed.chars, env, fetcher);
   const sheet = buildSheet(parsed.words, strokes, spec.options);
@@ -154,6 +159,9 @@ ${pages}
       'X-Sheet-Missing': encodeURIComponent(sheet.missing.join('')),
       'X-Sheet-Truncated': String(parsed.truncated),
       'X-Sheet-Input-Cut': String(parsed.inputCut),
+      // JSON arrays, percent-encoded UTF-8.
+      'X-Sheet-Skipped': encodeURIComponent(JSON.stringify(parsed.skipped)),
+      'X-Sheet-Split-Words': encodeURIComponent(JSON.stringify(sheet.splitWords)),
       ...SECURITY_HEADERS,
     },
   });

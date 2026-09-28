@@ -16,10 +16,10 @@ export const PASTES: PasteCase[] = [
     chars: '大小山水',
   },
   {
-    name: 'Chinese enumeration comma, full-width punctuation, heading label before the colon',
+    name: 'Chinese enumeration comma, full-width punctuation; a label with content after it is kept',
     paste: '本周生字：日、月、火、木、土。',
-    words: ['日', '月', '火', '木', '土'],
-    chars: '日月火木土',
+    words: ['本周生字', '日', '月', '火', '木', '土'],
+    chars: '本周生字日月火木土',
   },
   {
     name: 'words with pinyin in parentheses, one per line, duplicates',
@@ -58,16 +58,16 @@ export const PASTES: PasteCase[] = [
     chars: '大人大人天',
   },
   {
-    name: 'heading lines from a real unit list are dropped',
-    paste: '第三课 生字：校\n第三课\n生字：\n词语：学校 老师\n姓名：______ 日期：______\n1. 山 shān',
-    words: ['校', '学校', '老师', '山'],
-    chars: '校学校老师山',
+    name: 'heading shapes from a real unit list are skipped, vocabulary is not',
+    paste: '第三课\n生字：\n学校 老师\n姓名 日期\n1. 山 shān',
+    words: ['学校', '老师', '姓名', '日期', '山'],
+    chars: '学校老师姓名日期山',
   },
   {
-    name: 'traditional headings and a unit heading',
+    name: 'traditional lesson marker leading a line, colon heading over more lines',
     paste: '第二單元 生詞\n練習：\n龍 馬',
-    words: ['龍', '馬'],
-    chars: '龍馬',
+    words: ['生詞', '龍', '馬'],
+    chars: '生詞龍馬',
   },
   {
     name: 'text copied out of a PDF with Kangxi radical look-alikes',

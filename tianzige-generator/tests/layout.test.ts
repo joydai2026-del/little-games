@@ -146,6 +146,14 @@ describe('words stay together across page breaks', () => {
   });
 });
 
+describe('splitWords', () => {
+  it('reports a word taller than a page, and only that', () => {
+    const idiom = [{ text: '画蛇添足', chars: ['画', '蛇', '添', '足'] }];
+    expect(buildSheet(idiom, STROKES, opts({ perRow: 6, paper: 'letter' })).splitWords).toEqual(['画蛇添足']);
+    expect(buildSheet(idiom, STROKES, opts({ perRow: 10, paper: 'letter' })).splitWords).toEqual([]);
+  });
+});
+
 describe('page fill', () => {
   it('gives spare rows to the characters with the most strokes first', () => {
     const { words } = parseChars('大 人 学');

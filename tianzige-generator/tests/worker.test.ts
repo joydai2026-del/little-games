@@ -183,6 +183,18 @@ describe('POST /api/sheet (the agent path)', () => {
     expect(decodeURIComponent(res.headers.get('X-Sheet-Missing')!)).toBe('大');
   });
 
+  it('reports skipped headings in a header, and in the 400 when nothing else is left', async () => {
+    const handle = makeHandler(upstream().fetcher);
+    const ok = await handle(post({ chars: '第三课\n大' }), env);
+    expect(ok.status).toBe(200);
+    expect(JSON.parse(decodeURIComponent(ok.headers.get('X-Sheet-Skipped')!))).toEqual(['第三课']);
+    const empty = await handle(post({ chars: '第三课' }), env);
+    expect(empty.status).toBe(400);
+    const body = (await empty.json()) as { error: string; skipped: string[] };
+    expect(body.skipped).toEqual(['第三课']);
+    expect(body.error).toContain('第三课');
+  });
+
   it('rejects bad bodies in plain words', async () => {
     const handle = makeHandler(upstream().fetcher);
     expect((await handle(post({ chars: 5 }), env)).status).toBe(400);

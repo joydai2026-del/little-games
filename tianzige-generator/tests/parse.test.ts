@@ -44,13 +44,42 @@ describe('parseChars edges', () => {
     expect(parseChars('学校 学生').chars.join('')).toBe('学校学生');
   });
 
-  it('recognises five real heading lines and leaves real words alone', () => {
-    for (const h of ['第三课', '生字', '第三课 生字', '本周生字', '第二单元 词语']) expect(isHeading(h), h).toBe(true);
-    for (const w of ['学校', '第一', '大 小', '练习 学习']) expect(isHeading(w), w).toBe(false);
+  it('never drops by keyword: 练习 日期 姓名 are vocabulary', () => {
+    const out = parseChars('学校 练习 日期 姓名');
+    expect(out.words.map((w) => w.text)).toEqual(['学校', '练习', '日期', '姓名']);
+    expect(out.skipped).toEqual([]);
   });
 
-  it('drops a short colon-ended heading line but keeps a long list that ends in a colon', () => {
-    expect(parseChars('我的家人：\n爸 妈').chars.join('')).toBe('爸妈');
+  it('keeps a colon-ended line when no Chinese line follows it', () => {
+    const out = parseChars('学校：\nschool');
+    expect(out.chars.join('')).toBe('学校');
+    expect(out.skipped).toEqual([]);
+  });
+
+  it('第三课 生字：校 skips the lesson marker and reports it', () => {
+    const out = parseChars('第三课 生字：校');
+    expect(out.chars.join('')).toBe('生字校');
+    expect(out.skipped).toEqual(['第三课']);
+  });
+
+  it('skips a lesson marker alone on a line and a colon line over more Chinese lines, and reports both', () => {
+    const out = parseChars('第三课\n我的家人：\n爸 妈');
+    expect(out.chars.join('')).toBe('爸妈');
+    expect(out.skipped).toEqual(['第三课', '我的家人']);
+    expect(isHeading('第二单元')).toBe(true);
+    expect(isHeading('第一')).toBe(false);
+    expect(isHeading('生字')).toBe(false);
+  });
+
+  it('strips Chinese list numbering instead of practising it', () => {
+    expect(parseChars('一、生字 大 小\n二、词语 学校').chars.join('')).toBe('生字大小词语学校');
+    expect(parseChars('（一）大\n(二) 小').chars.join('')).toBe('大小');
+    expect(parseChars('㈠ 大 ㈡ 小').chars.join('')).toBe('大小');
+    expect(parseChars('㊀大 ㊁小').words.map((w) => w.text)).toEqual(['大', '小']);
+    expect(parseChars('一 二 三').chars.join('')).toBe('一二三');
+  });
+
+  it('keeps a list that ends in a colon on the last line', () => {
     expect(parseChars('大 小 多 少 上 下 左 右 山 水：').chars.join('')).toBe('大小多少上下左右山水');
   });
 
