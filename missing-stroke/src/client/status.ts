@@ -16,12 +16,15 @@ export function kidStatusText(o: {
   hintShowing: boolean;
   /** The room did not grade the last stroke (another tab used its number): draw it again. */
   again?: boolean;
+  /** The last drag went far outside the pad. */
+  outside?: boolean;
   rightMs?: number | null;
 }): string {
   if (o.error && o.stage === 'drawing') return o.error;
   if (o.now < o.hiccupUntil) return HICCUP_TEXT;
   switch (o.stage) {
     case 'drawing':
+      if (o.outside) return 'Draw inside the box!';
       if (o.again) return 'Draw it one more time!';
       if (o.hintShowing) return 'Look! Momo showed you where it goes. Draw it!';
       return o.missesLeftForHint <= 1

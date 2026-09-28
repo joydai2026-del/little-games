@@ -427,6 +427,7 @@ class KidRace {
   private viewKey = '';
   private hintShown = false;
   private again = false;
+  private outside = false;
   private hiccupUntil = 0;
   private errorText: string | null = null;
   private readonly head = h('div', { class: 'race-head' });
@@ -539,6 +540,7 @@ class KidRace {
       missesLeftForHint: hintMissesLeft(s.rules.hintAfterMisses, missed),
       hintShowing: this.hintShown,
       again: this.again,
+      outside: this.outside,
       rightMs: mine?.rightAt != null && t ? mine.rightAt - t.opensAt : null,
     });
     if (this.status.textContent !== text) this.status.textContent = text;
@@ -549,12 +551,21 @@ class KidRace {
     this.errorText = null;
     this.hintShown = false;
     this.again = false;
+    this.outside = false;
     this.padKey = `${this.round}:${t.index}`;
-    const handle = startPad({ size: this.size(), visible: t.visible }, (points) => {
-      if (this.pad !== handle) return;
-      this.again = false;
-      this.send(t.index, points);
-    });
+    const handle = startPad(
+      { size: this.size(), visible: t.visible },
+      (points) => {
+        if (this.pad !== handle) return;
+        this.again = false;
+        this.outside = false;
+        this.send(t.index, points);
+      },
+      () => {
+        this.outside = true;
+        this.tick();
+      }
+    );
     this.pad = handle;
     this.stage.dataset.char = t.char;
     this.stage.replaceChildren(handle.root);

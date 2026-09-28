@@ -59,6 +59,34 @@ describe('RoomDO', () => {
     expect(lost.state.progress[kid.playerId].rightAt).not.toBeNull();
   });
 
+  it('a list change while Start waits for stroke data never starts characters that were not loaded', async () => {
+    stubUpstream();
+    const realFetch = globalThis.fetch;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      await gate;
+      return realFetch(input, init);
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const { room } = await buildRoom();
+    const host = (await (await room.fetch(post('create', { code: 'ABCD', text: '山', options: { level: 'big' } }))).json()) as any;
+    const hostAuth = { playerId: host.playerId, playerSecret: host.playerSecret };
+    const kid = (await (await room.fetch(post('join', { name: 'Mia' }))).json()) as any;
+    const starting = room.fetch(post('start', {}, hostAuth)); // waits on the upstream
+    await new Promise((r) => setTimeout(r, 0));
+    const changed = await room.fetch(post('list', { text: '水' }, hostAuth)); // lands during the wait
+    expect(changed.status).toBe(200);
+    release();
+    const started = (await (await starting).json()) as any;
+    expect(started.state.turn.char).toBe('水');
+    expect(started.state.turn.visible).toHaveLength(3); // 水 loaded, not an empty pad
+    vi.setSystemTime(started.state.goAt + 2000);
+    const answer = await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('水', 0, 'backwards') }, { playerId: kid.playerId, playerSecret: kid.playerSecret }));
+    expect(answer.status).toBe(200); // graded, not "still loading" (503)
+  });
+
   it('rejects callers without the right secret', async () => {
     const { room } = await buildRoom();
     const host = (await (await room.fetch(post('create', { code: 'ABCD', text: '人' }))).json()) as any;

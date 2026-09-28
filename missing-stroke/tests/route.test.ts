@@ -92,3 +92,16 @@ describe('what the pad does after the room answers', () => {
     expect(kidStatusText({ ...base, stage: 'right', rightMs: 1200 })).toMatch(/You got it in 1.2 s/);
   });
 });
+
+import { insideBox } from '../src/client/tracer';
+
+describe('draw inside the box', () => {
+  it('a drag far off the pad is not sent; the kid is told to draw inside the box', () => {
+    expect(insideBox([[10, 10], [290, 290]], 300)).toBe(true);
+    expect(insideBox([[10, 10], [310, 300]], 300)).toBe(true); // a little over the edge is fine
+    expect(insideBox([[10, 10], [900, 40]], 300)).toBe(false);
+    expect(insideBox([[-200, 10], [100, 40]], 300)).toBe(false);
+    const base = { stage: 'drawing' as const, hiccupUntil: 0, now: 5, error: null, missesLeftForHint: 2, hintShowing: false };
+    expect(kidStatusText({ ...base, outside: true })).toBe('Draw inside the box!');
+  });
+});

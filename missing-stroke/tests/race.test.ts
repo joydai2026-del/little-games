@@ -19,7 +19,7 @@ import {
   turnDeadline,
   touch,
 } from '../src/shared/race';
-import { gradeStroke } from '../src/shared/matcher';
+import { gradeStroke, normalizedLength } from '../src/shared/matcher';
 import type { CharGeom, CharList, RoomState } from '../src/shared/types';
 import { GEOM, pointsFor } from './geom';
 
@@ -418,5 +418,53 @@ describe('the answer never reaches a phone', () => {
     expect(publicView(s, 'B', goAt() + 3000, g).turn).toMatchObject({ answer: g.strokes[hidden], hint: false });
     const closed = advanceIfDue(s, goAt() + 3000 + GAME.graceAfterFirstRightMs);
     expect(publicView(closed, 'T', goAt() + 3000 + GAME.graceAfterFirstRightMs, g).turn!.answer).toBe(g.strokes[hidden]);
+  });
+});
+
+describe('grading cost is bounded (crafted strokes)', () => {
+  const g = GEOM['我'];
+  const mid = (() => {
+    const m = g.medians[1];
+    const [x, y] = m[Math.floor(m.length / 2)];
+    return { x, y };
+  })();
+  /** A figure eight that starts and ends on its own centre: near-zero Procrustes scale. */
+  const eight = (r: number, n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const t = (i / (n - 1)) * 2 * Math.PI;
+      return { x: mid.x + r * Math.sin(t), y: mid.y + r * Math.sin(t) * Math.cos(t) };
+    });
+  it('a stroke that returns to its own centre grades as a miss in under 20 ms, at every size', () => {
+    // Warm the JIT once (the first call of any function is slow for reasons unrelated to input size).
+    gradeStroke(eight(50, GAME.maxStrokePoints), g.medians, 1);
+    for (const r of [30, 80, 200, 400]) {
+      for (const n of [50, GAME.maxStrokePoints]) {
+        const t0 = performance.now();
+        const v = gradeStroke(eight(r, n), g.medians, 1);
+        const ms = performance.now() - t0;
+        expect(v).toBe('mistake');
+        expect(ms, `r=${r} n=${n}`).toBeLessThan(20);
+      }
+    }
+  });
+  it('every real stroke stays under the normalized-length guard (so the guard never refuses a real stroke)', () => {
+    for (const ch of Object.keys(GEOM)) for (const m of GEOM[ch].medians) expect(normalizedLength(m.map(([x, y]) => ({ x, y })))).toBeLessThan(5);
+  });
+  it('a dense zigzag along the stroke and a tiny scribble also grade fast', () => {
+    const m = pointsFor('我', 1, 'correct');
+    const zig = Array.from({ length: GAME.maxStrokePoints }, (_, i) => {
+      const a = m[Math.min(m.length - 1, Math.floor((i / GAME.maxStrokePoints) * m.length))];
+      return { x: a.x + (i % 2 ? 60 : -60), y: a.y + (i % 2 ? 60 : -60) };
+    });
+    const dot = Array.from({ length: 50 }, (_, i) => ({ x: mid.x + (i % 3), y: mid.y + (i % 2) }));
+    gradeStroke(zig, g.medians, 1); // JIT warm-up
+    for (const pts of [zig, dot]) {
+      const t0 = performance.now();
+      gradeStroke(pts, g.medians, 1);
+      expect(performance.now() - t0).toBeLessThan(20);
+    }
+    expect(gradeStroke(dot, g.medians, 1)).toBe('mistake');
+    expect(gradeStroke(Array(GAME.maxStrokePoints + 1).fill(mid), g.medians, 1)).toBe('mistake');
+    expect(gradeStroke([mid, { x: NaN, y: 3 }], g.medians, 1)).toBe('mistake');
   });
 });

@@ -58,7 +58,13 @@ export const GAME = {
   /** A character needs at least this many strokes: with one stroke there is nothing left to look at. */
   minStrokesToPlay: 2,
   /** Most points one drawn stroke may carry (the phone thins a long drag to this). */
-  maxStrokePoints: 256,
+  maxStrokePoints: 200,
+  /** A drawn stroke smaller than this (stroke-data units, 1024 = the whole box) is a scribble, not a stroke. */
+  minStrokeSpan: 24,
+  /** How far outside the pad (fraction of its size) a stroke may wander before the phone says "Draw inside the box". */
+  padOutsideMargin: 0.08,
+  /** Times the room reloads stroke data at Start when the list changes during the load. */
+  startLoadAttempts: 2,
   /** Kids here at once in one room. */
   maxKids: 40,
   /** Seats one room stores. When full, the seat of a kid who left is reclaimed for a new join. */

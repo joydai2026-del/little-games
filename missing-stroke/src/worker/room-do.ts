@@ -212,13 +212,31 @@ export class RoomDO implements DurableObject {
       }
       case 'start':
       case 'next': {
-        // The room grades answers itself, so it loads the next game's stroke data first.
-        const failed = await this.loadGeometryFor(nextChars(this.room));
-        if (failed) {
-          response = json({ error: failed, serverTime: Date.now() }, 503);
+        // The room grades answers itself, so it loads the next game's stroke data first. The
+        // list or settings may change while that load waits: after it, the character set is
+        // checked AGAIN against the room as it is now, and loaded again if it moved.
+        let failed: string | null = null;
+        let chars: string[] = [];
+        for (let attempt = 0; attempt < GAME.startLoadAttempts; attempt++) {
+          chars = nextChars(this.room!);
+          failed = await this.loadGeometryFor(chars);
+          if (failed || !this.room) break;
+          const now2 = nextChars(this.room);
+          if (now2.every((c) => this.geom[c])) {
+            chars = now2;
+            break;
+          }
+          chars = now2;
+        }
+        if (!this.room) {
+          response = json({ error: ROOM_GONE }, 404);
           break;
         }
-        response = await this.apply(startRace(this.room!, playerId, Date.now(), crypto.getRandomValues(new Uint32Array(1))[0]), playerId);
+        if (failed || !chars.every((c) => this.geom[c])) {
+          response = json({ error: failed ?? 'The list changed just now. Tap Start again.', serverTime: Date.now() }, failed ? 503 : 409);
+          break;
+        }
+        response = await this.apply(startRace(this.room, playerId, Date.now(), crypto.getRandomValues(new Uint32Array(1))[0]), playerId);
         break;
       }
       case 'list': {

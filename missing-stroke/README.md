@@ -114,7 +114,7 @@ the stroke data's coordinates, unlabelled), `answer` (null until the character c
 right, or you earned the hint; `hint` is true in that last case), `opensAt`, `closesAt`, `closedAt`
 (null while open), `winners`. The missing stroke's number is never sent while a character is open.
 
-`points` are 2 to 256 `[x, y]` pairs in the stroke data's coordinates (1024 wide, y up, the same
+`points` are 2 to 200 `[x, y]` pairs in the stroke data's coordinates (1024 wide, y up, the same
 space as the medians in `/api/strokes/:char`). A body with a verdict and no points gets 400. The
 answer carries `verdict` (`"correct"` or `"mistake"`), or `duplicate: true` when that `seq` was
 already used (a retry, or another tab): then read `state.progress[you]` for what the room has.

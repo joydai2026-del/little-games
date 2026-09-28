@@ -25,6 +25,12 @@ const START_AND_END_DIST_THRESHOLD = 250; // bigger = more lenient
 const FRECHET_THRESHOLD = 0.4; // bigger = more lenient
 const MIN_LEN_THRESHOLD = 0.35; // smaller = more lenient
 const AVERAGE_DISTANCE_THRESHOLD = 350;
+// Cost guards (review round 3): a stroke whose ends sit on its own centre
+// normalizes to a near-zero scale and would subdivide into millions of
+// points. Measured over all 112,617 strokes in hanzi-writer-data 2.0.1, the
+// longest normalized stroke is 4.78 units; a shaky hand gets 2x headroom.
+const MAX_NORMALIZED_LENGTH = 10;
+const MAX_SUBDIVIDED_POINTS = 250;
 const SHAPE_FIT_ROTATIONS = [Math.PI / 16, Math.PI / 32, 0, (-1 * Math.PI) / 32, (-1 * Math.PI) / 16];
 
 const subtract = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y });
@@ -68,13 +74,14 @@ function frechetDist(curve1: Point[], curve2: Point[]): number {
   return prev[shortCurve.length - 1];
 }
 
-function subdivideCurve(curve: Point[], maxLen = 0.05): Point[] {
+function subdivideCurve(curve: Point[], maxLen = 0.05): Point[] | null {
   const out = curve.slice(0, 1);
   for (const point of curve.slice(1)) {
     const prevPoint = last(out);
     const segLen = distance(point, prevPoint);
     if (segLen > maxLen) {
       const n = Math.ceil(segLen / maxLen);
+      if (out.length + n > MAX_SUBDIVIDED_POINTS) return null;
       const newSegLen = segLen / n;
       for (let i = 0; i < n; i++) out.push(extendPointOnLine(point, prevPoint, -1 * newSegLen * (i + 1)));
     } else out.push(point);
@@ -106,13 +113,27 @@ function outlineCurve(curve: Point[], numPoints = 30): Point[] {
   return outline;
 }
 
-function normalizeCurve(curve: Point[]): Point[] {
+/** The curve resampled, centred and scaled (Procrustes), before subdivision; null for a zero scale. */
+export function scaledOutline(curve: Point[]): Point[] | null {
   const outlined = outlineCurve(curve);
   const mean = { x: average(outlined.map((p) => p.x)), y: average(outlined.map((p) => p.y)) };
   const translated = outlined.map((p) => subtract(p, mean));
   const scale = Math.sqrt(average([translated[0].x ** 2 + translated[0].y ** 2, last(translated).x ** 2 + last(translated).y ** 2]));
-  return subdivideCurve(translated.map((p) => ({ x: p.x / scale, y: p.y / scale })));
+  if (!Number.isFinite(scale) || scale < 1e-6) return null;
+  return translated.map((p) => ({ x: p.x / scale, y: p.y / scale }));
 }
+
+/** Procrustes-normalized curve, or null when it cannot be a stroke (near-zero scale, or too long once scaled). */
+function normalizeCurve(curve: Point[]): Point[] | null {
+  const scaled = scaledOutline(curve);
+  if (!scaled || !(length(scaled) <= MAX_NORMALIZED_LENGTH)) return null;
+  return subdivideCurve(scaled);
+}
+
+export const normalizedLength = (curve: Point[]): number => {
+  const s = scaledOutline(curve);
+  return s ? length(s) : Infinity;
+};
 
 function rotate(curve: Point[], theta: number): Point[] {
   return curve.map((p) => ({ x: Math.cos(theta) * p.x - Math.sin(theta) * p.y, y: Math.sin(theta) * p.x + Math.cos(theta) * p.y }));
@@ -131,6 +152,7 @@ const averageDistanceTo = (stroke: Point[], points: Point[]) =>
 function shapeFit(a: Point[], b: Point[], leniency: number): boolean {
   const na = normalizeCurve(a);
   const nb = normalizeCurve(b);
+  if (!na || !nb) return false;
   let min = Infinity;
   for (const theta of SHAPE_FIT_ROTATIONS) min = Math.min(min, frechetDist(na, rotate(nb, theta)));
   return min <= FRECHET_THRESHOLD * leniency;
@@ -176,7 +198,12 @@ export type Verdict = 'correct' | 'mistake';
 export function gradeStroke(points: Point[], medians: number[][][], target: number, leniency: number = GAME.leniency): Verdict {
   const strokes = medians.map((m) => m.map(([x, y]) => ({ x, y })));
   const drawn = stripDuplicates(points);
-  if (drawn.length < 2 || !strokes[target]) return 'mistake';
+  if (drawn.length < 2 || drawn.length > GAME.maxStrokePoints || !strokes[target]) return 'mistake';
+  if (!drawn.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))) return 'mistake';
+  // A dot or a scribble in one spot is not a stroke (and would make the shape fit degenerate).
+  const xs = drawn.map((p) => p.x);
+  const ys = drawn.map((p) => p.y);
+  if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < GAME.minStrokeSpan) return 'mistake';
   const main = matchData(drawn, strokes[target], target, leniency);
   if (!main.isMatch) return 'mistake';
   // If another stroke fits the drawing better, it was probably that stroke: try again, stricter.

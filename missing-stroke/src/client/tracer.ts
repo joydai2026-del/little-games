@@ -89,6 +89,12 @@ export interface PadHandle {
   destroy(): void;
 }
 
+/** True when every point of a drag (pad pixels) stays inside the pad, give or take `margin` x size. */
+export function insideBox(points: [number, number][], size: number, margin: number = GAME.padOutsideMargin): boolean {
+  const m = size * margin;
+  return points.every(([x, y]) => x >= -m && y >= -m && x <= size + m && y <= size + m);
+}
+
 /** Keeps at most `max` points of a long drag, evenly spread, always with both ends. */
 export function thinPoints(points: Point[], max: number): Point[] {
   if (points.length <= max) return points;
@@ -102,7 +108,7 @@ export function thinPoints(points: Point[], max: number): Point[] {
  * The kid draws; every finished stroke's points go to `onStroke` (the room
  * grades them). The pad never knows which stroke is missing.
  */
-export function startPad(opts: { size: number; visible: string[] }, onStroke: (points: Point[]) => void): PadHandle {
+export function startPad(opts: { size: number; visible: string[] }, onStroke: (points: Point[]) => void, onOutside: () => void = () => {}): PadHandle {
   const size = opts.size;
   const pad = padFor(size);
   const ink = token('--ink');
@@ -147,11 +153,20 @@ export function startPad(opts: { size: number; visible: string[] }, onStroke: (p
   const end = (e: PointerEvent) => {
     if (active !== e.pointerId) return;
     active = null;
-    const pts = screen.map(([x, y]) => toCharPoint(x, y, size, pad));
+    const drag = screen;
     screen = [];
+    if (drag.length < 2 || done || dead) {
+      line?.remove();
+      return;
+    }
+    // A drag that wanders far off the pad is not sent (the room would refuse it): ask for one inside the box.
+    if (!insideBox(drag, size)) {
+      line?.remove();
+      onOutside();
+      return;
+    }
     line?.classList.add('sent');
-    if (pts.length >= 2 && !done && !dead) onStroke(thinPoints(pts, GAME.maxStrokePoints));
-    else line?.remove();
+    onStroke(thinPoints(drag.map(([x, y]) => toCharPoint(x, y, size, pad)), GAME.maxStrokePoints));
   };
   drawing.addEventListener('pointerup', end);
   drawing.addEventListener('pointercancel', end);
