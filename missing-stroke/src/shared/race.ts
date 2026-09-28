@@ -146,6 +146,16 @@ export function hiddenStrokeFor(strokeCount: number, seed: number, index: number
 export const secondsPerChar = (options: RaceOptions) => LEVELS[options.level].secondsPerChar;
 export const hintAfterMisses = (options: RaceOptions) => LEVELS[options.level].hintAfterMisses;
 
+/**
+ * Wrong tries left before the hint shows on a pad that is (re)built after
+ * `alreadyMissed` wrong tries on this character: a kid whose pad reloads
+ * mid-character does not have to earn the hint again. Never below 1 (the pad
+ * only flashes the hint after a miss, never before the first try).
+ */
+export function hintMissesLeft(hintAfter: number, alreadyMissed: number): number {
+  return Math.max(1, hintAfter - Math.max(0, alreadyMissed));
+}
+
 function openTurn(state: RoomState, index: number, at: number): RoomState {
   const turn: Turn = {
     index,

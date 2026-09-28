@@ -5,6 +5,8 @@ import {
   charsForRound,
   createRoom,
   hiddenStrokeFor,
+  hintAfterMisses,
+  hintMissesLeft,
   join,
   nextAlarmAt,
   parseStrokeInput,
@@ -82,6 +84,27 @@ describe('which stroke is hidden', () => {
     expect(s.hidden).toEqual(s.roundChars.map((c, i) => hiddenStrokeFor(LIST.strokeCounts[c], SEED, i)));
     expect(s.turn).toMatchObject({ index: 0, char: '山', hidden: s.hidden[0], opensAt: goAt(), closedAt: null });
     expect(s.turn!.closesAt).toBe(goAt() + LEVELS.big.secondsPerChar * 1000);
+  });
+});
+
+describe('hint timing', () => {
+  it('each level sets when the hint shows, and a rebuilt pad keeps the misses already made', () => {
+    expect(hintAfterMisses(normalizeOptions({ level: 'little' }))).toBe(LEVELS.little.hintAfterMisses);
+    expect(hintAfterMisses(normalizeOptions({ level: 'big' }))).toBe(LEVELS.big.hintAfterMisses);
+    expect(LEVELS.little.hintAfterMisses).toBeLessThanOrEqual(LEVELS.middle.hintAfterMisses);
+    expect(LEVELS.middle.hintAfterMisses).toBeLessThanOrEqual(LEVELS.big.hintAfterMisses);
+    expect(hintMissesLeft(3, 0)).toBe(3);
+    expect(hintMissesLeft(3, 2)).toBe(1);
+    expect(hintMissesLeft(3, 7)).toBe(1);
+    expect(hintMissesLeft(1, -2)).toBe(1);
+  });
+  it('the per-character miss count the hint reads resets when the next character opens', () => {
+    let s = started();
+    s = send(s, 'A', 1, 'mistake', goAt() + 500).state;
+    s = send(s, 'A', 2, 'mistake', goAt() + 900).state;
+    expect(s.progress.A.turnMistakes).toBe(2);
+    s = advanceIfDue(s, s.turn!.closesAt + GAME.revealMs);
+    expect(s.progress.A).toMatchObject({ turn: 1, turnMistakes: 0, mistakes: 2 });
   });
 });
 
