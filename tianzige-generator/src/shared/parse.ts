@@ -49,7 +49,8 @@ const NOT_CHARACTERS = /[々〻]/gu;
  *  content, is list numbering. It becomes a bullet before NFKC (which would turn it into
  *  "(一)" or "一"). Anywhere else, and for other enclosed ideographs (㊊ ㊥ ㊤), the text
  *  simply normalizes: 我爱㊀ -> 我爱一, ㊊ -> 月. */
-const ENCLOSED_NUMBER_AT_START = /^(\s*)[\u3220-\u3229\u3280-\u3289](?=\s*\S)/gmu;
+// [^\S\r\n] = a space that is not a line break, so "\u3280\n\u3281" is two characters, not a marker.
+const ENCLOSED_NUMBER_AT_START = /^([^\S\r\n]*)[\u3220-\u3229\u3280-\u3289](?=[^\S\r\n]*[^\s])/gmu;
 const BULLET = '\u2022';
 /** A list marker at the start of a line that is never a character: 1. 2、 3) (4) （一） (二) • · - * */
 const LIST_MARKER = /^\s*(?:[（(]\s*(?:[一二三四五六七八九十]+|\d+)\s*[)）]|\d+\s*[、．.)）]|[•·●○◦▪■*\-–—])\s*/u;
@@ -89,7 +90,7 @@ function stripHeadings(text: string, limits = LIMITS): { text: string; skipped: 
   });
   const out = lines.map(({ line, item }, i) => {
     const han = (line.match(/\p{Script=Han}+/gu) ?? []).join(' ');
-    if (!han || item) return line;
+    if (!han) return line;
     // "我的家人：" is a label for the list under it: a short line ending in a colon whose
     // NEXT non-blank line has Chinese. A glossary (学校：\nschool) and a sentence are not.
     const next = lines.slice(i + 1).find((l) => l.line !== '');
@@ -98,6 +99,9 @@ function stripHeadings(text: string, limits = LIMITS): { text: string; skipped: 
       skipped.push(han);
       return '';
     }
+    // A list item is vocabulary for every rule below ("1. 第五课" is a word), but a
+    // list item ending in a colon over more Chinese ("一、生字：") is still a label (above).
+    if (item) return line;
     if (isHeading(line)) {
       skipped.push(han);
       return '';

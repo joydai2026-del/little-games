@@ -129,6 +129,8 @@ def main() -> None:
         ("numerals separated by 、", "一、二、三、四、五"),
         ("numeral-only lines", "一、\n二、\n三、"),
         ("glossary with colons", "学校：\nschool\n老师：\nteacher"),
+        ("textbook layout, numbered colon labels", "一、生字：\n大 小 多\n二、词语：\n学校 老师"),
+        ("enclosed numbers on their own lines", "㊀\n㊁\n㊂"),
         ("enclosed ideographs mid-line", "我爱㊀ ㊊ ㊥"),
     ):
         s, h, b = req("POST", "/api/sheet", json.dumps({"chars": chars}).encode(), j)

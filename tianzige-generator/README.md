@@ -44,12 +44,14 @@ without tone marks), English glosses, emoji. A run of up to 4 characters written
 one word; a longer run (一二三四五六七) is treated as single characters.
 
 - **Headings are skipped by shape only, never by word** (练习, 日期, 姓名 are also vocabulary): a
-  lesson marker 第N课 / 第N单元 alone on a line or leading one, and a line ending in a colon that
-  has more Chinese lines after it (`我的家人：` over a list). Whatever is skipped is always shown:
-  Momo names it, and the API returns it in `X-Sheet-Skipped` (and in a `skipped` array on a 400).
+  lesson marker 第N课 / 第N单元 alone on a line or leading one, and a short line (8 Chinese
+  characters or fewer) ending in a colon whose NEXT non-blank line has Chinese (`我的家人：` or
+  `一、生字：` over a list). A glossary (`学校：` then `school`) keeps its words. Whatever is skipped
+  is always shown: Momo names it, and the API returns it in `X-Sheet-Skipped` (capped at 2 KB, the
+  rest summarised as "+N more") and in full in the `skipped` array of a 400.
 - **List markers are stripped at line start** (1. 2、 (3) 一、 （一） • and an enclosed number ㈠ ㊀
-  before content). A line that had one is a list item, so `1. 第五课` is vocabulary, never a
-  heading. Enclosed ideographs anywhere else just normalize (我爱㊀ gives 我爱一, ㊊ gives 月).
+  before content; `一、` only when Chinese follows it and no further 、, so `一、二、三` stays the
+  characters 一 二 三). A list item is vocabulary, so `1. 第五课` is kept. Enclosed ideographs anywhere else just normalize (我爱㊀ gives 我爱一, ㊊ gives 月).
 - **Duplicates, one rule:** a whole word that already appeared is dropped (first one wins).
   Characters inside different words are kept, so 学校 学生 gives 学 twice. A repeat inside one
   word (妈妈) gets one grid.

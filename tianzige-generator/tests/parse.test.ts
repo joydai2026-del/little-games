@@ -75,8 +75,22 @@ describe('parseChars edges', () => {
     expect(parseChars('一、生字 大 小\n二、词语 学校').chars.join('')).toBe('生字大小词语学校');
     expect(parseChars('（一）大\n(二) 小').chars.join('')).toBe('大小');
     expect(parseChars('㈠ 大\n㈡ 小').chars.join('')).toBe('大小');
+    // Only the LINE-START number is a marker; a mid-line ㈡ normalizes to 二 (accepted trade,
+    // the extra grid is visible in the preview).
+    expect(parseChars('㈠ 大 ㈡ 小').chars.join('')).toBe('大二小');
+    // Line breaks are not "content after": each ㊀ on its own line is the character.
+    expect(parseChars('㊀\n㊁\n㊂').chars.join('')).toBe('一二三');
     expect(parseChars('㊀大\n㊁小').words.map((w) => w.text)).toEqual(['大', '小']);
     expect(parseChars('一 二 三').chars.join('')).toBe('一二三');
+  });
+
+  it('the common textbook layout: numbered colon labels over their lists are skipped', () => {
+    const out = parseChars('一、生字：\n大 小 多\n二、词语：\n学校 老师');
+    expect(out.chars.join('')).toBe('大小多学校老师');
+    expect(out.skipped).toEqual(['生字', '词语']);
+    // Still true: a list item without a colon is vocabulary, and a glossary keeps both words.
+    expect(parseChars('1. 第五课').chars.join('')).toBe('第五课');
+    expect(parseChars('学校：\nschool\n老师：\nteacher').chars.join('')).toBe('学校老师');
   });
 
   it('a numeral followed by 、 is vocabulary unless it prefixes a Chinese item', () => {
