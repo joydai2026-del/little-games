@@ -1,15 +1,15 @@
 # Avery printable page-fill convention (JD 2026-09-28)
 
-**Status:** Pending JD approval of two sample mockups before any bulk Active-listing PDF rewrite / TPT re-upload.  
+**Status:** APPROVED 2026-09-28 (JD widget dismissed → proceed with BOTH Sample A + B). Applied to Halloween Writing/Story/Activities; expand storewide.  
 **Standing rule (unchanged):** never ship large empty bottoms — fill to near footer.
 
 ## Do not ship empty bottoms
 
 If a printable page still has large empty space after core content, **always add an activity fill**. Do not grow a sentence band or a purple callout with `flex:1` white padding as a fake “fill.”
 
-## Approved fill styles (samples required first)
+## Approved fill styles (BOTH locked)
 
-Before changing all Active listings that still show empty bottoms, ship **two approved-style examples** and wait for JD confirm:
+JD approved both styles. Apply storewide to Active Avery PDFs with large white bottoms:
 
 ### 1) 看图写字 · Look & write words
 
@@ -33,7 +33,7 @@ Before changing all Active listings that still show empty bottoms, ship **two ap
 | Tall purple 「说一说·写一写」 with 2–3 underscore lines at top and empty lower half | Empty-bottom rule not met; lines look unprofessional when full-width |
 | Measuring “pass” only by colored box reaching footer while interior is blank | JD still rejects |
 
-## Products already flagged (hold re-upload)
+## Products (apply / re-upload)
 
 | Product | TPT id | Notes |
 |---|---|---|
@@ -41,13 +41,21 @@ Before changing all Active listings that still show empty bottoms, ship **two ap
 | Halloween Chinese Writing (田字格 / 「南」 etc.) | #17734062 | Replace empty 说一说·写一写 with 看图写字 / 看图写句子 style fills |
 | Halloween Chinese Activities | #17734157 | Audit same empty-bottom / fat-band pattern |
 | Halloween Pumpkin Craft | #17774630 | Separate craft pack; only touch if same failure mode after samples approved |
-| Other Halloween paid PDFs sharing the template | — | Same hold |
+| Other Halloween paid PDFs sharing the template | — | Audit + fill if empty bottoms |
+| Pumpkin Craft | #17774630 | Fill only if same failure mode |
+
+### Applied 2026-09-28 ET
+- Writing #17734062 · Story #17733981 · Activities #17734157 rebuilt with Sample A+B fills under `avery-factory/products/halloween-chinese-2026/`.
+- Shared helper: `shared/page_fill.py`.
+- Samples: `/workspace/avery-ops/reports/layout-fill-samples-2026-09-28/`.
+- Apply report: `/workspace/avery-ops/reports/layout-fill-apply-2026-09-28/`.
 
 ## Process
 
-1. Parent shows JD the two mockups (看图写字 + 看图写句子).  
-2. After JD approve → update factory sources under `avery-factory/products/` → rebuild PDFs → QA page PNGs → re-upload to TPT (cover + ≥3 previews; do not regress bilingual short descriptions).  
-3. Push reusable notes here (`docs/avery/ops/`) per standing rule.
+1. ~~Parent shows JD the two mockups~~ — APPROVED (both A + B).  
+2. Update factory sources → rebuild PDFs → QA page PNGs (empty-bottom detector ≤0.9in) → re-upload to TPT (cover + ≥3 previews; do not regress bilingual short descriptions).  
+3. Push reusable notes here (`docs/avery/ops/`) per standing rule.  
+4. Expand to other Active listings with empty bottoms.
 
 ## Related
 
