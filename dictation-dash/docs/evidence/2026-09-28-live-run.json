@@ -1,18 +1,18 @@
 {
   "url": "https://dictation-dash.joyd-ai-2026.workers.dev",
-  "deployed_version": "65f7f2d1-a870-4e86-8a94-92c08b118786",
-  "deployed_commit": "61e9cdd",
+  "deployed_version": "eafdbf49-2fb5-47db-953d-841415d3c948",
+  "deployed_commit": "7d076a4",
   "args": {
     "url": "https://dictation-dash.joyd-ai-2026.workers.dev",
     "record": true
   },
-  "started_at": "2026-09-28T21:54:03.179051+00:00",
-  "code": "RK6T",
+  "started_at": "2026-09-28T22:24:04.411104+00:00",
+  "code": "LCQR",
   "left_out_notes": [
     "We cannot check strokes for 𠮷祥 yet, so we left it out."
   ],
   "easy_state": {
-    "phase": "done",
+    "phase": "racing",
     "round": 1,
     "level": "easy",
     "me": {
@@ -22,49 +22,51 @@
       "audio": null,
       "heard": false,
       "deadlineAt": null,
+      "clockMs": null,
       "accepted": [],
       "outline": null,
       "hint": null,
-      "wordsDone": 2,
-      "wordsSkipped": 1,
+      "wordsDone": 3,
+      "wordsSkipped": 0,
       "mistakes": 0,
-      "seq": 33,
-      "finishedAt": 1790632578485,
+      "seq": 36,
+      "finishedAt": 1790634321861,
       "closed": [
         {
           "word": "朋友",
-          "result": "skipped"
+          "result": "written"
         },
         {
           "word": "大山",
           "result": "written"
         },
         {
-          "word": "学校",
+          "word": null,
           "result": "written"
         }
-      ]
+      ],
+      "missesLeft": 15
     },
-    "you": "20eea0b8-f2e4-49ed-b0e9-05c2c5659f56",
+    "you": "4c96425b-e582-4b29-95ea-7e9e051dad6e",
     "standings": [
       {
-        "playerId": "20eea0b8-f2e4-49ed-b0e9-05c2c5659f56",
+        "playerId": "4c96425b-e582-4b29-95ea-7e9e051dad6e",
         "name": "Mia",
         "agent": false,
-        "wordsDone": 2,
-        "wordsSkipped": 1,
+        "wordsDone": 3,
+        "wordsSkipped": 0,
         "helped": 0,
         "finished": true,
         "place": 1
       },
       {
-        "playerId": "e5cb4446-4264-4f46-9671-c7ecd7dc2687",
+        "playerId": "3f2aab0f-86f0-4882-ad2b-d28af464db71",
         "name": "Robo",
         "agent": true,
         "wordsDone": 2,
-        "wordsSkipped": 1,
+        "wordsSkipped": 0,
         "helped": 0,
-        "finished": true,
+        "finished": false,
         "place": 2
       }
     ],
@@ -84,43 +86,45 @@
       "audio": null,
       "heard": false,
       "deadlineAt": null,
+      "clockMs": null,
       "accepted": [],
       "outline": null,
       "hint": null,
-      "wordsDone": 2,
-      "wordsSkipped": 1,
+      "wordsDone": 3,
+      "wordsSkipped": 0,
       "mistakes": 0,
-      "seq": 21,
-      "finishedAt": 1790632655640,
+      "seq": 24,
+      "finishedAt": 1790634411552,
       "closed": [
         {
           "word": "上下",
           "result": "written"
         },
         {
-          "word": "朋友",
-          "result": "skipped"
+          "word": null,
+          "result": "written"
         },
         {
-          "word": "大山",
+          "word": null,
           "result": "written"
         }
-      ]
+      ],
+      "missesLeft": 15
     },
-    "you": "20eea0b8-f2e4-49ed-b0e9-05c2c5659f56",
+    "you": "4c96425b-e582-4b29-95ea-7e9e051dad6e",
     "standings": [
       {
-        "playerId": "20eea0b8-f2e4-49ed-b0e9-05c2c5659f56",
+        "playerId": "4c96425b-e582-4b29-95ea-7e9e051dad6e",
         "name": "Mia",
         "agent": false,
-        "wordsDone": 2,
-        "wordsSkipped": 1,
+        "wordsDone": 3,
+        "wordsSkipped": 0,
         "helped": 0,
         "finished": true,
         "place": 1
       },
       {
-        "playerId": "e5cb4446-4264-4f46-9671-c7ecd7dc2687",
+        "playerId": "3f2aab0f-86f0-4882-ad2b-d28af464db71",
         "name": "Robo",
         "agent": true,
         "wordsDone": 1,
@@ -133,46 +137,46 @@
     "kidSeesWords": false
   },
   "agent_output": [
-    "wrote 朋友",
     "wrote 大山",
-    "{\"strokes\":35,\"mistakes\":4,\"heard\":[{\"wordIndex\":0,\"bytes\":77158,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":82278,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":2,\"bytes\":88422,\"type\":\"audio/wav\",\"cache\":\"MISS\"}],\"wordsDone\":2,\"place\":1,\"phase\":\"racing\"}",
-    "joined RK6T as Robo",
+    "wrote 学校",
+    "{\"strokes\":36,\"mistakes\":4,\"heard\":[{\"wordIndex\":0,\"bytes\":78182,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":86374,\"type\":\"audio/wav\",\"cache\":\"HIT\"},{\"wordIndex\":2,\"bytes\":85350,\"type\":\"audio/wav\",\"cache\":\"HIT\"}],\"wordsDone\":3,\"place\":2,\"phase\":\"done\"}",
+    "joined LCQR as Robo",
     "wrote 上下",
     "wrote 朋友",
     "wrote 大山",
-    "{\"strokes\":24,\"mistakes\":12,\"heard\":[{\"wordIndex\":0,\"bytes\":91494,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":77158,\"type\":\"audio/wav\",\"cache\":\"HIT\"},{\"wordIndex\":2,\"bytes\":82278,\"type\":\"audio/wav\",\"cache\":\"HIT\"}],\"wordsDone\":3,\"place\":1,\"phase\":\"done\"}"
+    "{\"strokes\":24,\"mistakes\":12,\"heard\":[{\"wordIndex\":0,\"bytes\":89446,\"type\":\"audio/wav\",\"cache\":\"MISS\"},{\"wordIndex\":1,\"bytes\":78182,\"type\":\"audio/wav\",\"cache\":\"HIT\"},{\"wordIndex\":2,\"bytes\":86374,\"type\":\"audio/wav\",\"cache\":\"HIT\"}],\"wordsDone\":3,\"place\":2,\"phase\":\"done\"}"
   ],
-  "kid_screen_end": "You are number 2!\n\nYou wrote 2 of 3 words. 好棒!\n\nThe words were\n上下\n朋友\n大山\n1\nRoboAI\nR\n3 of 3 words written\nDone!\n2\nMiayou\nM\n2 of 3 words written, 1 skipped\nDone!",
-  "board_end": "1\nRoboAI\nR\n3 of 3 words written\nDone!\n2\nMia\nM\n2 of 3 words written, 1 skipped\nDone!",
+  "kid_screen_end": "You are number 1!\n\nYou wrote 3 of 3 words. 好棒!\n\nThe words were\n上下\n朋友\n大山\n1\nMiayou\nM\n3 of 3 words written\nDone!\n2\nRoboAI\nR\n3 of 3 words written\nDone!",
+  "board_end": "1\nMia\nM\n3 of 3 words written\nDone!\n2\nRoboAI\nR\n3 of 3 words written\nDone!",
   "kid_heard_clips": [
     {
-      "key": "RK6T:1:0",
-      "bytes": 77158,
+      "key": "LCQR:1:0",
+      "bytes": 78182,
       "type": "audio/wav"
     },
     {
-      "key": "RK6T:1:1",
-      "bytes": 82278,
+      "key": "LCQR:1:1",
+      "bytes": 86374,
       "type": "audio/wav"
     },
     {
-      "key": "RK6T:1:2",
-      "bytes": 88422,
+      "key": "LCQR:1:2",
+      "bytes": 85350,
       "type": "audio/wav"
     },
     {
-      "key": "RK6T:2:0",
-      "bytes": 91494,
+      "key": "LCQR:2:0",
+      "bytes": 89446,
       "type": "audio/wav"
     },
     {
-      "key": "RK6T:2:1",
-      "bytes": 77158,
+      "key": "LCQR:2:1",
+      "bytes": 78182,
       "type": "audio/wav"
     },
     {
-      "key": "RK6T:2:2",
-      "bytes": 82278,
+      "key": "LCQR:2:2",
+      "bytes": 86374,
       "type": "audio/wav"
     }
   ],
@@ -183,14 +187,15 @@
     "audio": null,
     "heard": false,
     "deadlineAt": null,
+    "clockMs": null,
     "accepted": [],
     "outline": null,
     "hint": null,
-    "wordsDone": 2,
-    "wordsSkipped": 1,
+    "wordsDone": 3,
+    "wordsSkipped": 0,
     "mistakes": 0,
-    "seq": 21,
-    "finishedAt": 1790632655640,
+    "seq": 24,
+    "finishedAt": 1790634411552,
     "closed": [
       {
         "word": "上下",
@@ -198,22 +203,23 @@
       },
       {
         "word": "朋友",
-        "result": "skipped"
+        "result": "written"
       },
       {
         "word": "大山",
         "result": "written"
       }
-    ]
+    ],
+    "missesLeft": 15
   },
   "play_called": "stubbed: HTMLMediaElement.prototype.play and speechSynthesis.speak replaced before any page script",
   "demo": {
     "mp4": "dictation-dash-demo.mp4",
-    "mp4_bytes": 2350680,
+    "mp4_bytes": 2244817,
     "gif": "dictation-dash-demo.gif",
-    "gif_bytes": 7727606,
+    "gif_bytes": 7321490,
     "gif_width": 820,
     "gif_fps": 8
   },
-  "finished_at": "2026-09-28T21:59:34.309295+00:00"
+  "finished_at": "2026-09-28T22:29:59.318251+00:00"
 }

@@ -1,66 +1,70 @@
-# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 1)
+# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 2)
 
 **What this is:** the grades 3 to 5 listening game JJ approved today. Momo says a word, kids write
 it from memory stroke by stroke, the fastest correct writer wins. Two levels on two big buttons
 (Easy = faint outline, Hard = blank box). Review round 1 (Codex RETHINK, Claude FIX-FIRST) moved
 every rule that matters onto the server.
 
-Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `65f7f2d1-a870-4e86-8a94-92c08b118786`
-(commit `61e9cdd`), workers.dev only.
+Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `eafdbf49-2fb5-47db-953d-841415d3c948`
+(commit `7d076a4`), workers.dev only.
 
 Grades: **A** = seen on the live deployed version above, in this session, with a stored receipt.
 **B** = source, unit tests or a local run. **C** = assumed, not checked.
 
 ## Key takeaways
 
-1. **The room is now the referee (A).** The room grades a stroke from the points the finger drew. A
-   body that only says "correct" is refused. The live gate did both checks against the deployed
-   version. Two agents wrote Easy and Hard rounds by sending real stroke points, and the headless
-   kid wrote with pointer drags.
-2. **The answer never reaches a kid (A for the checks run, B for the full proof).** Live gate:
-   neither the lobby payload nor the mid-round payload names any word character or carries
-   `strokeCounts`, on both levels. Unit tests cover the rest: no next stroke's shape, the
-   teacher-only list, and closed words only.
-3. **Speech cannot run up a bill (A for readback, B for fail-closed).** Every model attempt passes
-   three budgets: a per-IP limiter, a per-room daily budget and a global daily budget. Each one
-   fails closed. The live readback showed the counts. The missing-binding and throwing-limiter
-   cases are unit-tested only, because the live deploy has every binding.
+1. **The room is the referee (A).** The room grades a stroke from the points the finger drew. A
+   stroke that only says "correct" is refused. Live gate 42/42 on eafdbf49.
+2. **Answer secrecy (B, with some A checks).** Round 1 claimed A here, and that was wrong: a kid
+   could skip without hearing and read `closed[0].word`. The accepted strokes were also echoed as
+   canonical shapes, which can be matched against public stroke data. Both are fixed:
+   - A skip needs the word served first.
+   - A closed word is named only once every kid has closed it.
+   - Accepted strokes come back as the kid's own points.
+   - Kid payloads carry no list report.
+
+   Live checks (A): the lobby and mid-round payloads, the early-skip refusal and a null closed word
+   while another kid is still on it. The full "learns nothing" proof is unit tests (B).
+3. **Every word can be finished (A).** The clock is base + seconds per stroke, per level, bucketed.
+   In the re-recorded run the kid wrote all 3 words in both rounds (round 1 had timed out on 朋友).
+4. **Speech cannot run up a bill.** There are per-IP, per-room (race-free), global and per-IP
+   daily budgets, all failing closed. The live readback is A; the limits and failures are B (tests).
 
 ## Claims and grades
 
 | Claim | Grade | Evidence |
 |---|---|---|
-| Strokes graded by the room from points; assertion-only refused | A | `docs/evidence/2026-09-28-live-gate.json` (41/41 on 65f7f2d1); tests: right, wrong, backwards, assertion-only |
-| Kid payload has the audio handle and box count, never the word or stroke counts (lobby, mid-round, Easy and Hard) | A | Live gate checks |
-| Hard never sends the outline; Easy sends it only after the word was heard | A (Hard null, Easy array) / B (timing) | Live gate; `tests/dash.test.ts` |
-| The room owns the word clock: no stroke before the clip, late stroke refused, late word closed as skipped | A | Live gate (solo room, 15 s word left alone); also seen in the kid run: 朋友 (12 strokes) timed out at 40 s because the test driver takes about 1.5 s per stroke over the network |
-| Every speech request must name the round | A | Live gate 400 |
-| Room and global speech budgets count every attempt; readback | A (readback) / B (limits reached, fail-closed) | Live gate; `tests/tts.test.ts` |
-| Room creation fails closed | B | `tests/room-do.test.ts` |
-| Skipped word scores 0 (strokes taken back); ties share a place | B | `tests/dash.test.ts` |
-| Hard stroke right only after the hint scores half, board shows "helped"; Easy full credit | B | `tests/dash.test.ts` (the kid run never needed a hint) |
-| Two tabs, same seq, different points: second is a no-op | B | `tests/dash.test.ts`, `tests/room-do.test.ts` |
-| New list resets the round cursor; words-per-round changes never skip or repeat | B | `tests/dash.test.ts` |
-| Parser: headings skipped by shape and reported, zero-width stripped | A (live paste) / B | Live gate paste check; `tests/parse.test.ts` |
-| Class lobby hides words until "Show words"; done screen has level, clock and list controls; Hard tapped in the real UI | A | `docs/demo/dictation-dash-teacher-levels.png`, `-winners-easy.png`, live run `hard_tapped_in_ui` |
-| A crafted stroke cannot freeze the room | B | Cost test: a stroke that loops back to its centre grades in under 20 ms. The unguarded matcher did not finish that stroke in 180 s locally (stopped) |
-| Word audio really plays on iPad, voice is right | C | Nothing may play sound here; nobody listened |
-| Speech limit fits several classes on one school IP at once | C | 30 calls/min/IP; one call per NEW word per room |
+| Strokes graded by the room; assertion-only refused | A | `docs/evidence/2026-09-28-live-gate.json` (42/42, eafdbf49) |
+| Kid payload (lobby, mid-round, Easy and Hard) names no word, no stroke count, no heading or left-out word | A for those payloads | live gate |
+| No skip before hearing; a skipped word is not named while another kid is on it | A | live gate "sacrificial kid" check |
+| A sacrificial kid learns nothing mid-word (all paths); accepted strokes echoed as own points | B | `tests/dash.test.ts` |
+| Word clock by strokes, bucketed; a stroke after it is refused and the word closes as skipped | A (live solo room) / B (idiom 聚精会神, 43 strokes) | live gate; tests |
+| Per-stroke gap 200 ms; grader stops after 15 misses per word | B | tests |
+| Room budget reserved without an await: two different new words, one slot, exactly one model call | B | `tests/tts.test.ts` |
+| Per-IP daily cap below the global cap; readback | A (readback) / B (cap reached) | live gate; tests |
+| Join rate 20/min, below the 40 seats, checked first (429) | B | tests |
+| Done-screen "Show words" works; pad shows "Checking..." while a stroke is graded | B | source; the demo run exercised the done screen but not the toggle |
+| Demo: kid writes Easy then Hard (tapped in the real UI), Try again path | A | `docs/evidence/2026-09-28-live-run.json` on eafdbf49 |
+| Crafted strokes cannot freeze the room | B | cost test |
+| Voice sounds right; works on iPad | C | nobody listened; no iPad |
 
 ## Known limits
 
 - The agent must be given the list it "studied" (`--words`): the room never tells it the word.
 - A word is closed the moment its clock runs out, even mid-stroke.
-- Demo: in both rounds the scripted kid runs out of time on 朋友 (12 strokes, about 1.5 s per stroke
-  over the network against a 40 s clock), so the demo shows the time-out path. A real kid gets the
-  same 40 s; the teacher can raise it.
+- The word clock is bucketed to 20 s, so it still hints at the stroke count (to within 5 strokes
+  on Hard). That is the trade-off for clocks that grow with the strokes.
+- A kid whose device cannot reach the room at all for a word's sound (so the room never tried to
+  serve it) cannot skip that word; the round clock still ends the round.
+- Stroke counts: 朋 8, 友 4 in hanzi-writer-data 2.0.1 (`tests/fixtures/geom.json` and
+  `src/worker/stroke-counts.json` agree), 12 for 朋友. Codex r2 read 3 for 友; the pinned file says 4.
 - Missing Stroke's matcher does not have the cost guards yet; the two files now differ only by those guards.
 
 ## Numbers
 
-Tests: 70 vitest and 3 node:test, all passing. typecheck, check:xss, check:palette and check:brand
-all pass. The live gate passes 41 of 41 checks. The demo was re-recorded on 65f7f2d1 and the gif is
-under 8 MB.
+Tests: 75 vitest and 3 node:test, all passing. typecheck, check:xss, check:palette and check:brand
+all pass. The live gate passes 42 of 42 checks on eafdbf49. The demo was re-recorded on eafdbf49 and the gif
+is under 8 MB.
 
 ## Summary of recommended action
 
