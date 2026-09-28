@@ -73,6 +73,7 @@ TEACH_LAYOUT = """()=>{const out=[],H=innerHeight,W=innerWidth,$=id=>document.ge
   const g=glyphs($('word'));const wb=Math.max(...g.map(x=>x.bottom));
   if(Math.min(...g.map(x=>x.left))<0||Math.max(...g.map(x=>x.right))>W||Math.min(...g.map(x=>x.top))<0)out.push('word off screen');
   if(uneven($('word')))out.push('uneven word lines '+uneven($('word')));
+  if($('word').textContent.length<=3&&new Set(glyphs($('word')).map(g=>Math.round(g.top))).size>1)out.push('short word split over lines');
   const b=$('bubble');if(!b.hidden){const br=b.getBoundingClientRect();if(br.top<wb-1)out.push('bubble covers word by '+Math.round(wb-br.top)+'px');
     const z=b.querySelector('.zh');if(z&&uneven(z))out.push('uneven bubble lines '+uneven(z))}
   const m=$('momo').getBoundingClientRect();if(m.bottom>act.top+1)out.push('Momo under the button');
@@ -150,6 +151,7 @@ with sync_playwright() as p:
     pg.click("[data-speed=fast]"); small_targets(pg, "karaoke setup screen")
     pg.screenshot(path=str(SHOTS / "karaoke-setup.png"), full_page=True)
     pg.click("#go"); pg.wait_for_timeout(600); pg.screenshot(path=str(SHOTS / "karaoke-singing.png"))
+    check("karaoke: a 2-character word stays on one line", pg.evaluate("new Set([...document.querySelectorAll('#kword span')].map(s=>Math.round(s.getBoundingClientRect().top))).size") == 1)
     pg.wait_for_selector("#stage.is-gap", timeout=6000); pg.wait_for_timeout(400)
     small_targets(pg, "karaoke blank screen"); pg.screenshot(path=str(SHOTS / "karaoke-blank.png"))
     check("karaoke: reveal button has an eye icon", pg.locator("#reveal svg.ic").count() == 1)

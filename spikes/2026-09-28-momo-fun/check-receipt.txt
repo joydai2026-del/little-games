@@ -1,6 +1,6 @@
-Momo spikes check receipt  2026-09-28T11:28:40
+Momo spikes check receipt  2026-09-28T11:32:32
 Chromium headless via Python Playwright, viewports phone 390x844 and laptop 1280x800, sound stubbed
-87 PASS, 0 FAIL
+88 PASS, 0 FAIL
 
 PASS  identical in all 3 files: shared JS (parser, helpers, icons)
 PASS  identical in all 3 files: shared CSS tokens
@@ -50,6 +50,7 @@ PASS  tap targets >= 64 px: karaoke paste screen
 PASS  shared list remembered across files (Chromium, file://)
 PASS  karaoke: every 3rd word starts as a blank
 PASS  tap targets >= 64 px: karaoke setup screen
+PASS  karaoke: a 2-character word stays on one line
 PASS  tap targets >= 64 px: karaoke blank screen
 PASS  karaoke: reveal button has an eye icon
 PASS  karaoke: triple press reveals once and moves one word

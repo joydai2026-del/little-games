@@ -192,14 +192,15 @@ function charCount(s){ return Array.from(s).length; }
 // Biggest font size that fits a word inside a box by BOTH width and height. Tries every line count
 // (at most maxPerLine characters a line) and caps the element width so the lines come out even.
 function fitWord(text, boxW, boxH, maxPx, maxPerLine){
-  var n = Math.max(1, charCount(text)), best = { px: 0, per: n };
+  var n = Math.max(1, charCount(text)), opts = [], top = 0;
   for (var lines = Math.ceil(n / maxPerLine); lines <= n; lines++){
     var per = Math.ceil(n / lines), rows = Math.ceil(n / per);
     var px = Math.floor(Math.min(maxPx, boxW / (per * 1.12), boxH / (rows * 1.2)));
-    if (px > best.px) best = { px: px, per: per };
+    opts.push({ px: Math.max(14, px), per: per }); top = Math.max(top, px);
   }
-  best.px = Math.max(14, best.px);
-  return best;
+  // Fewest lines that are nearly as big as the best: a short word stays on one line instead of stacking.
+  for (var i = 0; i < opts.length; i++) if (opts[i].px >= top * 0.8) return opts[i];
+  return opts[0];
 }
 function applyFit(el, text, boxW, boxH, maxPx, maxPerLine){
   var f = fitWord(text, boxW, boxH, maxPx, maxPerLine);
