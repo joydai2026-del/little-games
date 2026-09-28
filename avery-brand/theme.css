@@ -1,0 +1,61 @@
+/* Avery Studio brand kit: tokens + shared components.
+   Canonical copy: little-games/avery-brand/theme.css. Every Avery tool ships an
+   IDENTICAL copy at public/theme.css (npm run check:brand fails on any diff).
+   Game-specific tokens and rules live in the game's own CSS, never here. */
+:root {
+  /* Palette. The only brand colours. */
+  --cream: #FFF7E8;     /* page */
+  --mint: #BFE8D8;      /* light fill, borders */
+  --mint-deep: #3FA88A; /* primary buttons (with INK text) */
+  --coral: #FF7B6B;     /* accent */
+  --ink: #2D3436;       /* text */
+
+  /* Derived. */
+  --muted: #636E72;     /* secondary text, 4.9:1 on cream */
+  --line: #B2BEC3;      /* dividers, rules */
+  --card: #FFFFFF;      /* cards, paper */
+
+  --font-ui: "DM Sans", "Noto Sans SC", system-ui, sans-serif;
+  --tap: 64px;          /* minimum tap target */
+}
+
+/* Header: Momo + wordmark, the whole thing links to the tool's home. */
+.avery-header {
+  display: flex; align-items: center; min-height: 64px;
+  max-width: 1100px; margin: 0 auto; padding: 0 16px;
+  font-family: var(--font-ui);
+}
+.avery-header a {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 64px;
+  color: var(--ink); text-decoration: none;
+}
+.avery-header img { width: 40px; height: 40px; flex: none; }
+.avery-header .avery-wordmark { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; }
+.avery-header .avery-sub { color: var(--muted); font-weight: 500; font-size: 1rem; }
+.avery-header a:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; border-radius: 8px; }
+
+/* Footer: one brand line, per-tool credits under it. */
+.avery-footer {
+  max-width: 760px; margin: 32px auto 0; padding: 16px 16px 24px;
+  text-align: center; font-family: var(--font-ui); font-size: 0.85rem; color: var(--muted);
+}
+.avery-footer .avery-line { margin: 0 0 4px; font-weight: 500; }
+/* Inline links stay in the sentence; vertical padding grows the tap area to ~64px. */
+.avery-footer a { color: inherit; padding: 21px 2px; }
+.avery-footer .avery-credits { margin: 0; line-height: 1.6; }
+
+/* Buttons. White on mint-deep fails contrast (2.9:1), so primary uses INK text
+   (4.3:1), which passes only as LARGE text: keep button labels 19px+ bold. */
+.btn-primary, .btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--tap); min-width: var(--tap); padding: 0 24px;
+  border-radius: 999px; font-family: var(--font-ui); font-size: 19px; font-weight: 700;
+  cursor: pointer;
+}
+.btn-primary { background: var(--mint-deep); color: var(--ink); border: 0; }
+.btn-secondary { background: var(--cream); color: var(--ink); border: 3px solid var(--mint); }
+.btn-primary:focus-visible, .btn-secondary:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.45; cursor: default; }
+
+/* The brand chrome never prints; printed pages keep their own footer. */
+@media print { .avery-header, .avery-footer { display: none !important; } }
