@@ -1,55 +1,82 @@
 # Build report: Momo fun spikes (Track D)
 
-Date: 2026-09-28. Branch: `feat/momo-fun-spikes`. Folder: `spikes/2026-09-28-momo-fun/`. Nothing outside this folder was touched. Nothing deployed, no packages installed.
+Date: 2026-09-28. Branch: `feat/momo-fun-spikes` (draft PR #8). Folder: `spikes/2026-09-28-momo-fun/`. Nothing outside this folder was touched. Nothing deployed, no packages installed.
 
-Evidence grades: A = proven in production, B = proven in source or in a headless browser run, C = not verified.
+Evidence grades: A = proven in production, B = proven in source or by the committed check (`check.py`, result in `check-receipt.txt`), C = not verified.
+
+Round 2 (same day): both PR reviewers said FIX-FIRST. Every must-fix and should-fix was applied; see "Review fixes" below.
 
 ## What each spike does
 
+These are **teacher-tapped on one shared screen** (projector, smartboard or a tablet the class gathers around). Buttons are plain English for the teacher, and each main kid action also has a picture (ear, mouth, arrow, star, eye, play, replay, shuffle, printer). Whether kid-facing screens should carry any English in an immersion classroom is JJ's call.
+
 | Spike | Flow | Grade |
 |---|---|---|
-| `teach-momo.html` | Paste list, Start. One word shows huge. Button cycles: "Teach Momo" (Momo leans in, "I'm listening...") then "I said it!" (1st tap: Momo tilts, wavy mouth, red "?", "Hmm? One more time!"; 2nd tap: Momo bounces twice with sparkles, bubble repeats the word plus pinyin if pasted, counter goes up) then "Next word". End screen: "Momo learned all N words!" with the word list, "Teach again". | B |
-| `karaoke-blanks.html` | Paste list, Next. Word chips appear, every 3rd word pre-marked as a blank (tap to toggle). Speed: Slow / Normal / Fast. Play: a lyric strip scrolls along the top, the current word shows huge with a coral sweep highlight (CSS animation timed to the speed). At a blank: dashed "?" box, "Everybody, shout it!", Momo makes an "O" mouth, big "Show the word" button. Tap: word pops in, Momo jumps, cheer bubble (好棒！/ 对了！/ 太棒了！/ Yes!), song continues. End: "That's the song!" with count of words shouted. | B |
-| `comic-bubbles.html` | Paste list, "Make the comic". 3 panels (Momo alone; Momo + coral friend; friend + Momo), 5 dashed "tap me" bubbles. Tap a bubble (it glows), tap a word in the tray; selection hops to the next empty bubble so kids can keep tapping words. Shuffle fills every bubble at random. "Empty the bubbles" resets. Print with a Letter / A4 switch: prints only the comic plus "Act it out! Name: ____", empty bubbles stay blank for writing. | B |
+| `teach-momo.html` | Paste list, Start. One word shows huge (long words wrap onto balanced lines). Button cycles: "Teach Momo" (ear; Momo leans in, "I'm listening...") then "I said it!" (mouth; 1st tap: Momo tilts, wavy mouth, red "?", "Hmm? One more time!"; 2nd tap: Momo bounces with sparkles, bubble repeats the word plus pinyin if pasted, counter goes up) then "Next word" (arrow) or "Finish" (star). End screen: "Momo learned all N words!" (or "Momo learned the word!" for one), "Teach again". | B |
+| `karaoke-blanks.html` | Paste list, Next. Word chips appear, every 3rd word pre-marked as a blank (tap to toggle). Speed: Slow / Normal / Fast. Play: a lyric strip scrolls along the top, the current word shows huge and lights up coral one character at a time (so a wrapped word still lights in reading order). At a blank: dashed "?" box, mouth icon plus "Everybody, shout it!", Momo makes an "O" mouth, "Show the word" (eye). One tap: word pops in, Momo jumps, cheer bubble, song continues. End: "That's the song!". "New list" returns to a clean paste step. | B |
+| `comic-bubbles.html` | Paste list, "Make the comic". 3 panels stacked full width on every screen size (Momo alone; Momo + coral friend; friend + Momo), 5 dashed "tap me" bubbles. Tap a bubble (it glows), tap a word; selection hops to the next empty bubble. Bubble text shrinks by word length and wraps, and two bubbles in a panel each stay under half the width. Shuffle uses every word once before repeating and leaves bubble 1 highlighted. "Empty the bubbles" resets. Print (Letter or A4) prints only the comic plus "Act it out! Name: ____"; printing before a comic exists prints "Make the comic first, then print." | B |
 
-Shared across all three: same paste parser (strips numbering like `1.`, `3、`, `4)`; splits on commas, 、, semicolons, slashes, tabs, new lines; keeps Chinese; keeps pinyin only when tone-marked or tone-numbered; drops English; removes duplicates), same inline Momo SVG (placeholder), palette tokens as CSS variables, tunable values in a `CONFIG` block, motion by CSS only, system fonts only (no network requests at all), `prefers-reduced-motion` respected, localStorage wrapped in try/catch.
+Shared by all three (verified identical by `check.py`): the paste reader, small helpers and button icons (one JS block); the colour tokens (one CSS block); the Momo SVG markup. Momo is the same base art in every file; each mode shows its own mouth states through CSS (Teach: smile, "O", wavy; Karaoke: smile, "O"; Comic: smile). All colours live in `:root` tokens (core palette plus white, button shadows, error, soft coral, selected, muted); the SVG uses the tokens through CSS classes. Motion is CSS only; no network requests; system fonts only; `prefers-reduced-motion` respected; localStorage wrapped in try/catch. Tunable values sit in each file's `CONFIG` (word-count limits, when long words wrap, blank mark, bubble sizes, print margin, timings).
 
-## Screenshots (phone width 390 px, 2x)
+Paste reader: pairs each Chinese word with the pinyin that follows it before looking at separators, so tab columns (Google Sheets, Excel), CSV lines, `苹果/píngguǒ`, numbered lists and `píngguǒ 苹果` all keep their pinyin. Pinyin needs tone marks or tone numbers; English is dropped. Known limit (C): an English word with an accent (café) would be read as pinyin.
 
-| File | Shows |
-|---|---|
-| `shots/teach-momo.png` | Momo just learned 苹果, bubble with 苹果 / píngguǒ, sparkles, counter "1 word" |
-| `shots/teach-momo-confused.png` | First "I said it!": Momo confused |
-| `shots/karaoke-setup.png` | Chips with 西瓜 and 橙子 as blanks, Fast selected |
-| `shots/karaoke-singing.png` | 苹果 mid-sweep |
-| `shots/karaoke-blank.png` | Blank: "?" box, "Everybody, shout it!" |
-| `shots/karaoke-blanks.png` | 西瓜 revealed, Momo cheering 太棒了！ |
-| `shots/comic-bubbles.png` / `comic-bubbles-top.png` | 3 panels with 苹果, 西瓜, 橙子 placed, one bubble selected, word tray |
-| `shots/comic-print-letter.png` / `comic-print-a4.png` | Printed page, 1 page each on Letter and A4 |
-| `shots/review-board.png` | The review board with Keep / Change / Cut under each figure |
+## Screenshots (`shots/`, refreshed by `check.py`)
 
-Test list used (typed by hand, real Chinese, deliberately messy): `1. 苹果 píngguǒ apple`, `2. 香蕉 xiāngjiāo banana`, `3、西瓜 (xīguā) watermelon`, `4) 葡萄 - pútao - grapes`, `草莓, 橙子`.
-
-## Verified in a headless browser (Playwright, Chromium, phone viewport, audio stubbed)
-
-| Check | Result | Grade |
+| File | Width | Shows |
 |---|---|---|
-| Parser output on the messy list | 6 words, pinyin kept for the 4 lines that had it, English dropped | B |
-| Teach Momo full run | confused after 1st tap, "gotit" after 2nd, counter 1, end screen "Momo learned all 6 words!" | B |
-| Karaoke full run (Fast) | chips 西瓜 and 橙子 as blanks, both reveals worked, end screen "6 words, 2 shouted by the class." | B |
-| Comic | tap-bubble-then-word fills correctly, Shuffle fills all 5, print PDF = 1 page on Letter and 1 page on A4 (checked with pdfinfo, looked at the rendered pages) | B |
-| Tap targets | no visible button under 64 x 64 px on the opening screens; all other buttons are styled with 64 px minimums | B (opening screens measured), C (other screens measured by CSS only) |
-| JS errors / console errors | none across all runs | B |
-| Remembered list carries between spikes | yes in Chromium from local files | B (Chromium only), C (Safari, iPad) |
-| review.html | Keep / Change / Cut buttons and note box rendered under all 3 figures, plus "Export feedback"; no errors | B |
-| I looked at every PNG | yes; fixed two issues found this way (karaoke cheer bubble clipped off-screen, then overlapping Momo) | B |
+| `teach-momo.png` | phone 390 | Momo just learned 苹果, bubble 苹果 / píngguǒ, counter "1 word", arrow on "Next word" |
+| `teach-momo-confused.png` | phone 390 | First "I said it!": Momo confused, mouth icon on the button |
+| `teach-long-word.png` | phone 390 | 巧克力蛋糕 on two lines, nothing off screen |
+| `karaoke-setup.png` | phone 390 | Chips with 西瓜 and 橙子 as blanks, Fast selected |
+| `karaoke-singing.png` | phone 390 | 苹果 lighting up |
+| `karaoke-blank.png` | phone 390 | Blank: "?" box, "Everybody, shout it!", eye on "Show the word" |
+| `karaoke-blanks.png` | phone 390 | 西瓜 revealed, Momo cheering |
+| `comic-bubbles.png`, `comic-bubbles-top.png` | phone 390 | Fruit words placed, one bubble selected, word tray |
+| `comic-long-words.png` | phone 390 | 3 to 5 character words (巧克力蛋糕, 一石二鸟, 谢谢你) in bubbles, no collisions |
+| `comic-laptop.png` | laptop 1280 | Same comic on a laptop: full-width panels, no collisions |
+| `comic-print-letter.png`, `comic-print-a4.png` | print | Printed page, 1 page each |
+| `review-board.png` | 1280 | The review board (first round) |
 
-Not verified (C): real phones and tablets, Safari/iOS, a classroom projector, printing from a real printer (only Chromium PDF output), Chinese fonts on Windows/Chromebook (falls back to system Chinese font; Kaiti only on Mac).
+## Verified by the committed check (`python3 check.py`, 73 PASS, 0 FAIL; full list in `check-receipt.txt`)
+
+Headless Chromium through Python Playwright, phone 390x844 and laptop 1280x800, sound stubbed.
+
+| Area | What is checked | Grade |
+|---|---|---|
+| Shared code | JS block, CSS token block and Momo SVG identical in all 3 files; no colour literals outside `:root`; no placeholder note on screen | B |
+| Paste reader | 13 cases: numbered, tab, CSV, slash, tone numbers, `Q1`/`mp3` not taken as pinyin, 〇, duplicate filled with later pinyin, several words per line, English only, HTML-shaped text; 40-line list | B |
+| Teach Momo | confused then gets it, pinyin shown, "1 word" grammar, icon on button, end screen; 5, 9 and 4 character words fit with no sideways scroll at phone and laptop width; one-word grammar | B |
+| Karaoke | every 3rd word blank, three presses in one frame reveal once and move one word, end screen, New list fully resets, Stop halts, too-short list message, 5-character word fits and lights in reading order at phone and laptop width | B |
+| Comic | no bubble or character overlaps with 3 to 5 character words over 3 shuffles at phone AND laptop width, no sideways scroll, empty print shows the plain message on 1 page, too-short and too-long lists handled (capped at 24), tap bubble then word, Shuffle highlights a bubble and the next tap replaces only it, icons, Letter and A4 print 1 page each | B |
+| Tap targets | every visible button and the text box measured at 64 x 64 px or larger on 10 screens (phone and laptop) | B |
+| Errors and network | no page or console errors; no request outside the local files | B |
+| Remembered list | carries between the three files from local files in Chromium | B (Chromium), C (Safari) |
+
+I also looked at every refreshed PNG by eye (self-check, not independent evidence).
+
+Not verified (C): real phones and tablets, Safari/iOS (including Safari's support for the Letter/A4 `@page` switch), a classroom projector or smartboard, a real printer (only Chromium PDF output), Chinese fonts on Windows or Chromebook (falls back to a system Chinese font; Kaiti only on Mac).
+
+## Review fixes (round 2)
+
+| Reviewer item | Fix |
+|---|---|
+| Comic broken on laptop | Panels stack full width at every size (3-column layout removed) |
+| Comic long words collide | Bubbles under half the panel each, text size by character count (CONFIG), wrapping |
+| Teach and Karaoke long words overflow | Font fitted to the screen, long words split onto balanced lines (CONFIG `maxCharsPerLine`); karaoke lights per character |
+| Pinyin lost for Sheets, Excel, CSV, slash | Reader pairs word and pinyin before splitting; identical in all 3 files, README says they must stay identical |
+| Karaoke New list stale state | Full reset of chips, blanks, words, button and speed |
+| Karaoke reveal double-fire | `revealing` flag, button disabled, one pending timer at a time |
+| Report honesty | Laptop runs added, colours fully tokenised, Momo wording corrected, all B rows now backed by `check.py` and `check-receipt.txt` |
+| Placeholder note and grammar | Note removed from every teacher and kid screen; "1 word" and one-word end screens fixed |
+| Comic selection after Shuffle, empty print, tiny lists | Bubble stays highlighted, empty print shows a plain message, minimum 3 words |
+| Word-count policy, literals | `minWords` / `maxWords` in every CONFIG with plain messages; long-word rule, blank mark, print margin in CONFIG |
+| English-only buttons | Kept English per JJ's plain-English rule, added pictures to every main action, scoped as teacher-tapped; immersion question goes to JJ |
+| Repo rules | README lists the waived rules (agent API, tests, demo video) and why |
 
 ## Open questions for JJ
 
-1. Teach Momo: Momo is confused exactly once per word, then gets it. Should it vary (sometimes gets it first try, sometimes asks twice)? The number is in `CONFIG`.
-2. Karaoke works on single words, so it reads like a word parade, not a song line. Is a sentence or chant field in the paste box wanted if this is kept?
-3. Comic: a coral round "friend" character was invented as Momo's scene partner. Keep, or should there be a named second character?
-4. Momo's cheers mix Chinese (好棒！) and one English "Yes!". All Chinese instead?
-5. Codex review was not run inside this track (time box). The repo rule says Codex reviews before JJ sees it, so the parent should run it on the draft PR before handing over.
+1. Kid-facing English: keep plain-English buttons with pictures, or move kid screens to Chinese or pictures only?
+2. Teach Momo: Momo is confused exactly once per word, then gets it. Vary it? (`CONFIG.triesBeforeGotIt`)
+3. Karaoke works on single words, so it reads like a word parade, not a song line. Add a sentence or chant field if kept?
+4. Comic: keep the invented coral friend, or a named second character?
+5. Momo's cheers mix Chinese (好棒！) and one English "Yes!". All Chinese?

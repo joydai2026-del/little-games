@@ -1,0 +1,77 @@
+Momo spikes check receipt  2026-09-28T11:05:58
+Chromium headless via Python Playwright, viewports phone 390x844 and laptop 1280x800, sound stubbed
+73 PASS, 0 FAIL
+
+PASS  identical in all 3 files: shared JS (parser, helpers, icons)
+PASS  identical in all 3 files: shared CSS tokens
+PASS  identical in all 3 files: Momo SVG markup
+PASS  teach-momo.html: no colour literals outside the :root tokens
+PASS  teach-momo.html: no placeholder note on screen
+PASS  karaoke-blanks.html: no colour literals outside the :root tokens
+PASS  karaoke-blanks.html: no placeholder note on screen
+PASS  comic-bubbles.html: no colour literals outside the :root tokens
+PASS  comic-bubbles.html: no placeholder note on screen
+PASS  parser: 1. 苹果 píngguǒ apple
+PASS  parser: 苹果<TAB>píngguǒ<TAB>apple
+PASS  parser: 香蕉, xiāngjiāo, banana
+PASS  parser: 西瓜/xīguā
+PASS  parser: ping2guo3 苹果
+PASS  parser: Q1 水果
+PASS  parser: mp3 音乐
+PASS  parser: 二〇二六
+PASS  parser: 葡萄 / 葡萄 pútao
+PASS  parser: 草莓, 橙子
+PASS  parser: 苹果 香蕉 píngguǒ xiāngjiāo
+PASS  parser: hello world
+PASS  parser: <img src=x onerror=alert(1)> 苹果 </button><script
+PASS  parser: 40 lines keeps 40 words
+PASS  tap targets >= 64 px: teach paste screen
+PASS  tap targets >= 64 px: teach word screen
+PASS  teach: first 'I said it!' makes Momo confused
+PASS  teach: second 'I said it!' and Momo gets it, with pinyin
+PASS  teach: counter grammar '1 word'
+PASS  teach: primary button has an icon
+PASS  teach: end screen
+PASS  tap targets >= 64 px: teach end screen
+PASS  teach phone: '巧克力蛋糕' fits, no sideways scroll
+PASS  teach phone: '我今天很高兴见到你' fits, no sideways scroll
+PASS  teach phone: '一石二鸟' fits, no sideways scroll
+PASS  teach phone: one-word grammar
+PASS  teach laptop: '巧克力蛋糕' fits, no sideways scroll
+PASS  teach laptop: '我今天很高兴见到你' fits, no sideways scroll
+PASS  teach laptop: '一石二鸟' fits, no sideways scroll
+PASS  teach laptop: one-word grammar
+PASS  tap targets >= 64 px: karaoke paste screen
+PASS  shared list remembered across files (Chromium, file://)
+PASS  karaoke: every 3rd word starts as a blank
+PASS  tap targets >= 64 px: karaoke setup screen
+PASS  tap targets >= 64 px: karaoke blank screen
+PASS  karaoke: reveal button has an eye icon
+PASS  karaoke: triple press reveals once and moves one word
+PASS  karaoke: end screen
+PASS  karaoke: New list resets setup
+PASS  karaoke: Stop halts the song
+PASS  karaoke: too-short list gets a plain message
+PASS  karaoke phone: 5-character word fits and sweeps in reading order
+PASS  karaoke laptop: 5-character word fits and sweeps in reading order
+PASS  tap targets >= 64 px: comic phone paste screen
+PASS  comic phone: 3-5 character words, no bubble or character overlaps (3 shuffles)
+PASS  comic phone: no sideways scroll
+PASS  tap targets >= 64 px: comic phone comic screen
+PASS  tap targets >= 64 px: comic laptop paste screen
+PASS  comic laptop: 3-5 character words, no bubble or character overlaps (3 shuffles)
+PASS  comic laptop: no sideways scroll
+PASS  tap targets >= 64 px: comic laptop comic screen
+PASS  comic: printing before a comic exists shows 'Make the comic first'
+PASS  comic: empty print is 1 page
+PASS  comic: too-short list gets a plain message
+PASS  comic: long list warns first
+PASS  comic: long list capped at 24 words
+PASS  comic: tap bubble then word fills it
+PASS  comic: after Shuffle a bubble is highlighted
+PASS  comic: after Shuffle a word tap changes the highlighted bubble only
+PASS  comic: Shuffle and Print have icons
+PASS  comic: print on letter is 1 page
+PASS  comic: print on A4 is 1 page
+PASS  no page or console errors
+PASS  no requests outside the local files
