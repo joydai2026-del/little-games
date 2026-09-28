@@ -45,3 +45,15 @@ describe('kid status line', () => {
     expect(kidStatusText({ ...base, now: 1, error: 'no stroke data' })).toBe('no stroke data');
   });
 });
+
+describe('kid status line, every stage', () => {
+  it('a kid who resyncs on the last character and finishes inside the window loses the notice on time', () => {
+    const base = { hints: true, hiccupUntil: 10_000, error: null, stage: 'finished' as const };
+    expect(kidStatusText({ ...base, now: 9_000 })).toBe(HICCUP_TEXT);
+    expect(kidStatusText({ ...base, now: 10_000 })).toBe('');
+  });
+  it('nothing under the countdown, and a pad error only while tracing', () => {
+    expect(kidStatusText({ hints: true, hiccupUntil: 0, now: 5, error: null, stage: 'countdown' })).toBe('');
+    expect(kidStatusText({ hints: true, hiccupUntil: 0, now: 5, error: 'no stroke data', stage: 'finished' })).toBe('');
+  });
+});

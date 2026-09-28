@@ -389,13 +389,20 @@ class KidRace {
 
   /** Writes the help line; called on every tick so the hiccup notice clears itself on time. */
   private showStatus(): void {
-    const text = kidStatusText({ hints: this.state.options.hints, hiccupUntil: this.hiccupUntil, now: Date.now(), error: this.errorText });
+    const s = this.state;
+    const stage =
+      s.goAt != null && Date.now() + this.ctx.offset < s.goAt
+        ? 'countdown'
+        : this.charIndex >= s.roundChars.length
+          ? 'finished'
+          : 'tracing';
+    const text = kidStatusText({ hints: s.options.hints, hiccupUntil: this.hiccupUntil, now: Date.now(), error: this.errorText, stage });
     if (this.status.textContent !== text) this.status.textContent = text;
   }
 
   tick(): void {
     const s = this.state;
-    if (this.tracer) this.showStatus();
+    this.showStatus();
     if (s.goAt != null && Date.now() + this.ctx.offset < s.goAt) {
       const n = Math.max(1, Math.ceil((s.goAt - Date.now() - this.ctx.offset) / 1000));
       if (this.stage.dataset.count !== String(n)) {
