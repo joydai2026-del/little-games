@@ -16,7 +16,14 @@ reviews answered: /Users/joyd/lg-scans/review-pr18-plan-claude.md, /Users/joyd/l
 - **Paid:** $39 a year or $6.99 a month, run as a pricing test with written keep-or-change rules. Money goes through the existing **Ownly Network LLC** Stripe account; bank statements say **AVERY STUDIO**.
 - **Kids** never sign in, never see a paywall, and never load analytics. They type only a nickname to join a room, as today.
 - **One new service, avery-hub**, owns sign-in, the teacher database, Stripe and the answer to "may this teacher do this?". Games stay their own Workers and ask the hub.
-- **Schedule:** about 22 to 23 days of work including reviews and fix rounds. About 16 working days from start to live if slices run in parallel sessions, about 23 with one session at a time, plus JJ-side waits (legal page wording, Google consent-screen publishing, tax registrations).
+- **Schedule (with 20% contingency):** about 27 days of work including reviews and fix rounds. About 21 working days from start to live if slices run in parallel sessions, about 27 with one session at a time, plus JJ-side waits (legal page wording, Google consent-screen publishing, tax registrations).
+
+## For JJ first
+
+| # | Item | What you can do |
+|---|---|---|
+| 1 | **Teachers can paste and play the free mode without signing in** (rooms included; nothing saved, no class codes). Sign-in is needed only to save a list, use class codes, or subscribe. Decided by the commander under JJ's standing rule "no feedback = go with your recommendation" (2026-09-28); JJ can overturn. | Say "require sign-in for free play" to overturn; the gate then treats anonymous visitors as having no free mode. |
+| 2 | **The long-term class ranking is blocked** until a school and parent consent path exists; the 1-hour board uses a room-only id instead of a device id (section "Rankings"). | Nothing now; the unblock list is written out. |
 
 Claim grades: **A** = read today in the named source, **B** = standard platform behaviour not re-read today, **C** = estimate or judgement.
 
@@ -30,7 +37,7 @@ Claim grades: **A** = read today in the named source, **B** = standard platform 
 | 4 | Free mode may switch, with a nudge toward subscribing (14-day cooldown + one taste round a day). | JJ, 2026-09-28 | S2b |
 | 5 | Teacher-side product analytics matter. Teacher screens only, never kid screens, no child data. AEO is a separate later track. | JJ, 2026-09-28 | S4a, S4b |
 | 6 | Student rankings students can see. | JJ, 2026-09-28 | S3 (see the COPPA change below) |
-| 7 | **Teachers can paste and play the free mode without signing in** (nothing saved, no class codes). Sign-in is required only to save a list, use class codes, or subscribe. | Commander, 2026-09-28, under JJ's rule "no feedback = your recommendation" | S2b |
+| 7 | **Teachers can paste and play the free mode without signing in** (nothing saved, no class codes). Sign-in is required only to save a list, use class codes, or subscribe. | Decided by the commander under JJ's standing rule "no feedback = go with your recommendation" (2026-09-28); JJ can overturn (see "For JJ first") | S2b |
 | 8 | **The paid gate moves ahead of the brief's order.** The pickup brief lists the soft $39/yr gate at build priority 5 (A, `docs/avery/AVERY-CLASSROOM-GAMES-PICKUP.md` line 50). JJ moved it up on 2026-09-28 by asking for this plan. | JJ, 2026-09-28 | whole plan |
 
 **One change to decision 6, for the law, surfaced here rather than done quietly.** JJ asked for a nickname plus a device id, remembered for 1 hour or long term. A device id that lives in the browser's storage links a child across rooms and days, which the FTC treats as personal information unless it is used only to run the service (A, FTC COPPA FAQ). So: the 1-hour board uses a **room-only participant id** (made when the child joins, gone with the room). The **long-term class ranking is BLOCKED**, not just off by default, until a school and parent notice and consent path exists (section "Rankings"). JJ's long-term wish stays in scope and is listed as blocked; it is not dropped.
@@ -96,7 +103,7 @@ HubService methods (first version):
 | Hand-off token | 32 random bytes, opaque (not signed, not a JWT). Sent to the game in the URL fragment (`game/auth/finish#t=...`), so it never reaches server logs or referrers. The page posts it to its own Worker and clears the address bar. |
 | At rest | Stored only as `HMAC-SHA256(SESSION_HASH_KEY_v<N>, token)` with the key version `N`, in a **TokenDO** named by that hash. Fields: hub session id, teacher id, game id (audience), bind hash, created at, expires at, key version, used flag. |
 | Redemption | `redeemHandoff` goes to the TokenDO, which checks game id, bind value (hashed, compared in constant time), expiry (`HANDOFF_TOKEN_SECONDS` 60) and the used flag, then sets used, all inside the Durable Object's own storage, so two redemptions cannot both succeed (B: a Durable Object runs one request's storage operations without interleaving). An alarm deletes the object after expiry. |
-| Game sessions | **Minted and stored by the hub**, never by the game. `game_sessions` row: id hash, key version, hub session id, teacher id, game id, created at, last used at, absolute expiry. The game's cookie (`__Host-avery_game`, Secure, HttpOnly, SameSite=Lax) holds only the random id. Every HubService call passes it and the hub resolves the teacher. |
+| Game sessions | **Minted and stored by the hub**, never by the game. `game_sessions` row: id hash, key version, hub session id hash, teacher id, game id, created at, last used at, absolute expiry. The game's cookie (`__Host-avery_game`, Secure, HttpOnly, SameSite=Lax) holds only the random id. Every HubService call passes it and the hub resolves the teacher. |
 | Revocation | Ending a hub session ends every game session made from it. "Sign out everywhere", the device limit, JJ's revoke and account deletion all act in the hub, so they reach every game at once. Test: sign out everywhere, then the old game cookie is refused by every method. |
 | Lifetimes | Hub session: idle `SESSION_IDLE_DAYS` (30), absolute `SESSION_MAX_DAYS` (90), id rotated on sign-in and every `SESSION_ROTATE_DAYS` (7) of use. Game session: absolute `GAME_SESSION_HOURS` (12), idle `GAME_SESSION_IDLE_HOURS` (4), id rotated on each hand-off. |
 | CSRF on actions | Every state-changing route (hub and game) is POST only, checks the `Origin` header against the allowlist, and requires SameSite=Lax cookies; hub forms also carry a per-session CSRF token. |
@@ -160,8 +167,8 @@ Tests: for each row, the HubService binding is replaced with one that throws, an
 | Table | Key and constraints | Main columns |
 |---|---|---|
 | `teachers` | `id` PK; `google_sub` UNIQUE NOT NULL; `stripe_customer_id` UNIQUE; `analytics_id` UNIQUE | `email`, `display_name`, `free_mode`, `free_mode_locked_until`, `taste_day`, `taste_used`, `entitlement_version`, `created_at`, `last_seen_at`, `deleted_at` |
-| `sessions` (hub) | `id_hash` PK; FK `teacher_id` to `teachers(id)` ON DELETE CASCADE | `key_version`, `browser_label`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
-| `game_sessions` | `id_hash` PK; composite FK (`teacher_id`, `hub_session_id`) to `sessions`; ON DELETE CASCADE | `game_id`, `key_version`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
+| `sessions` (hub) | `id_hash` PK; FK `teacher_id` to `teachers(id)` ON DELETE CASCADE; **`UNIQUE(teacher_id, id_hash)`** so child tables can reference the pair | `key_version`, `browser_label`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
+| `game_sessions` | `id_hash` PK; columns `teacher_id`, `hub_session_id_hash`; composite FK (`teacher_id`, `hub_session_id_hash`) REFERENCES `sessions(teacher_id, id_hash)` ON DELETE CASCADE. Chosen over keying on `hub_session_id_hash` alone because the database itself then refuses a game session whose teacher differs from its hub session's teacher. Migration test: inserting a game session with a mismatched teacher fails. | `game_id`, `key_version`, `created_at`, `last_used_at`, `absolute_expiry`, `revoked_at` |
 | `lists` | PK (`teacher_id`, `id`); FK `teacher_id` | `title`, `level`, `items_json`, `hidden`, `created_at`, `updated_at` |
 | `classes` | PK (`teacher_id`, `id`); UNIQUE `class_code`; composite FK (`teacher_id`, `list_id`) to `lists(teacher_id, id)` | `name`, `created_at` |
 | `round_history` | PK (`teacher_id`, `id`); composite FKs to her `lists` and `classes` | `game_id`, `mode`, `started_at`, `player_count_band` |
@@ -303,12 +310,16 @@ Events handled: `checkout.session.completed`, `customer.subscription.created`, `
 1. Verify the signature on the raw body with the CRM verifier. Failure is 401, never 500.
 2. Ignore anything that is not Avery's (no `app=avery` metadata and no Avery price): record it and return 200.
 3. `INSERT OR IGNORE` the event with status `received`. If it already exists with status `processed`, return 200.
-4. Hand it to the **BillingDO** for that Stripe customer. The DO keeps an in-memory queue and processes one event at a time for that customer, so two events for one teacher never race (B: without the queue, awaiting D1 would let a second request interleave).
-5. The DO fetches the latest Subscription, its latest invoice's charge (amount refunded) and any dispute from Stripe; computes `accessFor`; then writes the subscription row, bumps `entitlement_version` if access dropped, and marks the event `processed`, all in one `db.batch()`.
-6. On any error: `attempts + 1`, `last_error` saved, status stays `received` or becomes `failed`, and the route returns 500 so Stripe retries. An inserted-but-unprocessed event is **retried**, never skipped. The hourly cron also retries rows still `received` or `failed` older than 10 minutes.
+4. Call `enqueue(eventId)` on the **BillingDO** for that Stripe customer. The DO writes the event id into a queue in **its own durable storage** and sets an alarm, and `enqueue` returns only after that write is committed. Only then does the route return 200.
+5. The DO processes its stored queue one event at a time (started right away and again by the alarm), so two events for one teacher never race (B: a Durable Object does not interleave its own storage operations). For each event it fetches the latest Subscription, its latest invoice's charge (amount refunded) and any dispute from Stripe; computes `accessFor`; then writes the subscription row, bumps `entitlement_version` if access dropped, and marks the event `processed`, all in one `db.batch()`. Only after that batch succeeds does it remove the event from its storage queue.
+6. On any error the event stays in the DO queue; `attempts + 1` and `last_error` are saved in DO storage and in D1 (status `failed`), and the alarm retries with backoff (`WEBHOOK_RETRY_BASE_SECONDS` 30, doubling, capped at 1 hour). An inserted-but-unprocessed event is **retried**, never skipped. The hourly cron also re-enqueues any D1 row still `received` or `failed` older than 10 minutes, as a backstop.
 7. `attempts >= ALERT_AFTER_ATTEMPTS` (3) sends an alert.
 
-The CRM's exactly-once claim runs inside a Postgres transaction (A, per the Claude review, `crm/front-desk/src/payments/stripe.ts`); D1 cannot hold a transaction across calls, which is why the Durable Object queue and the single batch replace it here.
+**Acknowledgement contract:** Stripe gets a 2xx only after the event is durably written to the BillingDO's storage queue; from that moment the DO, not Stripe's retries, owns the event until the D1 batch marks it processed.
+
+**Crash test:** enqueue an event, then kill the DO before the D1 batch runs; on restart the alarm must process it exactly once, and a second delivery of the same event from Stripe must not process it twice. A second test deletes the DO queue entry by hand and checks that the hourly D1 backstop still finishes the event.
+
+The CRM's exactly-once claim runs inside a Postgres transaction (A, per the Claude review, `crm/front-desk/src/payments/stripe.ts`); D1 cannot hold a transaction across calls, which is why the durable Durable Object queue and the single batch replace it here.
 
 ### State model: `accessFor`
 
@@ -356,7 +367,7 @@ S2a starts with a read-only inventory of every webhook endpoint on the Ownly Net
 - Default: yearly, full refund within 14 days of the first purchase **and of each yearly renewal**, no questions asked (`REFUND_WINDOW_DAYS` 14). Monthly: cancel any time, no refund.
 - Moving from monthly to yearly: portal plan switch is off, so JJ does it from the Dashboard on request (runbook).
 - Stripe does not return processing fees on refunds; the board estimated about $1.70 lost per $39 refund (A for "not returned", C for the amount, https://docs.stripe.com/refunds). Refunds need available balance or wait as pending (A, same page). S5 records the real fee lines from the first live charge's balance transaction and confirms whether the Billing fee is credited back, before any net-revenue number is published.
-- Receipts: turn on successful-payment and refund receipt emails and the renewal reminder before a yearly renewal (Stripe settings, B). The pricing card and Checkout (`custom_text`) say plainly that the plan renews automatically, its price, and how to cancel (C, US auto-renewal rules).
+- Receipts: turn on successful-payment and refund receipt emails and the renewal reminder before a yearly renewal (Stripe settings, B). Stripe does not send automatic receipts for test-mode payments, only a manually sent test receipt (per the Codex round-2 review, citing https://docs.stripe.com/receipts; B, not re-read here), so the receipt template is checked with a manual test receipt in test mode, and automatic delivery is proven on the first live purchase in S5. The pricing card and Checkout (`custom_text`) say plainly that the plan renews automatically, its price, and how to cancel (C, US auto-renewal rules).
 
 ### Tax gate before live mode
 
@@ -475,7 +486,7 @@ This ships as its own reviewed PR in S0, not inside a code slice.
 | Manual unlock and revoke | admin `grantAccess(teacher, until, reason)` and `revokeAccess(teacher, reason)`, both bump `entitlement_version` and sign out every session on revoke; tested at launch |
 | Refund and dispute runbooks | `avery-hub/docs/ops/refund.md` (the ordered refund-then-cancel workflow), `dispute.md` (who answers, where evidence lives, the deadline Stripe shows) |
 | Support route | a support address on averystudio.org that reaches JJ, shown in the footer, the privacy policy, Checkout and Google's consent screen; creating it is a JJ step |
-| Receipt email | turned on and tested with a real address in test mode and again in live mode |
+| Receipt email | receipt template checked with a manual test receipt in test mode; automatic delivery proven on the first live purchase (S5) |
 | Live provisioning | `stripe-setup.ts --env production --live` with the JJ-issued live key, then the readback |
 
 ## Slices
@@ -484,31 +495,30 @@ Effort counts one working day of one build session. "Review" is the reviews the 
 
 | Slice | Work | Build | Review | Total | Parallel with | Depends on | Files it owns |
 |---|---|---|---|---|---|---|---|
-| **S0** Legal, accounts, rule | Draft privacy policy, terms and refund policy pages for averystudio.org (JJ approves the wording); support address (JJ creates); Google Cloud staging and production projects and consent screens; hub custom domain; house-rule reword PR | 1 | 0.5 | 1.5 | S1, S2a | JJ approvals | `joydong.org` legal pages, `CLAUDE.md`, `AGENTS.md` |
-| **S1** Hub core | `avery-hub/` Worker, staging env, D1 migrations, `forTeacher` layer, HubService RPC with game registry, token protocol and TokenDO, hub and game sessions, device limit, sign-out, lists and classes, profile, export and delete, admin module behind Access, isolation and concurrency tests, Time Travel rehearsal; vocab app sign-in and "My lists" | 4.5 | 1.5 | 6 | S0, S2a | Google staging client (S0) | `avery-hub/src/{db,rpc,auth,admin}`, vocab `state.ts`, vocab `/auth/finish` |
+| **S0** Legal, accounts, rule | Draft privacy policy, terms and refund policy pages for averystudio.org (JJ approves the wording); support address (JJ creates); Google Cloud staging and production projects and consent screens; hub custom domain; house-rule reword PR | 1 | 0.5 | 1.5 | S2a | JJ approvals | `joydong.org` legal pages, `CLAUDE.md`, `AGENTS.md` |
+| **S1** Hub core | `avery-hub/` Worker, staging env, D1 migrations, `forTeacher` layer, HubService RPC with game registry, token protocol and TokenDO, hub and game sessions, device limit, sign-out, lists and classes, profile, export and delete, admin module behind Access, isolation and concurrency tests, Time Travel rehearsal; vocab app sign-in and "My lists" | 4.5 | 1.5 | 6 | S2a | S0 (the staging Google client) | `avery-hub/src/{db,rpc,auth,admin}`, vocab `state.ts`, vocab `/auth/finish` |
 | **S2a** Stripe setup and state model | webhook inventory; idempotent setup script with readback (staging); `accessFor` with a test per row; CRM verifier and tests copied | 1.5 | 0.5 | 2 | S0, S1 | JJ-issued **test** restricted key | `avery-hub/src/stripe/`, `scripts/stripe-setup.ts` |
 | **S2b** Billing and gate | Checkout (customer reuse, idempotency, branding, auto-renew text), return check, BillingDO webhooks, reconciliation, alert channel, refund-then-cancel tool and runbooks, seat grants; server-side gate: `authorizeRound` with server-built questions, room passes on every room path, round route checks, taste, switch, list limit; anonymous free path; hub-down tests; full test-mode run on staging | 4.5 | 1.5 | 6 | S4a | S1, S2a | `avery-hub/src/billing/`, vocab `index.ts`, `room-do.ts`, `persist.ts`, `policy.ts`, `set.ts`, `router.ts`, `upgrade.ts` |
-| **S3** Rankings | room-only participant id, cumulative 1-hour board, config for keep minutes and room TTL, tests that no id reaches tablets or local storage | 1.5 | 0.5 | 2 | S4b | S2b (room pass, same room files) | vocab room join and ranking screens, `ranking.ts`, `room-do.ts` ranking slot |
+| **S3** Rankings | room-only participant id, cumulative 1-hour board, config for keep minutes and room TTL, tests that no id reaches tablets or local storage, and that the room-only id and nicknames are cleared on room close, expiry and teacher reset | 1.5 | 0.5 | 2 | S4b | S2b (room pass, same room files) | vocab room join and ranking screens, `ranking.ts`, `room-do.ts` ranking slot |
 | **S4a** Analytics base | loader with teacher-only rule and route-change shutdown, server events for sign-in and lists, the four analytics tests, privacy wording hand-off to S0 | 1 | 0.5 | 1.5 | S2b | S1 | new vocab `analytics.ts`, `avery-hub/src/analytics/` |
 | **S4b** Gate events | the seven gate and money events; pricing-test report script | 1 | 0.5 | 1.5 | S3 | S2b, S4a | event calls in `set.ts`, `router.ts`, `upgrade.ts` (after S2b merges) |
-| **S5** Live | live key, live provisioning and readback, live portal, live webhook, receipt test, one real purchase, cancel and refund on the live site, real fee lines recorded, demo re-recorded on the live site, six-month checklist items set up | 1.5 | 0.5 | 2 | none | S2b, S3, S4b, S0 (pages live, consent screen published), tax gate, staging acceptance | ops docs |
+| **S5** Live | live key, live provisioning and readback, live portal, live webhook, automatic receipt proven on the first live purchase, one real purchase, cancel and refund on the live site, real fee lines recorded, demo re-recorded on the live site, six-month checklist items set up | 1.5 | 0.5 | 2 | none | S2b, S3, S4b, S0 (pages live, consent screen published), tax gate, staging acceptance | ops docs |
 
-**Totals:** build 16.5 days, review and fix rounds 6 days, **about 22.5 days of work**.
+**Totals:** build 16.5 days, review and fix rounds 6 days: 22.5 days of work, **about 27 with 20% contingency**.
 
 **Elapsed time:**
 
 | Way of working | Path | Days |
 |---|---|---|
-| Parallel sessions (S0 and S2a beside S1; S4a beside S2b; S3 beside S4b) | S1 (6) then S2b (6) then S3 or S4b (2) then S5 (2) | **about 16 working days** |
-| One session at a time | every slice in a row | about 22.5 working days |
+| Parallel sessions (S2a beside S0 and S1; S4a beside S2b; S3 beside S4b) | S0 (1.5) then S1 (6) then S2b (6) then S3 or S4b (2) then S5 (2) = 17.5 | **about 21 working days with contingency** (17.5 base) |
+| One session at a time | every slice in a row, 22.5 | **about 27 working days with contingency** (22.5 base) |
 | Plus, outside our control | JJ approving legal wording, publishing the consent screen and Google's brand review (can take days, B), issuing Stripe keys, the tax gate | added on top |
 
-Add 20% contingency for a first Google and Stripe integration in this stack (C).
+The 20% contingency (for a first Google and Stripe integration in this stack, C) is already in the headline numbers above.
 
 ```
-S0 (JJ steps) ------------------------------------------------+
-S1 ---------+--> S2b --+--> S3 ---+                            +--> S5 (after tax gate)
-S2a --------+          +--> S4b --+----------------------------+
+S0 --> S1 --+--> S2b --+--> S3 ---+
+S2a --------+          +--> S4b --+--> S5 (after tax gate, S0 pages live, consent screen published)
 S1 --> S4a (beside S2b) --> S4b
 ```
 
