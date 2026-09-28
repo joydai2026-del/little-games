@@ -4,51 +4,63 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Comic Bubbles</title>
-<style id="page-size">@page{size:letter;margin:0.5in}</style>
+<style id="page-size"></style>
 <style>
+/* ---- Shared look (same in all three spikes) ---- */
 :root{
   --cream:#FFF7E8; --mint:#BFE8D8; --mint-deep:#3FA88A; --coral:#FF7B6B; --ink:#2D3436;
+  --white:#FFFFFF; --mint-shadow:#2C7A64; --coral-shadow:#C95A4C; --error:#B3473A;
+  --coral-soft:#FFE9E5; --selected:#FFF3C8; --muted:#B8B8B8;
   --zh:"Kaiti SC","STKaiti","KaiTi","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
   --ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif;
 }
 *{box-sizing:border-box}
+.big-btn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:76px;margin-top:16px;border:0;border-radius:22px;
+  background:var(--mint-deep);color:var(--white);font:800 28px/1 var(--ui);cursor:pointer;box-shadow:0 6px 0 var(--mint-shadow)}
+.big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 var(--mint-shadow)}
+.big-btn.coral{background:var(--coral);box-shadow:0 6px 0 var(--coral-shadow)}
+.big-btn:disabled{opacity:.5}
+.ic{width:36px;height:36px;flex:none;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:var(--error)}
+.link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
+textarea{width:100%;font:22px/1.5 var(--zh);padding:14px;border-radius:18px;border:3px solid var(--mint);background:var(--white);color:var(--ink)}
+textarea:focus{outline:none;border-color:var(--mint-deep)}
+/* Momo: identical SVG in every file; each mode picks which mouth shows */
+.mo-ink{fill:var(--ink)} .mo-eye{fill:var(--white)} .mo-shine{fill:var(--white);opacity:.18} .mo-cheek{fill:var(--coral);opacity:.75}
+.mo-line{stroke:var(--white);stroke-width:4;fill:none;stroke-linecap:round}
+.momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%}
+.momo .m-o,.momo .m-wavy{opacity:0}
+/* ---- Comic Bubbles ---- */
 html,body{margin:0}
-body{background:var(--cream);color:var(--ink);font-family:var(--ui);-webkit-tap-highlight-color:transparent;display:flex;justify-content:center;min-height:100dvh}
+body{background:var(--cream);color:var(--ink);font-family:var(--ui);-webkit-tap-highlight-color:transparent;display:flex;justify-content:center;min-height:100dvh;overflow-x:hidden}
 main{width:100%;max-width:620px;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
 h1{font-size:28px;margin:8px 0 4px;text-align:center}
 .sub{text-align:center;margin:0 0 14px;font-size:18px;opacity:.8}
 .screen{display:none}.screen.on{display:block}
-textarea{width:100%;min-height:200px;font:22px/1.5 var(--zh);padding:14px;border-radius:18px;border:3px solid var(--mint);background:#fff;color:var(--ink)}
-textarea:focus{outline:none;border-color:var(--mint-deep)}
-.big-btn{display:block;width:100%;min-height:76px;margin-top:16px;border:0;border-radius:22px;background:var(--mint-deep);color:#fff;
-  font:800 28px/1 var(--ui);cursor:pointer;box-shadow:0 6px 0 #2c7a64}
-.big-btn:active{transform:translateY(4px);box-shadow:0 2px 0 #2c7a64}
-.note{min-height:24px;margin:8px 0 0;text-align:center;font-size:18px;color:#b3473a}
-.link{min-height:64px;min-width:64px;padding:0 14px;border:0;background:transparent;color:var(--ink);font:600 18px var(--ui);opacity:.7;cursor:pointer}
-.placeholder-note{font-size:13px;opacity:.55;text-align:center;margin-top:10px}
-/* Comic */
+textarea{min-height:200px}
+/* Panels always stack full width (also on laptops), so bubbles and characters never squeeze together */
 .strip{display:grid;gap:12px}
-.panel{position:relative;height:250px;background:#fff;border:5px solid var(--ink);border-radius:10px;overflow:hidden}
+.panel{position:relative;height:250px;background:var(--white);border:5px solid var(--ink);border-radius:10px;overflow:hidden}
 .panel .num{position:absolute;left:8px;top:6px;font:800 16px var(--ui);opacity:.4}
 .panel .ground{position:absolute;left:0;right:0;bottom:0;height:34px;background:var(--mint)}
 .char{position:absolute;bottom:16px;width:104px;height:114px}
 .char.l{left:8%}.char.r{right:8%}.char.c{left:50%;margin-left:-52px}
 .char.flip svg{transform:scaleX(-1)}
-.momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%}
 .friend{position:absolute;bottom:0;left:6px;width:92px;height:92px;border-radius:50% 50% 44% 44%;background:var(--coral)}
 .friend:before,.friend:after{content:"";position:absolute;top:34px;width:12px;height:16px;border-radius:50%;background:var(--ink)}
 .friend:before{left:26px}.friend:after{right:26px}
 .friend i{position:absolute;left:50%;top:56px;margin-left:-12px;width:24px;height:12px;border-bottom:4px solid var(--ink);border-radius:0 0 50% 50%}
 .friend b{position:absolute;left:30px;top:-14px;width:32px;height:24px;border-radius:50% 50% 0 0;background:var(--ink)}
-.bubble{position:absolute;top:18px;min-width:120px;min-height:76px;max-width:62%;padding:10px 16px;background:#fff;border:4px solid var(--ink);border-radius:30px;
-  display:flex;align-items:center;justify-content:center;font:700 42px/1.1 var(--zh);color:var(--ink);cursor:pointer;
-  transition:transform .2s cubic-bezier(.3,1.6,.5,1),background .15s}
+/* Two bubbles in a panel each get under half the width (4%..46% and 54%..96%) and wrap long words */
+.bubble{position:absolute;top:14px;min-width:96px;min-height:76px;max-width:42%;padding:8px 12px;background:var(--white);border:4px solid var(--ink);border-radius:26px;
+  display:flex;align-items:center;justify-content:center;text-align:center;font:700 var(--fs,42px)/1.1 var(--zh);color:var(--ink);cursor:pointer;
+  word-break:break-all;line-break:anywhere;transition:transform .2s cubic-bezier(.3,1.6,.5,1),background .15s}
 .bubble:after{content:"";position:absolute;bottom:-20px;border:12px solid transparent;border-top:20px solid var(--ink);border-bottom:0}
-.bubble.bl{left:6%}.bubble.bl:after{left:34px}
-.bubble.br{right:6%}.bubble.br:after{right:34px}
-.bubble.bc{left:50%;transform:translateX(-50%)}.bubble.bc:after{left:50%;margin-left:-12px}
-.bubble.empty{border-style:dashed;color:#b8b8b8;font:600 22px var(--ui)}
-.bubble.sel{background:#fff3c8;border-color:var(--coral);border-style:solid;animation:pulse .9s ease-in-out infinite alternate}
+.bubble.bl{left:4%}.bubble.bl:after{left:34px}
+.bubble.br{right:4%}.bubble.br:after{right:34px}
+.bubble.bc{left:50%;max-width:80%;transform:translateX(-50%)}.bubble.bc:after{left:50%;margin-left:-12px}
+.bubble.empty{border-style:dashed;color:var(--muted);font:600 22px var(--ui)}
+.bubble.sel{background:var(--selected);border-color:var(--coral);border-style:solid;animation:pulse .9s ease-in-out infinite alternate}
 .bubble.bc.sel{animation:pulsec .9s ease-in-out infinite alternate}
 .bubble.fill{animation:drop .4s cubic-bezier(.3,1.8,.5,1)}
 .bubble.bc.fill{animation:dropc .4s cubic-bezier(.3,1.8,.5,1)}
@@ -58,44 +70,45 @@ textarea:focus{outline:none;border-color:var(--mint-deep)}
 @keyframes dropc{from{transform:translateX(-50%) scale(.4)}}
 .tray-title{font:700 20px var(--ui);margin:16px 0 8px}
 .tray{display:flex;flex-wrap:wrap;gap:8px}
-.tray button{min-height:64px;min-width:64px;padding:6px 14px;border-radius:16px;border:3px solid var(--mint-deep);background:#fff;color:var(--ink);font:700 32px var(--zh);cursor:pointer}
+.tray button{min-height:64px;min-width:64px;max-width:100%;padding:6px 14px;border-radius:16px;border:3px solid var(--mint-deep);background:var(--white);color:var(--ink);font:700 32px var(--zh);cursor:pointer;overflow-wrap:anywhere}
 .tray button:active{background:var(--mint)}
 .row{display:flex;gap:10px;margin-top:16px}
 .row .big-btn{margin-top:0;flex:1;font-size:24px}
-.row .big-btn.plain{background:#fff;color:var(--ink);border:3px solid var(--ink);box-shadow:0 6px 0 var(--ink)}
+.row .big-btn.plain{background:var(--white);color:var(--ink);border:3px solid var(--ink);box-shadow:0 6px 0 var(--ink)}
 .paper{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;font-size:16px}
-.paper button{min-height:64px;min-width:80px;border-radius:14px;border:3px solid var(--mint);background:#fff;font:700 18px var(--ui);color:var(--ink);cursor:pointer}
+.paper button{min-height:64px;min-width:80px;border-radius:14px;border:3px solid var(--mint);background:var(--white);font:700 18px var(--ui);color:var(--ink);cursor:pointer}
 .paper button[aria-pressed="true"]{background:var(--mint);border-color:var(--mint-deep)}
-.print-title{display:none}
-@media (min-width:900px){.strip{grid-template-columns:repeat(3,1fr)}}
+.print-title,.print-empty{display:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media print{
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  body{background:#fff;display:block;min-height:0}
+  body{background:var(--white);display:block;min-height:0}
   main{max-width:none;padding:0}
-  .no-print,#s-paste,.placeholder-note,h1,.sub{display:none!important}
-  #s-comic{display:block!important}
+  .no-print,#s-paste,h1,.sub{display:none!important}
+  body:not(.has-comic) main{display:none}
+  body:not(.has-comic) .print-empty{display:block;font:600 16pt var(--ui)}
+  body.has-comic #s-comic{display:block!important}
   .print-title{display:block;font:800 18pt var(--ui);margin:0 0 8pt}
   .print-title span{font-weight:400;font-size:12pt;margin-left:12pt}
-  .strip{grid-template-columns:1fr;gap:8pt}
-  /* 3 panels fit inside both Letter (10in usable) and A4 (~10.7in usable) with 0.5in margins */
+  .strip{gap:8pt}
+  /* 3 panels fit inside both Letter and A4 with the CONFIG print margin */
   .panel{height:2.95in;break-inside:avoid;border-width:3pt}
-  .bubble{font-size:34pt;animation:none!important}
+  .bubble{font-size:calc(var(--fs,42px) * 1.6);animation:none!important}
   .bubble.empty{color:transparent}
-  .bubble.sel{background:#fff;border-color:var(--ink)}
+  .bubble.sel{background:var(--white);border-color:var(--ink)}
   .bubble.sel.empty{border-style:dashed}
 }
 </style>
 </head>
 <body>
+<p class="print-empty">Make the comic first, then print.</p>
 <main>
   <section class="screen on" id="s-paste">
     <h1>Comic Bubbles</h1>
     <p class="sub">Put words in Momo's mouth. Then act out the comic!</p>
     <textarea id="paste" placeholder="Paste your word list here.&#10;Numbers, pinyin and English are fine. Only the Chinese is kept."></textarea>
     <p class="note" id="paste-note"></p>
-    <button class="big-btn" id="start">Make the comic</button>
-    <p class="placeholder-note">Momo drawing is a placeholder.</p>
+    <button class="big-btn" id="start" data-icon="play">Make the comic</button>
   </section>
 
   <section class="screen" id="s-comic">
@@ -106,31 +119,32 @@ textarea:focus{outline:none;border-color:var(--mint-deep)}
     </div>
     <div class="strip" id="strip"></div>
     <div class="no-print">
-      <div class="tray-title" id="tray-title">Tap a bubble, then tap a word</div>
+      <div class="tray-title">Tap a bubble, then tap a word</div>
       <div class="tray" id="tray"></div>
       <div class="row">
-        <button class="big-btn" id="shuffle">Shuffle</button>
-        <button class="big-btn plain" id="print">Print</button>
+        <button class="big-btn" id="shuffle" data-icon="shuffle">Shuffle</button>
+        <button class="big-btn plain" id="print" data-icon="print">Print</button>
       </div>
       <div class="paper" id="paper">Paper:
-        <button data-size="letter" aria-pressed="true">Letter</button>
-        <button data-size="A4" aria-pressed="false">A4</button>
+        <button data-size="letter">Letter</button>
+        <button data-size="A4">A4</button>
       </div>
-      <p class="placeholder-note">Momo drawing is a placeholder.</p>
     </div>
   </section>
 </main>
 
 <template id="momo-svg">
-  <!-- MOMO SVG (placeholder, identical in all three spikes) -->
-  <svg class="momo" viewBox="0 0 120 130" role="img" aria-label="Momo, a little ink drop">
-    <path d="M60 4 C70 26 108 50 108 84 A48 44 0 0 1 12 84 C12 50 50 26 60 4 Z" fill="#2D3436"/>
-    <ellipse cx="40" cy="62" rx="6" ry="9" fill="#fff" opacity=".18"/>
-    <ellipse cx="44" cy="82" rx="9" ry="11" fill="#fff"/><ellipse cx="76" cy="82" rx="9" ry="11" fill="#fff"/>
-    <circle cx="46" cy="84" r="5" fill="#2D3436"/><circle cx="78" cy="84" r="5" fill="#2D3436"/>
-    <ellipse cx="32" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/><ellipse cx="88" cy="100" rx="7" ry="4" fill="#FF7B6B" opacity=".75"/>
-    <path class="m-happy" d="M50 102 Q60 112 70 102" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
-  </svg>
+<!-- MOMO SVG (placeholder art, identical in all three spikes; CSS picks the mouth) -->
+<svg class="momo" viewBox="0 0 120 130" role="img" aria-label="Momo, a little ink drop">
+  <path class="mo-ink" d="M60 4 C70 26 108 50 108 84 A48 44 0 0 1 12 84 C12 50 50 26 60 4 Z"/>
+  <ellipse class="mo-shine" cx="40" cy="62" rx="6" ry="9"/>
+  <ellipse class="mo-eye" cx="44" cy="82" rx="9" ry="11"/><ellipse class="mo-eye" cx="76" cy="82" rx="9" ry="11"/>
+  <circle class="mo-ink" cx="46" cy="84" r="5"/><circle class="mo-ink" cx="78" cy="84" r="5"/>
+  <ellipse class="mo-cheek" cx="32" cy="100" rx="7" ry="4"/><ellipse class="mo-cheek" cx="88" cy="100" rx="7" ry="4"/>
+  <path class="m-happy mo-line" d="M50 102 Q60 112 70 102"/>
+  <ellipse class="m-o mo-eye" cx="60" cy="106" rx="5" ry="6"/>
+  <path class="m-wavy mo-line" d="M48 106 Q53 100 58 106 T68 106 T74 104"/>
+</svg>
 </template>
 
 <script>
@@ -142,36 +156,78 @@ var CONFIG = {
     { cast: [{ who: "momo", at: "l" }, { who: "friend", at: "r" }],      bubbles: ["bl", "br"] },
     { cast: [{ who: "friend", at: "l" }, { who: "momo", at: "r", flip: true }], bubbles: ["bl", "br"] }
   ],
+  bubbleFonts: [ { upTo: 2, px: 42 }, { upTo: 3, px: 32 }, { upTo: 4, px: 26 }, { upTo: 6, px: 22 }, { upTo: 999, px: 18 } ],  // by character count
   emptyLabel: "tap me",
+  minWords: 3,               // fewer than this and the comic would repeat one word everywhere
+  maxWords: 24,              // longer lists: only the first maxWords go in the tray
+  paper: "letter", printMargin: "0.5in",
   storageKey: "momo-spike-list"
 };
-
-// ---- Paste parser (same in all three spikes) ----
-var CJK = /[㐀-鿿豈-﫿]+/g;
+// ---- Shared helpers: MUST stay identical in all three spikes (check.py compares them) ----
+var HAN = /[〇㐀-鿿豈-﫿\u{20000}-\u{3134f}]+/u;
+var TOKEN = /[〇㐀-鿿豈-﫿\u{20000}-\u{3134f}]+|(?:[A-Za-zÀ-ɏ]+[1-5]?)+/gu;
 var TONE = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+var NUM_PINYIN = /^(?:[bcdfghjklmnpqrstwxyz]{0,2}[aeiouvü]+(?:ng|n|r)?[1-5])+$/i;
+function isPinyin(t){ return TONE.test(t) || NUM_PINYIN.test(t); }
 function parseList(text){
-  var out = [], seen = {};
-  text.split(/\r?\n/).forEach(function(line){
-    line = line.replace(/^\s*[\(（\[]?\s*\d+\s*[\.\)、．:：）\]-]?\s*/, "");
-    line.split(/[,，、;；\/|\t]+/).forEach(function(seg){
-      var zh = seg.match(CJK) || [];
-      var py = (seg.match(/[A-Za-zÀ-ɏ]+[1-5]?/g) || []).filter(function(t){ return TONE.test(t) || /[a-z][1-5]$/i.test(t); });
-      zh.forEach(function(w, i){
-        if (seen[w]) return; seen[w] = 1;
-        var p = zh.length === 1 ? py.join(" ") : (py.length === zh.length ? py[i] : "");
-        out.push({ zh: w, py: p });
-      });
+  var out = [], byWord = {};
+  String(text).normalize("NFC").split(/\r?\n/).forEach(function(line){
+    line = line.replace(/^\s*[\(（\[]?\s*[0-9０-９]+\s*[\.\)、．:：）\]-]?\s*/, "");
+    // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
+    // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
+    var items = [], lead = [];
+    (line.match(TOKEN) || []).forEach(function(t){
+      if (HAN.test(t)) items.push({ zh: t, py: [] });
+      else if (isPinyin(t)) (items.length ? items[items.length - 1].py : lead).push(t);
+    });
+    if (lead.length && items.length && !items[0].py.length) items[0].py = lead;          // "píngguǒ 苹果"
+    var last = items[items.length - 1], tail = last ? last.py.slice() : [];
+    if (items.length > 1 && tail.length === items.length &&
+        items.slice(0, -1).every(function(w){ return !w.py.length; })){                   // "苹果 香蕉 píngguǒ xiāngjiāo"
+      items.forEach(function(w, i){ w.py = [tail[i]]; });
+    }
+    items.forEach(function(w){
+      var py = w.py.join(" ");
+      if (byWord[w.zh]){ if (!byWord[w.zh].py && py) byWord[w.zh].py = py; return; }
+      byWord[w.zh] = { zh: w.zh, py: py }; out.push(byWord[w.zh]);
     });
   });
   return out;
 }
 function store(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
-
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
+function charCount(s){ return Array.from(s).length; }
+// Font size so a word fits its box: long words split into balanced lines of at most maxPerLine characters.
+function fitSize(text, boxWidth, maxPx, maxPerLine){
+  var n = charCount(text), per = Math.ceil(n / Math.ceil(n / maxPerLine));
+  return Math.max(16, Math.min(maxPx, Math.floor(boxWidth / (per * 1.12))));
+}
+var ICON = {
+  play:    '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
+  ear:     '<path d="M7 10a5 5 0 1 1 10 0c0 3.5-3.5 4.5-3.5 7.5a3 3 0 0 1-5.5 1.6"/><path d="M10 10a2 2 0 1 1 4 0"/>',
+  mouth:   '<path d="M3 11c3-3 6-3 9-1 3-2 6-2 9 1-2 5.5-5 7.5-9 7.5S5 16.5 3 11z"/><path d="M3 11c5 2.5 13 2.5 18 0"/>',
+  arrow:   '<path d="M4 12h15M13 6l6 6-6 6"/>',
+  star:    '<path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5l-5.5 2.9 1-6.3L3 9.7l6.2-.9z"/>',
+  eye:     '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  again:   '<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/>',
+  shuffle: '<path d="M3 7h4l10 10h4M3 17h4l3-3M14 10l3-3h4M18 4l3 3-3 3M18 14l3 3-3 3"/>',
+  print:   '<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2"/><path d="M7 14h10v7H7z"/>'
+};
+function setBtn(b, icon, label){
+  b.innerHTML = (ICON[icon] ? '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">' + ICON[icon] + "</svg>" : "") + "<span>" + esc(label) + "</span>";
+}
+document.querySelectorAll("[data-icon]").forEach(function(b){ setBtn(b, b.dataset.icon, b.textContent.trim()); });
+// ---- end shared helpers ----
 // ---- Comic ----
 var $ = function(id){ return document.getElementById(id); };
-var words = [], fills = [], sel = 0, nBubbles = 0;
-function esc(s){ return s.replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+var words = [], fills = [], sel = 0, nBubbles = 0, longOk = false;
 function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
+function bubblePx(w){ var n = charCount(w); for (var i = 0; i < CONFIG.bubbleFonts.length; i++) if (n <= CONFIG.bubbleFonts[i].upTo) return CONFIG.bubbleFonts[i].px; return 18; }
+function setPaper(size){
+  $("page-size").textContent = "@page{size:" + size + ";margin:" + CONFIG.printMargin + "}";
+  document.querySelectorAll("#paper button").forEach(function(x){ x.setAttribute("aria-pressed", x.dataset.size === size); });
+}
 
 function buildStrip(){
   var momo = $("momo-svg").innerHTML, b = 0, html = "";
@@ -189,42 +245,47 @@ function paint(justFilled){
   document.querySelectorAll(".bubble").forEach(function(el){
     var i = +el.dataset.b, w = fills[i];
     el.textContent = w || CONFIG.emptyLabel;
+    el.style.setProperty("--fs", (w ? bubblePx(w) : 42) + "px");
     el.classList.toggle("empty", !w); el.classList.toggle("sel", i === sel);
-    el.classList.remove("fill"); if (i === justFilled){ void el.offsetWidth; el.classList.add("fill"); }
+    el.classList.remove("fill"); if (i === justFilled || justFilled === "all"){ void el.offsetWidth; el.classList.add("fill"); }
   });
 }
 function nextEmpty(from){ for (var k = 1; k <= nBubbles; k++){ var i = (from + k) % nBubbles; if (!fills[i]) return i; } return -1; }
 
+$("paste").oninput = function(){ longOk = false; $("paste-note").textContent = ""; };
 $("start").onclick = function(){
-  words = parseList($("paste").value);
-  if (!words.length){ $("paste-note").textContent = "No Chinese words found. Paste a list with Chinese in it."; return; }
+  var list = parseList($("paste").value);
+  if (!list.length){ $("paste-note").textContent = "No Chinese words found. Paste a list with Chinese in it."; return; }
+  if (list.length < CONFIG.minWords){ $("paste-note").textContent = "Add at least " + plural(CONFIG.minWords, "word", "words") + " to make a comic."; return; }
+  if (list.length > CONFIG.maxWords && !longOk){
+    longOk = true; $("paste-note").textContent = "That is a long list. The comic uses the first " + CONFIG.maxWords + " words. Tap again to go."; return;
+  }
+  words = list.slice(0, CONFIG.maxWords);
   $("paste-note").textContent = ""; store(CONFIG.storageKey, $("paste").value);
   buildStrip(); fills = []; sel = 0;
   $("tray").innerHTML = words.map(function(w){ return "<button>" + esc(w.zh) + "</button>"; }).join("");
+  document.body.classList.add("has-comic");
   paint(); show("s-comic"); window.scrollTo(0, 0);
 };
 $("strip").onclick = function(e){ var b = e.target.closest(".bubble"); if (!b) return; sel = +b.dataset.b; paint(); };
 $("tray").onclick = function(e){
   var b = e.target.closest("button"); if (!b) return;
-  if (sel < 0) sel = 0;
   var i = sel; fills[i] = b.textContent;
   var n = nextEmpty(i); sel = n < 0 ? i : n;   // hop to the next empty bubble so the kid can keep tapping words
   paint(i);
 };
 $("shuffle").onclick = function(){
+  // Every word is used once before any word repeats (repeats only when the list is shorter than the bubbles).
   var pool = words.map(function(w){ return w.zh; });
   for (var i = pool.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)); var t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
   for (var k = 0; k < nBubbles; k++) fills[k] = pool[k % pool.length];
-  sel = -1; paint(); document.querySelectorAll(".bubble").forEach(function(el){ void el.offsetWidth; el.classList.add("fill"); });
+  sel = 0; paint("all");   // a bubble stays highlighted, so the next word tap visibly replaces it
 };
 $("clear").onclick = function(){ fills = []; sel = 0; paint(); };
-$("paper").onclick = function(e){
-  var b = e.target.closest("button"); if (!b) return;
-  $("page-size").textContent = "@page{size:" + b.dataset.size + ";margin:0.5in}";
-  this.querySelectorAll("button").forEach(function(x){ x.setAttribute("aria-pressed", x === b); });
-};
+$("paper").onclick = function(e){ var b = e.target.closest("button"); if (b) setPaper(b.dataset.size); };
 $("print").onclick = function(){ window.print(); };
 $("new-list").onclick = function(){ show("s-paste"); };
+setPaper(CONFIG.paper);
 var saved = store(CONFIG.storageKey); if (saved) $("paste").value = saved;
 </script>
 </body>
