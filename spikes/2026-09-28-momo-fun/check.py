@@ -11,6 +11,10 @@ SHOTS = HERE / "shots"; SHOTS.mkdir(exist_ok=True)
 TMP = pathlib.Path(tempfile.mkdtemp(prefix="momo-check-"))
 STUB = ("if(window.speechSynthesis){speechSynthesis.speak=function(){}};"
         "HTMLMediaElement.prototype.play=function(){return Promise.resolve()};")
+# Real words with real pinyin, 2 to 12 characters, for the screen-fit checks
+LADDER = ("苹果 píngguǒ\n谢谢你 xièxie nǐ\n一石二鸟 yī shí èr niǎo\n巧克力蛋糕 qiǎokèlì dàngāo\n我们一起去公园 wǒmen yìqǐ qù gōngyuán\n"
+          "我今天很高兴见到你 wǒ jīntiān hěn gāoxìng jiàndào nǐ\n我们明天一起去动物园 wǒmen míngtiān yìqǐ qù dòngwùyuán\n"
+          "我们明天早上一起去动物园 wǒmen míngtiān zǎoshang yìqǐ qù dòngwùyuán")
 FRUIT = "1. 苹果 píngguǒ apple\n2. 香蕉 xiāngjiāo banana\n3、西瓜 (xīguā) watermelon\n4) 葡萄 - pútao - grapes\n草莓, 橙子\n"
 LONG = "一石二鸟\n生日快乐\n你好\n谢谢你\n对不起\n巧克力蛋糕\n"
 PHONE = {"width": 390, "height": 844}; LAPTOP = {"width": 1280, "height": 800}
@@ -47,6 +51,9 @@ PARSER_CASES = [
     ("草莓, 橙子", [["草莓", ""], ["橙子", ""]]),
     ("苹果 香蕉 píngguǒ xiāngjiāo", [["苹果", "píngguǒ"], ["香蕉", "xiāngjiāo"]]),
     ("píngguǒ 苹果 xiāngjiāo 香蕉", [["苹果", "píngguǒ"], ["香蕉", "xiāngjiāo"]]),
+    ("apple píngguǒ 苹果", [["苹果", "píngguǒ"]]),
+    ("a) píngguǒ 苹果", [["苹果", "píngguǒ"]]),
+    ("Lesson 3: nǐ hǎo 你好", [["你好", "nǐ hǎo"]]),
     ("hello world", []),
     ("<img src=x onerror=alert(1)> 苹果 </button><script>x</script>", [["苹果", ""]]),
 ]
@@ -134,17 +141,17 @@ with sync_playwright() as p:
         q.context.close()
 
     # Teach Momo on landscape screens and a phone: 4, 5 and 9 character words through every step
-    for vw, vh in [(1280, 720), (1366, 768), (1280, 800), (390, 844)]:
+    for vw, vh in [(1280, 720), (1366, 768), (1280, 800), (390, 844), (320, 568), (430, 932), (820, 1180)]:
         q = page({"width": vw, "height": vh}); q.goto(url("teach-momo.html"))
-        q.fill("#paste", "1. 苹果\n2. 一石二鸟\n3. 巧克力蛋糕\n4. 我今天很高兴见到你\n5. 谢谢你"); q.click("#start"); probs = []
-        for _ in range(20):
+        q.fill("#paste", LADDER); q.click("#start"); probs = []
+        for _ in range(32):
             q.wait_for_timeout(400); probs += q.evaluate(TEACH_LAYOUT)
             if vw == 390 and q.inner_text("#word") == "巧克力蛋糕" and q.get_attribute("#momo", "data-mood") == "gotit":
                 q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-long-word.png"))
             if (vw, vh) == (1280, 720) and q.inner_text("#word") == "我今天很高兴见到你" and q.get_attribute("#momo", "data-mood") == "gotit":
                 q.wait_for_timeout(1200); q.screenshot(path=str(SHOTS / "teach-landscape-1280x720.png"))
             q.click("#act")
-        check(f"teach {vw}x{vh}: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)", not probs, "; ".join(probs[:4]))
+        check(f"teach {vw}x{vh}: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)", not probs, "; ".join(probs[:4]))
         q.context.close()
 
     # Rotation in the middle of a round: phone upright -> sideways -> upright, at every step, every word
@@ -155,6 +162,9 @@ with sync_playwright() as p:
             q.set_viewport_size(vp); q.wait_for_timeout(450); probs += [f"{vp['width']}x{vp['height']} " + x for x in q.evaluate(TEACH_LAYOUT)]
         q.click("#act")
     check("teach: rotating the phone mid-round (844x390 and back) keeps button, word, bubble and Momo on screen at every step", not probs, "; ".join(probs[:4]))
+    n_err = len(errors); done = q.is_visible("#s-done")
+    for vp in [{"width": 844, "height": 390}, PHONE]: q.set_viewport_size(vp); q.wait_for_timeout(450)
+    check("teach: rotating after the last word is finished causes no error", done and len(errors) == n_err, "; ".join(errors[n_err:n_err + 2]) or f"end screen shown: {done}")
     q.context.close()
 
     # 4. Karaoke
@@ -195,14 +205,23 @@ with sync_playwright() as p:
       const m=document.querySelector('.momo-row').getBoundingClientRect();if(m.bottom>H+1)out.push('Momo off screen by '+Math.round(m.bottom-H));
       const b=document.getElementById('reveal').getBoundingClientRect();if(b.bottom>H+1)out.push('button off screen by '+Math.round(b.bottom-H));
       if(document.documentElement.scrollHeight>H+1)out.push('page scrolls');
+      const rows={};[...k.querySelectorAll('span')].forEach(s=>{const t=Math.round(s.getBoundingClientRect().top/4);rows[t]=(rows[t]||0)+1});
+      const n=Object.values(rows);if(!st.classList.contains('is-gap')&&n.length>1&&Math.max(...n)-Math.min(...n)>1)out.push('uneven lines '+n.join('/'));
+      const c=document.getElementById('cheer');if(c.classList.contains('show')){const a=c.getBoundingClientRect(),b=k.getBoundingClientRect();
+        if(Math.min(a.right,b.right)>Math.max(a.left,b.left)&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top))out.push('cheer covers the word')}
       if(!st.classList.contains('is-gap')&&k.textContent.length<=3&&new Set([...k.querySelectorAll('span')].map(s=>Math.round(s.getBoundingClientRect().top))).size>1)out.push('short word split');
       return out.map(s=>k.textContent+(st.classList.contains('is-gap')?' [blank]':' [singing]')+': '+s)}"""
-    for vw, vh in [(1280, 720), (390, 844)]:
+    for vw, vh in [(1280, 720), (390, 844), (320, 568), (430, 932), (820, 1180)]:
         q = page({"width": vw, "height": vh}); q.goto(url("karaoke-blanks.html"))
-        q.fill("#paste", "我今天很高兴见到你\n巧克力蛋糕\n你好"); q.click("#go"); q.evaluate("()=>{blanks={1:true}}"); q.click("#go")
-        q.wait_for_timeout(500); probs = q.evaluate(KAR_FIT)
-        q.wait_for_selector("#stage.is-gap", timeout=8000); q.wait_for_timeout(300); probs += q.evaluate(KAR_FIT)
-        check(f"karaoke {vw}x{vh}: 9-character word, Momo and the button stay on screen", not probs, "; ".join(probs))
+        q.fill("#paste", "谢谢你\n我们一起去公园\n我今天很高兴见到你\n我们明天一起去动物园\n巧克力蛋糕"); q.click("#go")
+        q.evaluate("()=>{blanks={1:true,3:true};CONFIG.speeds.slow=9000}"); q.click("[data-speed=slow]"); q.click("#go"); probs = []
+        for i in range(5):
+            q.wait_for_function(f"idx==={i}", timeout=20000); q.wait_for_timeout(450); probs += q.evaluate(KAR_FIT)
+            if i in (1, 3):
+                q.click("#reveal"); q.wait_for_timeout(700); probs += [x + " (revealed)" for x in q.evaluate(KAR_FIT)]
+                q.wait_for_function(f"idx==={i + 1}", timeout=5000)
+            else: q.evaluate("()=>{clearTimeout(timer);idx++;step()}")
+        check(f"karaoke {vw}x{vh}: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word", not probs, "; ".join(probs[:4]))
         q.context.close()
     q = page(PHONE); q.goto(url("karaoke-blanks.html"))
     q.fill("#paste", "谢谢你\n我今天很高兴见到你\n巧克力蛋糕\n你好"); q.click("#go")
@@ -214,6 +233,9 @@ with sync_playwright() as p:
             q.set_viewport_size(vp); q.wait_for_timeout(450); probs += [f"{vp['width']}x{vp['height']} " + x for x in q.evaluate(KAR_FIT)]
         if i < 2: q.evaluate("()=>{clearTimeout(timer);idx++;step()}")
     check("karaoke: rotating the phone mid-song (844x390 and back) keeps word, Momo and button on screen, 3 characters on one line (singing and blank)", not probs, "; ".join(probs[:4]))
+    q.evaluate("()=>{clearTimeout(timer);idx=words.length;step()}"); q.wait_for_selector("#s-done.on", timeout=5000); n_err = len(errors)
+    for vp in [{"width": 844, "height": 390}, PHONE]: q.set_viewport_size(vp); q.wait_for_timeout(450)
+    check("karaoke: rotating after the song is finished causes no error", len(errors) == n_err, "; ".join(errors[n_err:n_err + 2]))
     q.context.close()
     for vp_name, vp in [("phone", PHONE), ("laptop", LAPTOP)]:
         q = page(vp); q.goto(url("karaoke-blanks.html")); q.fill("#paste", LONG); q.click("#go")
@@ -269,7 +291,9 @@ with sync_playwright() as p:
     after = pg.eval_on_selector_all(".bubble", "e=>e.map(x=>x.textContent)")
     check("comic: after Shuffle a word tap changes the highlighted bubble only", after[0] == "香蕉" and after[1:] == before[1:], f"{before} -> {after}")
     check("comic: Shuffle and Print have icons", pg.locator("#shuffle svg.ic").count() == 1 and pg.locator("#print svg.ic").count() == 1)
-    pg.evaluate("()=>{CONFIG.printMargin='1in';setPaper('letter')}"); pg.emulate_media(media="print")
+    pg.evaluate("()=>{CONFIG.printMargin='1 in';setPaper('letter')}")
+    check("comic: a margin typed as '1 in' is written as valid CSS", "margin:1.000in" in pg.eval_on_selector("#page-size", "e=>e.textContent"), pg.eval_on_selector("#page-size", "e=>e.textContent"))
+    pg.emulate_media(media="print")
     pg.pdf(path=str(TMP / "comic-1in.pdf"), prefer_css_page_size=True, print_background=True); pg.emulate_media(media="screen")
     check("comic: a 1 inch print margin still prints 1 Letter page", pages(TMP / "comic-1in.pdf") == 1, f"{pages(TMP / 'comic-1in.pdf')} pages")
     pg.evaluate("()=>{CONFIG.printMargin='0.5in'}")

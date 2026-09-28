@@ -1,6 +1,6 @@
-Momo spikes check receipt  2026-09-28T11:47:39
+Momo spikes check receipt  2026-09-28T12:15:35
 Chromium headless via Python Playwright; viewports 320x568, 390x844, 844x390 (rotated mid-round), 1280x720, 1280x800, 1366x768; sound stubbed
-93 PASS, 0 FAIL
+105 PASS, 0 FAIL
 
 PASS  identical in all 3 files: shared JS (parser, helpers, icons)
 PASS  identical in all 3 files: shared CSS tokens
@@ -23,6 +23,9 @@ PASS  parser: 葡萄 / 葡萄 pútao
 PASS  parser: 草莓, 橙子
 PASS  parser: 苹果 香蕉 píngguǒ xiāngjiāo
 PASS  parser: píngguǒ 苹果 xiāngjiāo 香蕉
+PASS  parser: apple píngguǒ 苹果
+PASS  parser: a) píngguǒ 苹果
+PASS  parser: Lesson 3: nǐ hǎo 你好
 PASS  parser: hello world
 PASS  parser: <img src=x onerror=alert(1)> 苹果 </button><script
 PASS  fit: no size is returned for a box with no height or width
@@ -45,11 +48,15 @@ PASS  teach laptop: '巧克力蛋糕' fits, no sideways scroll
 PASS  teach laptop: '我今天很高兴见到你' fits, no sideways scroll
 PASS  teach laptop: '一石二鸟' fits, no sideways scroll
 PASS  teach laptop: one-word grammar
-PASS  teach 1280x720: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)
-PASS  teach 1366x768: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)
-PASS  teach 1280x800: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)
-PASS  teach 390x844: button, word and bubble all fit on screen, even lines, 2-3 characters on one line (2, 3, 4, 5, 9 characters, every step)
+PASS  teach 1280x720: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 1366x768: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 1280x800: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 390x844: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 320x568: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 430x932: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
+PASS  teach 820x1180: button, word and bubble with pinyin all fit on screen, even lines, 2-3 characters on one line (2 to 12 characters, every step)
 PASS  teach: rotating the phone mid-round (844x390 and back) keeps button, word, bubble and Momo on screen at every step
+PASS  teach: rotating after the last word is finished causes no error
 PASS  tap targets >= 64 px: karaoke paste screen
 PASS  shared list remembered across files (Chromium, file://)
 PASS  karaoke: every 3rd word starts as a blank
@@ -63,9 +70,13 @@ PASS  karaoke: New list resets setup
 PASS  karaoke: Stop halts the song
 PASS  karaoke: too-short list gets a plain message
 PASS  karaoke: every word a blank plays through
-PASS  karaoke 1280x720: 9-character word, Momo and the button stay on screen
-PASS  karaoke 390x844: 9-character word, Momo and the button stay on screen
+PASS  karaoke 1280x720: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word
+PASS  karaoke 390x844: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word
+PASS  karaoke 320x568: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word
+PASS  karaoke 430x932: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word
+PASS  karaoke 820x1180: 3 to 10 character words sung, blank and revealed: word, Momo, button on screen, even lines, cheer never over the word
 PASS  karaoke: rotating the phone mid-song (844x390 and back) keeps word, Momo and button on screen, 3 characters on one line (singing and blank)
+PASS  karaoke: rotating after the song is finished causes no error
 PASS  karaoke phone: 5-character word fits and sweeps in reading order
 PASS  karaoke laptop: 5-character word fits and sweeps in reading order
 PASS  tap targets >= 64 px: comic phone paste screen
@@ -89,6 +100,7 @@ PASS  comic: tap bubble then word fills it
 PASS  comic: after Shuffle a bubble is highlighted
 PASS  comic: after Shuffle a word tap changes the highlighted bubble only
 PASS  comic: Shuffle and Print have icons
+PASS  comic: a margin typed as '1 in' is written as valid CSS
 PASS  comic: a 1 inch print margin still prints 1 Letter page
 PASS  comic: print on letter is 1 page
 PASS  comic: print on A4 is 1 page

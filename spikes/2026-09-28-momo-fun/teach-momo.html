@@ -44,14 +44,14 @@ textarea{min-height:220px;resize:vertical}
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .count{background:var(--mint);border-radius:999px;padding:12px 18px;font:800 20px var(--ui)}
 .word-box{width:100%}
-.word{font:700 190px/1.1 var(--zh);text-align:center;margin:8px 0 0;letter-spacing:.04em;word-break:break-all;line-break:anywhere}
+.word{font:700 190px/1.1 var(--zh);text-align:center;margin:8px 0 0;letter-spacing:.04em;word-break:break-all;line-break:anywhere;text-wrap:balance}
 .stage{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-height:0}
 .bubble{position:relative;background:var(--white);border:4px solid var(--ink);border-radius:26px;padding:calc(12px * var(--bs,1)) calc(22px * var(--bs,1));margin-bottom:calc(18px * var(--bs,1));
   text-align:center;min-width:150px;max-width:92%;opacity:0;transform:scale(.6);transition:opacity .2s,transform .25s cubic-bezier(.3,1.6,.5,1)}
 .bubble.show{opacity:1;transform:scale(1)}
 .bubble[hidden]{display:none}
 .bubble:after{content:"";position:absolute;left:50%;bottom:-18px;margin-left:-14px;border:14px solid transparent;border-top:18px solid var(--ink);border-bottom:0}
-.bubble .zh{font:700 56px/1.1 var(--zh);word-break:break-all;line-break:anywhere}
+.bubble .zh{font:700 56px/1.1 var(--zh);word-break:break-all;line-break:anywhere;text-wrap:balance}
 .bubble .py{font:600 calc(24px * var(--bs,1))/1.2 var(--ui);color:var(--mint-deep);margin-top:4px}
 .bubble .say{font:800 calc(30px * var(--bs,1))/1.2 var(--ui)}
 .momo-wrap{width:var(--momo,200px);height:var(--momo,200px);position:relative;flex:none}
@@ -157,10 +157,12 @@ function parseList(text){
     // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
     // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
     // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
-    var toks = line.match(TOKEN) || [], before = toks.length && !HAN.test(toks[0]) && isPinyin(toks[0]);
+    // (Other text before the first word or pinyin, like "a)" or "Lesson 3:", is ignored for this.)
+    var toks = (line.match(TOKEN) || []).filter(function(t){ return HAN.test(t) || isPinyin(t); });
+    var before = toks.length > 0 && !HAN.test(toks[0]);
     var items = [], pending = [];
     toks.forEach(function(t){
-      if (HAN.test(t)){ items.push({ zh: t, py: before ? pending : [] }); pending = []; }
+      if (HAN.test(t)){ items.push({ zh: t, py: pending }); pending = []; }
       else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
     });
     if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
@@ -185,6 +187,7 @@ function charCount(s){ return Array.from(s).length; }
 // (at most maxPerLine characters a line) and caps the element width so the lines come out even.
 // Words of up to ONE_LINE_UP_TO characters never wrap. Returns null when the box has no room at all:
 // callers shrink their other parts first (see layout()) and only then fall back to the smallest size.
+// The element also needs CSS text-wrap:balance so a word split over lines comes out even (3/2/2, not 3/3/1).
 var ONE_LINE_UP_TO = 3, SMALLEST_PX = 14;
 function fitWord(text, boxW, boxH, maxPx, maxPerLine){
   if (!(boxW > 0) || !(boxH > 0)) return null;
@@ -253,11 +256,18 @@ function layout(){
   document.documentElement.style.setProperty("--momo", momo + "px");
   document.documentElement.style.setProperty("--bs", (room / CONFIG.bubbleSpacePx).toFixed(3));
   if (words[idx]) applyFit($("word"), words[idx].zh, $("word-box").clientWidth, wordHeight(momo, room), CONFIG.wordMaxPx, CONFIG.maxCharsPerLine);
-  var z = $("bubble").querySelector(".zh");
-  if (z && !$("bubble").hidden){
-    var bs = room / CONFIG.bubbleSpacePx, w = words[idx];
-    var zhH = room - (18 + 32) * bs - 8 - (w.py ? 34 * bs : 0);   // bubble room minus tail, padding, border and pinyin line
-    applyFit(z, w.zh, $("stage").clientWidth * 0.92 - 52 * bs - 8, zhH, CONFIG.bubbleMaxPx, CONFIG.maxCharsPerLine);
+  var z = $("bubble").querySelector(".zh"), w = words[idx];
+  if (z && !$("bubble").hidden && w){                 // no current word once the round is finished
+    var bs = room / CONFIG.bubbleSpacePx;
+    var py = $("bubble").querySelector(".py"), zhW = $("stage").clientWidth * 0.92 - 52 * bs - 8;
+    // bubble room minus tail, padding, border and the pinyin as it really wraps (long pinyin can take 2-3 lines)
+    var zhH = room - (18 + 32) * bs - 8 - (py ? py.offsetHeight + 4 : 0);
+    applyFit(z, w.zh, zhW, zhH, CONFIG.bubbleMaxPx, CONFIG.maxCharsPerLine);
+    // still too tall (very long pinyin on a small phone): shrink the pinyin, then refit the word
+    for (var k = 0; k < 6 && py && $("bubble").offsetHeight + 18 * bs > room; k++){
+      py.style.fontSize = Math.max(12, parseFloat(getComputedStyle(py).fontSize) * 0.85) + "px";
+      applyFit(z, w.zh, zhW, room - (18 + 32) * bs - 8 - py.offsetHeight - 4, CONFIG.bubbleMaxPx, CONFIG.maxCharsPerLine);
+    }
   }
 }
 function act(icon, label, coral){ setBtn($("act"), icon, label); $("act").classList.toggle("coral", !!coral); }
@@ -300,6 +310,7 @@ $("act").onclick = function(){
   if (phase === "gotit"){
     idx++;
     if (idx < words.length) return loadWord();
+    bubble("");
     $("done-title").textContent = learned === 1 ? "Momo learned the word!" : "Momo learned all " + learned + " words!";
     $("learned").innerHTML = words.map(function(w){ return "<span>" + esc(w.zh) + "</span>"; }).join("");
     show("s-done");

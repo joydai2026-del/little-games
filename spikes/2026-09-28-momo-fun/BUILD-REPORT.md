@@ -38,9 +38,9 @@ Paste reader: pairs each Chinese word with the pinyin that follows it before loo
 | `comic-print-letter.png`, `comic-print-a4.png` | print | Printed page, 1 page each |
 | `review-board.png` | 1280 | The review board (first round) |
 
-## Verified by the committed check (`python3 check.py`, 93 PASS, 0 FAIL; full list in `check-receipt.txt`)
+## Verified by the committed check (`python3 check.py`, 105 PASS, 0 FAIL; full list in `check-receipt.txt`)
 
-Headless Chromium through Python Playwright, phone 320x568, 390x844 and turned sideways (844x390, rotated in the middle of a round), laptop 1280x800, 1280x720 and 1366x768, sound stubbed.
+Headless Chromium through Python Playwright, phones 320x568, 390x844, 430x932 and turned sideways (844x390, rotated in the middle of a round), tablet 820x1180, laptops 1280x720, 1280x800 and 1366x768, sound stubbed. Teach and Karaoke fit checks use real words of 2 to 12 characters with real pinyin.
 
 | Area | What is checked | Grade |
 |---|---|---|
@@ -94,10 +94,22 @@ Not verified (C): real phones and tablets, Safari/iOS (including Safari's suppor
 | Impossible height budget treated as valid | `fitWord` returns nothing for a box with no height or width; on a short screen Momo shrinks first, then the bubble room (Teach) or lyric strip (Karaoke), and only then the word takes the smallest size; line limit of 0 is treated as 1 |
 | Short-word boundary | Words of up to 3 characters never wrap; check.py tests 2 and 3 characters in Teach, Karaoke and the fit function |
 
+## Round 5 fixes (final round: Codex round 4 and Claude round 3)
+
+| Reviewer item | Fix |
+|---|---|
+| Crash when the screen turns after the last word (Codex) | Teach only refits the bubble while there is a current word, and the bubble is cleared on the end screen; Karaoke only refits while a song is playing. check.py rotates after the final word and after the song ends and asserts no error; the Teach check fails on the previous build |
+| Lopsided wrapped words (3/3/1) | Words split over lines are balanced (CSS `text-wrap: balance`, so 7 characters come out 3/2/2). Supported in current Chrome and Safari 17.5+; older browsers fall back to the old split (C) |
+| Pinyin lost when text comes before it (`a) píngguǒ 苹果`, `Lesson 3: nǐ hǎo 你好`) | The reader ignores other text when deciding which side the pinyin is on; all three copies identical; 3 cases added |
+| 320x568: button pushed off by long pinyin (Teach) and on every blank (Karaoke) | Teach measures the pinyin as it really wraps and shrinks it if the bubble would still be too tall; Karaoke sizes the blank box from what is left after the shout line; 320x568, 430x932 and 820x1180 added to the fit checks |
+| Margin typed as "1 in" | Normalised to valid CSS inches |
+| Cheer bubble covered the revealed word | Cheer now sits beside Momo; check.py asserts it never overlaps the word |
+
 ## Open questions for JJ
 
 1. Kid-facing English: keep plain-English buttons with pictures, or move kid screens to Chinese or pictures only?
 2. Teach Momo: Momo is confused exactly once per word, then gets it. Vary it? (`CONFIG.triesBeforeGotIt`)
 3. Karaoke works on single words, so it reads like a word parade, not a song line. Add a sentence or chant field if kept?
 4. Comic: keep the invented coral friend, or a named second character?
+6. Should a 4-character idiom (一石二鸟) always stay on one line? Today it can split 2 over 2 on a big screen when that makes it larger.
 5. Momo's cheers mix Chinese (好棒！) and one English "Yes!". All Chinese?

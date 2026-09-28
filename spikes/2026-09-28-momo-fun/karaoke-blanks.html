@@ -54,7 +54,7 @@ textarea{min-height:170px}
 .strip span.now{opacity:1;color:var(--mint-deep)}
 .strip span.gap{color:var(--coral)}
 .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;width:100%}
-.kword{font:700 170px/1.15 var(--zh);letter-spacing:.04em;text-align:center;max-width:100%;word-break:break-all;line-break:anywhere}
+.kword{font:700 170px/1.15 var(--zh);letter-spacing:.04em;text-align:center;max-width:100%;word-break:break-all;line-break:anywhere;text-wrap:balance}
 .kword span{color:var(--ink)}
 /* Sweep runs character by character, so a word that wraps onto two lines still lights up in reading order */
 .kword.sing span{background:linear-gradient(90deg,var(--coral) 0 50%,var(--ink) 50% 100%) 100% 0/200% 100% no-repeat;
@@ -75,9 +75,11 @@ textarea{min-height:170px}
 .momo{animation:sway 1.4s ease-in-out infinite alternate}
 .momo-wrap.cheer .momo{animation:jump .6s cubic-bezier(.3,1.8,.5,1) 3}
 .momo-wrap.shouting .m-happy{opacity:0}.momo-wrap.shouting .m-o{opacity:1}
-.cheer-bubble{background:var(--white);border:4px solid var(--ink);border-radius:22px;padding:8px 16px;font:800 26px var(--zh);opacity:0;transform:translateX(-50%) scale(.5);
-  transition:all .25s cubic-bezier(.3,1.6,.5,1);position:absolute;left:50%;bottom:calc(var(--momo-row,130px) + 50px);white-space:nowrap;transform-origin:50% 100%}
-.cheer-bubble.show{opacity:1;transform:translateX(-50%) scale(1)}
+/* Cheer sits beside Momo, inside Momo's row, so it never covers the word that was just revealed */
+.cheer-bubble{background:var(--white);border:4px solid var(--ink);border-radius:22px;padding:6px 12px;font:800 clamp(16px,calc(var(--momo-row,130px) * .2),26px) var(--zh);
+  opacity:0;transform:scale(.5);transition:all .25s cubic-bezier(.3,1.6,.5,1);position:absolute;left:calc(50% + var(--momo-row,130px) * .3);
+  bottom:calc(var(--momo-row,130px) * .45);white-space:nowrap;transform-origin:0 100%}
+.cheer-bubble.show{opacity:1;transform:scale(1)}
 @keyframes sway{from{transform:rotate(-6deg)}to{transform:rotate(6deg)}}
 @keyframes jump{40%{transform:translateY(-40px) scale(.94,1.08)}70%{transform:translateY(0) scale(1.1,.9)}}
 .done-title{font:800 34px/1.2 var(--ui);text-align:center;margin:40px 0 10px}
@@ -169,10 +171,12 @@ function parseList(text){
     // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
     // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
     // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
-    var toks = line.match(TOKEN) || [], before = toks.length && !HAN.test(toks[0]) && isPinyin(toks[0]);
+    // (Other text before the first word or pinyin, like "a)" or "Lesson 3:", is ignored for this.)
+    var toks = (line.match(TOKEN) || []).filter(function(t){ return HAN.test(t) || isPinyin(t); });
+    var before = toks.length > 0 && !HAN.test(toks[0]);
     var items = [], pending = [];
     toks.forEach(function(t){
-      if (HAN.test(t)){ items.push({ zh: t, py: before ? pending : [] }); pending = []; }
+      if (HAN.test(t)){ items.push({ zh: t, py: pending }); pending = []; }
       else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
     });
     if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
@@ -197,6 +201,7 @@ function charCount(s){ return Array.from(s).length; }
 // (at most maxPerLine characters a line) and caps the element width so the lines come out even.
 // Words of up to ONE_LINE_UP_TO characters never wrap. Returns null when the box has no room at all:
 // callers shrink their other parts first (see layout()) and only then fall back to the smallest size.
+// The element also needs CSS text-wrap:balance so a word split over lines comes out even (3/2/2, not 3/3/1).
 var ONE_LINE_UP_TO = 3, SMALLEST_PX = 14;
 function fitWord(text, boxW, boxH, maxPx, maxPerLine){
   if (!(boxW > 0) || !(boxH > 0)) return null;
@@ -298,7 +303,8 @@ function layout(){
   if (need > 0){ strip = Math.max(CONFIG.minStripFontPx, strip - need); root.setProperty("--strip-font", strip + "px"); }
   var h = wordHeight(), shout = Math.max(16, Math.min(CONFIG.shoutFontPx, Math.round(h * 0.16)));
   root.setProperty("--shout-font", shout + "px");
-  root.setProperty("--gap-h", Math.max(32, Math.min(CONFIG.gapBoxMaxPx, window.innerWidth * 0.36, h - shout * 1.2 - 14)) + "px");
+  var shoutH = $("stage").querySelector(".shout").offsetHeight || Math.ceil(shout * 1.2 * 2);   // the shout line can wrap on a narrow phone
+  root.setProperty("--gap-h", Math.max(28, Math.min(CONFIG.gapBoxMaxPx, window.innerWidth * 0.36, h - shoutH - 18)) + "px");
   if (words[idx] && playing) applyFit($("kword"), words[idx].zh, $("stage").clientWidth, h, CONFIG.wordMaxPx, CONFIG.maxCharsPerLine);
   if (playing) moveStrip();
 }

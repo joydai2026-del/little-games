@@ -179,10 +179,12 @@ function parseList(text){
     // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
     // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
     // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
-    var toks = line.match(TOKEN) || [], before = toks.length && !HAN.test(toks[0]) && isPinyin(toks[0]);
+    // (Other text before the first word or pinyin, like "a)" or "Lesson 3:", is ignored for this.)
+    var toks = (line.match(TOKEN) || []).filter(function(t){ return HAN.test(t) || isPinyin(t); });
+    var before = toks.length > 0 && !HAN.test(toks[0]);
     var items = [], pending = [];
     toks.forEach(function(t){
-      if (HAN.test(t)){ items.push({ zh: t, py: before ? pending : [] }); pending = []; }
+      if (HAN.test(t)){ items.push({ zh: t, py: pending }); pending = []; }
       else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
     });
     if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
@@ -207,6 +209,7 @@ function charCount(s){ return Array.from(s).length; }
 // (at most maxPerLine characters a line) and caps the element width so the lines come out even.
 // Words of up to ONE_LINE_UP_TO characters never wrap. Returns null when the box has no room at all:
 // callers shrink their other parts first (see layout()) and only then fall back to the smallest size.
+// The element also needs CSS text-wrap:balance so a word split over lines comes out even (3/2/2, not 3/3/1).
 var ONE_LINE_UP_TO = 3, SMALLEST_PX = 14;
 function fitWord(text, boxW, boxH, maxPx, maxPerLine){
   if (!(boxW > 0) || !(boxH > 0)) return null;
@@ -254,10 +257,11 @@ var $ = function(id){ return document.getElementById(id); };
 var words = [], fills = [], sel = 0, nBubbles = 0, longOk = false;
 function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
 function bubblePx(w){ var n = charCount(w); for (var i = 0; i < CONFIG.bubbleFonts.length; i++) if (n <= CONFIG.bubbleFonts[i].upTo) return CONFIG.bubbleFonts[i].px; return 18; }
-function inches(v){ var m = /([\d.]+)\s*(in|mm|cm)/.exec(v) || [0, 0.5, "in"]; return +m[1] / ({ in: 1, mm: 25.4, cm: 2.54 })[m[2]]; }
+// Accepts "0.5in", "1 in", "12mm", "2.5 cm"; anything else falls back to half an inch. Always written back as inches.
+function inches(v){ var m = /([\d.]+)\s*(in|mm|cm)/i.exec(String(v)) || [0, 0.5, "in"]; return +m[1] / ({ in: 1, mm: 25.4, cm: 2.54 })[m[2].toLowerCase()]; }
 function setPaper(size){
   var panelIn = (CONFIG.paperHeightIn[size] - 2 * inches(CONFIG.printMargin) - CONFIG.printTitleIn) / CONFIG.panels.length - 0.05;
-  $("page-size").textContent = "@page{size:" + size + ";margin:" + CONFIG.printMargin + "}" +
+  $("page-size").textContent = "@page{size:" + size + ";margin:" + inches(CONFIG.printMargin).toFixed(3) + "in}" +
     "@media print{#strip .panel{height:" + panelIn.toFixed(2) + "in}}";
   document.querySelectorAll("#paper button").forEach(function(x){ x.setAttribute("aria-pressed", x.dataset.size === size); });
 }
