@@ -5,7 +5,7 @@
    would change with it. */
 :root {
   --white: var(--card);
-  --sheet-paper: var(--card);
+  --sheet-paper: #FFFFFF; /* printed paper stays plain white: no tint on the page */
   --grid-border: var(--mascot-2);
   --grid-guide: #8FD0B8;
   --grid-diag: #CDEBDF;

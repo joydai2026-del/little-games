@@ -270,7 +270,9 @@ function teacherRace(ctx: Ctx): HTMLElement {
         ? h('span', { class: 'timer', 'data-until': String(counting ? s.goAt : s.endsAt), text: fmt(secondsLeft(ctx, counting ? s.goAt : s.endsAt)) })
         : h('span', { class: 'timer', text: 'Finished!' }),
     ]),
-    h('h1', { text: s.phase === 'done' ? 'Winners!' : counting ? 'Ready, set...' : 'Race is on!' }),
+    s.phase === 'done'
+      ? h('div', { class: 'winners-head' }, [momo('bounce'), h('h1', { text: 'Winners!' })])
+      : h('h1', { text: counting ? 'Ready, set...' : 'Race is on!' }),
     h('div', { class: 'chips' }, s.roundChars.map((c) => h('span', { class: 'chip', text: c }))),
     board(s),
     footer,

@@ -29,6 +29,7 @@ input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900;
 .notice.warn { background: var(--butter-soft); border: 3px dashed var(--pink); }
 /* pink text fails on paper, so errors are cocoa on a soft pink chip (10.5:1). */
 .error { color: var(--ink); background: var(--pink-soft); border-radius: 12px; padding: 8px 12px; font-weight: 800; }
+.error:empty { display: none; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { font-family: var(--font-han); font-size: 2rem; width: 56px; height: 56px; display: grid; place-items: center; background: var(--card); border: 2px solid var(--mascot); border-radius: 12px; }
@@ -42,6 +43,8 @@ input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900;
 .momo { width: 128px; height: 128px; object-fit: contain; display: block; margin: 8px auto; transform-origin: 50% 85%; }
 .momo.bounce { animation: bounce 1.2s ease-in-out infinite; }
 .momo.tilt { animation: tilt 2.4s ease-in-out infinite; }
+.winners-head { display: flex; align-items: center; gap: 16px; }
+.winners-head .momo { width: 96px; height: 96px; margin: 0; }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px) rotate(-4deg); } }
 @keyframes tilt { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
 @media (prefers-reduced-motion: reduce) { .momo, .cheer .momo { animation: none !important; } }
