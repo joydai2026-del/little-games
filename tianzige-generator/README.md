@@ -30,8 +30,10 @@ output, rasterized). Live checks with timestamps and exact responses:
 | next 0-3 | The whole character in light gray, to trace over (teacher picks how many) |
 | the rest | Empty cells to write it alone, wrapping to more rows when needed |
 
-Words (学校, 画蛇添足) stay together: a page breaks between words, never inside one, unless a single
-word is taller than a whole page. Leftover space on each page becomes extra practice rows, given to
+Words (学校, 画蛇添足) stay together: a page breaks between words, never inside one. The one
+exception is a word taller than a whole page at the chosen size (a long traditional idiom at 6 boxes
+a row): it starts wherever the current page has room and runs onto the next page, and Momo says so
+on screen. Leftover space on each page becomes extra practice rows, given to
 the characters with the most strokes first, so no page has a dead lower half. No English on the student page: only 姓名, 日期, and the
 brand line at the foot.
 
@@ -41,10 +43,11 @@ Anything that is not a Chinese character is a separator: numbering, punctuation,
 without tone marks), English glosses, emoji. A run of up to 4 characters written together stays
 one word; a longer run (一二三四五六七) is treated as single characters.
 
-- **Headings are dropped:** a short line ending in a colon (`我的家人：`), a heading label before a
-  colon (`第三课 生字：校` keeps only 校), and a line made only of heading words (第N课 / 第N单元,
-  生字, 生词, 词语, 课文, 练习, 听写, 写字, 姓名, 日期, with 本周 / 本课 / 今天 in front). The list
-  lives in `src/shared/parse.ts`.
+- **Headings are skipped by shape only, never by word** (练习, 日期, 姓名 are also vocabulary): a
+  lesson marker 第N课 / 第N单元 alone on a line or leading one, and a line ending in a colon that
+  has more Chinese lines after it (`我的家人：` over a list). Whatever is skipped is always shown:
+  Momo names it, and the API returns it in `X-Sheet-Skipped` (and in a `skipped` array on a 400).
+- **List numbering is stripped:** 一、 （一） (二) at line start, and enclosed forms ㈠ ㊀.
 - **Duplicates, one rule:** a whole word that already appeared is dropped (first one wins).
   Characters inside different words are kept, so 学校 学生 gives 学 twice. A repeat inside one
   word (妈妈) gets one grid.
@@ -66,7 +69,8 @@ Returns one standalone printable HTML page (inline SVG, inline CSS, no scripts).
 or print it headlessly. The request must be `Content-Type: application/json` (else 415) and under
 `SHEET_MAX_BODY_BYTES` (32 KB, else 413). Response headers: `X-Sheet-Pages`, `X-Sheet-Chars`,
 `X-Sheet-Missing` (characters drawn without stroke order), `X-Sheet-Truncated`,
-`X-Sheet-Input-Cut`; the character lists are percent-encoded UTF-8.
+`X-Sheet-Input-Cut`, `X-Sheet-Skipped` and `X-Sheet-Split-Words` (JSON arrays); all
+percent-encoded UTF-8. A paste with nothing to practice returns 400 `{ "error", "skipped" }`.
 
 | Option | Values | Default |
 |---|---|---|

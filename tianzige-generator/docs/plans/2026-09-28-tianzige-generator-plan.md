@@ -32,8 +32,9 @@ From `STYLE-LOCK.md` and `scripts/hanzi/hanzi_svg.py` (`writing_grid`, `tian_zi_
   colour, drawn as filled rotated rects (the Chromium PDF black-cross bug), before the glyph.
   The 田字格/米字格 choice for practice cells stays a teacher option; the default is 田字格.
 - Stroke count in Chinese numerals (共八画) above each reference cell, from the stroke data.
-- Two-character words get two grids, kept together: pages break between words, never inside one,
-  unless one word is taller than a whole page.
+- Two-character words get two grids, kept together: pages break between words, never inside one.
+  A word taller than a whole page starts wherever the current page has room, runs onto the next
+  page, and Momo says so.
 - No English on the student page; brand line at the foot.
 - Page fill: leftover space on each page becomes extra empty rows, most-strokes characters first.
 
@@ -42,10 +43,12 @@ flip transform the ink sits in y 0..1024 (checked on 田: data y 92..717, flippe
 port uses 0..1024, which centres the glyph in the cell. Worth checking the print engine against a
 printed page.
 
-## Not ported, on purpose
+## Open WHAT for JJ
 
-- **Pinyin stays out.** STYLE-LOCK allows pinyin on the student page, but there is no pinned,
-  safety-scanned pinyin source (hanzi-writer-data has none). No source, no toggle.
+- **Pinyin.** STYLE-LOCK requires pinyin on the printed Chinese writing packs. This web tool has no
+  pinyin source today (hanzi-writer-data carries none), so the sheet prints without it and there is
+  no pinyin toggle. A pinned CC-CEDICT path already exists in the Bilingual Vocab Game repo and could
+  be reused here if JJ wants pinyin on these sheets. Not built; surfaced to JJ by the coordinator.
 - 共八畫 (traditional 画): the label always uses 画. Telling simplified from traditional needs a
   script source too.
 
