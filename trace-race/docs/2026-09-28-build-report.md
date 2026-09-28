@@ -8,13 +8,13 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 ## Key takeaways
 1. **The core loop works live, with a receipt.** Every A below is backed by
    [`evidence/2026-09-28-live-receipt.md`](evidence/2026-09-28-live-receipt.md) (deployed
-   commit `5d45fb6`, version `25d11942`, room codes, timestamps, raw JSON).
+   commit `751a7ca`, version `7fc83969`, room codes, timestamps, raw JSON).
 2. **Review round 1 fixes are in** (both reviewers said FIX-FIRST): the phone resyncs with the
    room after a lost send, one ranking key, race id + stroke sequence (retries and replays are
    no-ops), roster frozen at Start, a server pace floor, input hardening, 64 px taps.
 3. **Demo recorded live**: `docs/demo/trace-race-demo.mp4` and `.gif` (1.8 MB), embedded in both
    READMEs. The playable mp4 link (GitHub attachment upload) is pending, done by the coordinator.
-4. **Tests green**: 52 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
+4. **Tests green**: 55 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
 5. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
 
 ## Recommended action
@@ -22,16 +22,16 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 2. Decide on real Momo art (swap `public/momo.svg`).
 3. Upload the mp4 to a GitHub attachment and replace the pending comment in both READMEs.
 
-## Verified live vs assumed (after round 4, deployed version 25d11942, commit 5d45fb6)
+## Verified live vs assumed (final, deployed version 7fc83969, commit 751a7ca)
 | Claim | Grade | Evidence (receipt + raw JSON) |
 |---|---|---|
 | Site, closed stroke proxy, licence, %E0 400, oversized body 413, long paste 400 | A | live gate |
-| Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP | A | round-1 runs (69Y7, 875M), full-outage run RKP5 |
-| Phone and room agree after a 45 s FULL outage with nothing else changing the room | A | run RKP5, room version 6 before and after |
-| Race ends on the clock via the alarm, nobody polling | A | room R8HA: 2 ms |
-| Retries and replays never count twice; late joiner waits | A | room R8HA |
-| Pace floor (GO + n x 250 ms) | A | stroke 2 refused at GO+450, accepted at GO+569 |
-| A stale seat entered through the join link leads back to the join form | A | room VEFT |
+| Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP; board reaches Winners | A | room ZXYC (this version), RKP5, 875M |
+| Phone and room agree after a 45 s FULL outage with nothing else changing the room | A (on version 25d11942) | run RKP5, room version 6 before and after |
+| Race ends on the clock via the alarm, nobody polling | A | room 96MK: 2 ms |
+| Retries and replays never count twice; late joiner waits | A | room 96MK |
+| Pace floor (GO + n x 250 ms) | A | stroke 2 refused at GO+494, accepted at GO+530 |
+| A stale seat entered through the join link leads back to the join form | A | room RSVG |
 | One presence list for "Kids here" and Start; ranking incl. zero-progress rule; outbox skip/reset; timeout fallback; hiccup clears | B | unit tests |
 | Old Safari / Chrome devices; real phone touch; 25 phones at once | C | not tested |
 
