@@ -32,11 +32,22 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
   let kid: KidRace | null = null;
   const ctx: Ctx = { root, code, seat, state: null, offset: 0, refresh: () => void tick(true) };
 
+  let teacherCounting = false;
+  let endPolledRound = -1;
   const ticker = setInterval(() => {
     for (const el of root.querySelectorAll<HTMLElement>('[data-until]')) {
       el.textContent = fmt(secondsLeft(ctx, Number(el.dataset.until)));
     }
     kid?.tick();
+    const s = ctx.state;
+    if (!s || s.phase !== 'racing') return;
+    // The board switches from "Ready, set..." to the race clock by itself at GO.
+    if (teacherCounting && s.goAt != null && serverNow(ctx) >= s.goAt) render();
+    // At the race end, ask the room now instead of waiting for the next poll.
+    if (s.endsAt != null && serverNow(ctx) >= s.endsAt && endPolledRound !== s.round) {
+      endPolledRound = s.round;
+      ctx.refresh();
+    }
   }, 250);
 
   function render(): void {
@@ -55,8 +66,15 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         }
         return;
       }
+      teacherCounting = s.phase === 'racing' && s.goAt != null && serverNow(ctx) < s.goAt;
       root.replaceChildren(teacherRace(ctx));
       lastKey = key;
+      return;
+    }
+    if (s.phase === 'racing' && !s.progress[s.you]) {
+      // Joined after Start: the roster is frozen, so this kid races the next one.
+      if (lastKey !== `${key}:late`) root.replaceChildren(kidLate(ctx));
+      lastKey = `${key}:late`;
       return;
     }
     if (s.phase === 'racing') {
@@ -167,7 +185,9 @@ function teacherLobby(ctx: Ctx): HTMLElement {
     h('section', { class: 'card' }, [
       h('h2', { text: `Characters (${s.list.chars.length})` }),
       h('div', { class: 'chips' }, s.list.chars.map((c) => h('span', { class: 'chip', text: c }))),
-      s.list.missing.length ? h('p', { class: 'notice warn', text: `No stroke data for ${s.list.missing.join(' ')}, skipped.` }) : null,
+      s.list.missing.length
+        ? h('p', { class: 'notice warn', text: `We cannot trace ${s.list.missing.join(' ')} yet, so we left ${s.list.missing.length === 1 ? 'it' : 'them'} out.` })
+        : null,
       s.list.overflow.length ? h('p', { class: 'notice warn', text: `Only the first ${GAME.maxListChars} are used. Left out: ${s.list.overflow.join(' ')}` }) : null,
       h('details', {}, [h('summary', { text: 'Change the list' }), paste, h('p'), replace]),
     ]),
@@ -234,6 +254,15 @@ function kidLobby(ctx: Ctx): HTMLElement {
   ]);
 }
 
+function kidLate(ctx: Ctx): HTMLElement {
+  return h('div', {}, [
+    momo('bounce'),
+    h('h1', { text: 'This race already started', style: 'text-align:center' }),
+    h('p', { class: 'notice', text: 'Watch this one. You are in the next race!' }),
+    board(ctx.state!),
+  ]);
+}
+
 function kidDone(ctx: Ctx): HTMLElement {
   const s = ctx.state!;
   const mine = s.standings.find((r) => r.playerId === s.you);
@@ -245,26 +274,37 @@ function kidDone(ctx: Ctx): HTMLElement {
   ]);
 }
 
+/**
+ * The kid's tracing pad for one race.
+ *
+ * The pad moves ahead of the room (a stroke fills in before the server says
+ * so), which keeps it fast. It is reconciled with the room whenever no stroke
+ * is in flight: if the room's progress differs from the pad (a send was
+ * refused, or every retry failed), the pad jumps back to where the room says
+ * this kid is. The room is always the truth; the pad never says "finished"
+ * while the board says otherwise.
+ */
 class KidRace {
   readonly el = h('div');
   readonly round: number;
-  private charIndex: number;
-  private startStroke: number;
+  private charIndex = 0;
+  private startStroke = 0;
+  private strokesDone = 0;
+  private seq = 0;
   private tracer: TraceHandle | null = null;
   private cheering = false;
+  private pending = 0;
+  /** Only states at least this new may be used to reconcile (drops a stale poll that crossed a send). */
+  private minVersion = 0;
   private queue: Promise<void> = Promise.resolve();
   private readonly head = h('div', { class: 'race-head' });
   private readonly stage = h('div');
   private readonly status = h('p', { class: 'muted', role: 'status', style: 'text-align:center' });
   private readonly dots = h('div', { class: 'dots' });
-  private strokesDone = 0;
 
   constructor(private readonly ctx: Ctx) {
-    const s = ctx.state!;
-    const mine = s.progress[s.you];
-    this.round = s.round;
-    this.charIndex = mine?.charIndex ?? 0;
-    this.startStroke = mine?.strokeIndex ?? 0;
+    this.round = ctx.state!.round;
+    this.adoptServer();
     this.el.append(this.head, this.dots, this.stage, this.status);
   }
 
@@ -276,12 +316,40 @@ class KidRace {
     return Math.min(window.innerWidth - 40, window.innerHeight - 220, 520);
   }
 
+  /** Take the room's word for where this kid is. */
+  private adoptServer(): void {
+    const mine = this.state.progress[this.state.you];
+    this.charIndex = mine?.charIndex ?? 0;
+    this.startStroke = mine?.strokeIndex ?? 0;
+    this.strokesDone = this.startStroke;
+    this.seq = mine?.seq ?? 0;
+  }
+
+  /** True when the pad and the room disagree and nothing is in flight to explain it. */
+  private outOfStep(): boolean {
+    if (this.pending > 0 || this.cheering || this.state.version < this.minVersion) return false;
+    const mine = this.state.progress[this.state.you];
+    if (!mine) return false;
+    const localDone = this.charIndex >= this.state.roundChars.length;
+    const serverDone = mine.finishedAt != null;
+    if (localDone || serverDone) return localDone !== serverDone;
+    return mine.charIndex !== this.charIndex || mine.strokeIndex !== this.strokesDone;
+  }
+
+  private resync(): void {
+    this.tracer?.destroy();
+    this.tracer = null;
+    delete this.stage.dataset.fin;
+    this.adoptServer();
+    this.status.textContent = 'Oops, the internet hiccuped. Keep going from here!';
+  }
+
   update(): void {
+    if (this.outOfStep()) this.resync();
     const s = this.state;
     const total = s.roundChars.length;
-    const done = Math.min(this.charIndex, total);
     this.head.replaceChildren(
-      h('span', { text: done >= total ? 'All done!' : `Character ${this.charIndex + 1} of ${total}` }),
+      h('span', { text: this.charIndex >= total ? 'All done!' : `Character ${this.charIndex + 1} of ${total}` }),
       h('span', { class: 'timer', 'data-until': String(s.endsAt), text: fmt(secondsLeft(this.ctx, s.endsAt)) })
     );
     this.tick();
@@ -320,29 +388,44 @@ class KidRace {
     this.strokesDone = this.startStroke;
     this.renderDots();
     this.status.textContent = this.state.options.hints ? 'Trace the strokes in order. Stuck? Try once, the hint will show you.' : 'Trace the strokes in order.';
-    this.tracer = startTrace(char, { size: this.size(), hints: this.state.options.hints, startStroke: this.startStroke }, {
+    const handle = startTrace(char, { size: this.size(), hints: this.state.options.hints, startStroke: this.startStroke }, {
       onCorrect: (i) => {
+        if (this.tracer !== handle) return;
         this.strokesDone = i + 1;
         this.renderDots();
         this.send(index, i, 'correct');
       },
-      onMistake: (i) => this.send(index, i, 'mistake'),
-      onComplete: () => this.cheer(),
+      onMistake: (i) => this.tracer === handle && this.send(index, i, 'mistake'),
+      onComplete: () => this.tracer === handle && this.cheer(),
       onError: (msg) => (this.status.textContent = msg),
     });
-    this.stage.replaceChildren(this.tracer.root);
+    this.tracer = handle;
+    this.stage.replaceChildren(handle.root);
   }
 
+  /** Sends one stroke in order, retrying with back-off; a refusal or give-up hands over to the room. */
   private send(charIndex: number, strokeIndex: number, result: StrokeResult): void {
+    const seq = ++this.seq;
+    const race = this.round;
+    this.pending += 1;
     this.queue = this.queue.then(async () => {
-      for (let attempt = 0; attempt < GAME.strokeSendRetries; attempt++) {
-        try {
-          const env = await sendStroke(this.ctx.code, this.ctx.seat, charIndex, strokeIndex, result);
-          this.ctx.state = env.state;
-          return;
-        } catch (err) {
-          if (err instanceof ApiError && err.status >= 400 && err.status < 500) return; // refused: the poll resyncs
+      const waits = GAME.strokeRetryBackoffMs;
+      try {
+        for (let attempt = 0; attempt <= waits.length; attempt++) {
+          try {
+            const env = await sendStroke(this.ctx.code, this.ctx.seat, { race, seq, charIndex, strokeIndex, result });
+            this.ctx.state = env.state;
+            this.minVersion = Math.max(this.minVersion, env.state.version);
+            return;
+          } catch (err) {
+            const retryable = !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500;
+            if (!retryable || attempt === waits.length) return; // refused or gave up: reconcile below
+            await new Promise((r) => setTimeout(r, waits[attempt]));
+          }
         }
+      } finally {
+        this.pending -= 1;
+        if (this.pending === 0) this.ctx.refresh(); // fresh room state; update() reconciles if needed
       }
     });
   }
@@ -357,6 +440,7 @@ class KidRace {
       this.tracer = null;
       this.charIndex += 1;
       this.startStroke = 0;
+      this.strokesDone = 0;
       this.cheering = false;
       this.update();
     }, GAME.cheerMs);

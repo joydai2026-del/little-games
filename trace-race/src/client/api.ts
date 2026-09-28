@@ -83,5 +83,8 @@ export const act = (code: string, seat: Seat, action: 'start' | 'next') => call<
 export const setList = (code: string, seat: Seat, text: string) => call<Envelope>('POST', `/api/rooms/${code}/list`, { text }, seat);
 export const setOptions = (code: string, seat: Seat, options: Record<string, unknown>) =>
   call<Envelope>('POST', `/api/rooms/${code}/options`, options, seat);
-export const sendStroke = (code: string, seat: Seat, charIndex: number, strokeIndex: number, result: StrokeResult) =>
-  call<Envelope>('POST', `/api/rooms/${code}/stroke`, { charIndex, strokeIndex, result }, seat);
+export const sendStroke = (
+  code: string,
+  seat: Seat,
+  stroke: { race: number; seq: number; charIndex: number; strokeIndex: number; result: StrokeResult }
+) => call<Envelope>('POST', `/api/rooms/${code}/stroke`, stroke, seat);

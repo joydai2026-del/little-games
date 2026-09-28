@@ -17,7 +17,7 @@ a { color: var(--mint-deep); }
 .btn.secondary { background: var(--mint); color: var(--ink); }
 .btn.coral { background: var(--coral); color: var(--paper); }
 .btn:disabled { opacity: 0.45; cursor: default; }
-.btn.small { min-height: 48px; font-size: 1rem; width: auto; }
+.btn.small { min-height: var(--tap); font-size: 1.4rem; width: auto; }
 label { display: block; font-weight: 700; margin: 12px 0 6px; }
 input, textarea, select { width: 100%; min-height: var(--tap); font: inherit; font-size: 1.25rem; padding: 12px 16px; border: 3px solid var(--mint); border-radius: var(--radius); background: var(--paper); color: var(--ink); }
 textarea { min-height: 140px; resize: vertical; }
@@ -83,4 +83,4 @@ input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900;
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper .val { min-width: 64px; text-align: center; font-size: 1.5rem; font-weight: 900; }
 .toggle { display: flex; align-items: center; gap: 12px; min-height: var(--tap); font-weight: 700; }
-.toggle input { width: 32px; min-height: 32px; height: 32px; accent-color: var(--mint-deep); }
+.toggle input { width: var(--tap); min-height: var(--tap); height: var(--tap); flex: none; margin: 0; accent-color: var(--mint-deep); }

@@ -42,6 +42,7 @@ export function renderHome(root: HTMLElement, prefillCode: string): () => void {
   const make = h('button', { class: 'btn coral', text: 'Make a room' });
   make.addEventListener('click', async () => {
     teachError.textContent = '';
+    if (paste.value.length > GAME.maxPasteLength) return void (teachError.textContent = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`);
     if (parseCharList(paste.value).chars.length === 0) return void (teachError.textContent = 'Paste at least one Chinese character.');
     make.disabled = true;
     try {
