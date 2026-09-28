@@ -23,6 +23,12 @@
     // a week is safe.
     "STROKES_CACHE_SECONDS": "604800",
     // Largest upstream stroke file accepted. The biggest real one is 8,621 bytes.
-    "STROKES_MAX_BYTES": "65536"
+    "STROKES_MAX_BYTES": "65536",
+    // A "no data for this character" answer can be cached this long.
+    "NEGATIVE_CACHE_SECONDS": "86400",
+    // POST /api/sheet body cap. 4,000 pasted characters as JSON escapes fit well under it.
+    "SHEET_MAX_BODY_BYTES": "32768",
+    // Retry-After on a 429. Keep equal to the SHEET_LIMITER period above.
+    "SHEET_RETRY_AFTER_SECONDS": "60"
   }
 }

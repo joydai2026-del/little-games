@@ -7,7 +7,7 @@
 import manifest from './stroke-manifest.json';
 // Upstream body cap default; the policy value is STROKES_MAX_BYTES in wrangler.jsonc.
 // The largest file in the pinned package is 8,621 bytes.
-import { DEFAULT_MAX_BYTES } from './env';
+import { DEFAULT_MAX_BYTES, readCapped } from './env';
 
 interface Manifest {
   package: string;
@@ -32,7 +32,19 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 }
 
 
-/** The published shape: { strokes: string[], medians: number[][][] }. Anything else is refused. */
+/** Loose bounds for a median point: the glyph box is 1024 units with some overshoot. */
+const POINT_MIN = -1024;
+const POINT_MAX = 2048;
+
+function isPoint(p: unknown): boolean {
+  return (
+    Array.isArray(p) &&
+    p.length === 2 &&
+    p.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= POINT_MIN && v <= POINT_MAX)
+  );
+}
+
+/** The published shape: { strokes: string[], medians: [x, y][][] }, one median per stroke. */
 export function validShape(data: unknown): boolean {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   const { strokes, medians } = data as { strokes?: unknown; medians?: unknown };
@@ -42,7 +54,7 @@ export function validShape(data: unknown): boolean {
     strokes.every((s) => typeof s === 'string') &&
     Array.isArray(medians) &&
     medians.length === strokes.length &&
-    medians.every((m) => Array.isArray(m))
+    medians.every((m) => Array.isArray(m) && m.length > 0 && m.every(isPoint))
   );
 }
 
@@ -69,8 +81,10 @@ export async function fetchVerified(
   if (!res.ok) return { ok: false, status: 502, reason: `stroke source answered ${res.status}` };
   const declared = Number(res.headers.get('Content-Length'));
   if (Number.isFinite(declared) && declared > maxBytes) return { ok: false, status: 502, reason: 'stroke data too large' };
-  const bytes = await res.arrayBuffer();
-  if (bytes.byteLength > maxBytes) return { ok: false, status: 502, reason: 'stroke data too large' };
+  // The cap is enforced while streaming, so a body without Content-Length is never fully buffered.
+  const read = await readCapped(res.body, maxBytes);
+  if (!read) return { ok: false, status: 502, reason: 'stroke data too large' };
+  const bytes = read.buffer.slice(read.byteOffset, read.byteOffset + read.byteLength) as ArrayBuffer;
   if ((await sha256Hex(bytes)) !== M.files[char]) {
     return { ok: false, status: 502, reason: 'stroke data failed its integrity check' };
   }

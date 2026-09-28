@@ -114,6 +114,32 @@ describe('GET /api/strokes/:char', () => {
     expect(validShape({ strokes: [], medians: [] })).toBe(false);
     expect(validShape([])).toBe(false);
     expect(validShape(null)).toBe(false);
+    // Medians must be arrays of finite numeric [x, y] pairs.
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [['not-a-point']] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[{ x: 1, y: 2 }]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[[1, 2, 3]]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[[1, Number.NaN]]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[[1, 99999]]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[]] })).toBe(false);
+    expect(validShape({ strokes: ['M 1 1 Z'], medians: [[[1, 2], [3, 4]]] })).toBe(true);
+  });
+
+  it('enforces the size cap while streaming a body that has no Content-Length', async () => {
+    let pulled = 0;
+    const fetcher = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulled++;
+            if (pulled > 1000) return controller.close();
+            controller.enqueue(new Uint8Array(1024));
+          },
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch;
+    const res = await makeHandler(fetcher)(get(`/api/strokes/${encodeURIComponent('大')}`), env);
+    expect(res.status).toBe(502);
+    expect(pulled).toBeLessThan(80); // stopped near 64 KB, not after 1 MB
   });
 
   it('turns an upstream failure into 502', async () => {
@@ -161,8 +187,35 @@ describe('POST /api/sheet (the agent path)', () => {
     const handle = makeHandler(upstream().fetcher);
     expect((await handle(post({ chars: 5 }), env)).status).toBe(400);
     expect((await handle(post({ chars: 'hello' }), env)).status).toBe(400);
-    expect((await handle(new Request('https://t.test/api/sheet', { method: 'POST', body: 'not json' }), env)).status).toBe(400);
+    expect(
+      (await handle(new Request('https://t.test/api/sheet', { method: 'POST', body: 'not json', headers: { 'Content-Type': 'application/json' } }), env)).status,
+    ).toBe(400);
     expect((await handle(get('/api/sheet'), env)).status).toBe(405);
+  });
+
+  it('refuses a body that is not declared as JSON (415)', async () => {
+    const handle = makeHandler(upstream().fetcher);
+    const res = await handle(new Request('https://t.test/api/sheet', { method: 'POST', body: '{"chars":"大"}', headers: { 'Content-Type': 'text/plain' } }), env);
+    expect(res.status).toBe(415);
+    const none = await handle(new Request('https://t.test/api/sheet', { method: 'POST', body: '{"chars":"大"}' }), env);
+    expect(none.status).toBe(415);
+  });
+
+  it('refuses an oversized body by Content-Length before reading it (413)', async () => {
+    const handle = makeHandler(upstream().fetcher);
+    const req = new Request('https://t.test/api/sheet', {
+      method: 'POST',
+      body: '{"chars":"大"}',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': '99999999' },
+    });
+    expect((await handle(req, env)).status).toBe(413);
+  });
+
+  it('refuses an oversized streamed body with no Content-Length (413), 5 MB of chars', async () => {
+    const handle = makeHandler(upstream().fetcher);
+    const res = await handle(post({ chars: '大'.repeat(5_000_001) }), env);
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: string }).error).toContain('too big');
   });
 
   it('honours the rate limiter', async () => {

@@ -13,7 +13,7 @@ import { parseChars } from '../shared/parse';
 import { renderPages } from '../shared/render';
 import { readStrokes, type StrokeMap } from '../shared/strokes';
 import { escapeXml, toMarkup } from '../shared/svg';
-import { cacheSeconds, maxBytes, type Env } from './env';
+import { cacheSeconds, maxBytes, negativeCacheSeconds, readCapped, retryAfterSeconds, sheetMaxBodyBytes, type Env } from './env';
 import { fetchVerified, inManifest, LICENSE_PATH } from './strokes';
 
 export type { Env } from './env';
@@ -39,7 +39,7 @@ async function handleStrokes(raw: string, env: Env, fetcher: typeof fetch): Prom
     // A single Han character we have no data for is a 404 (the page falls back
     // to the font); anything else is a malformed request.
     const single = Array.from(char).length === 1 && /^\p{Script=Han}$/u.test(char);
-    return json({ error: single ? 'no stroke data for this character' : 'one character, please' }, single ? 404 : 400, single ? { 'Cache-Control': 'public, max-age=86400' } : {});
+    return json({ error: single ? 'no stroke data for this character' : 'one character, please' }, single ? 404 : 400, single ? { 'Cache-Control': `public, max-age=${negativeCacheSeconds(env)}` } : {});
   }
   const seconds = cacheSeconds(env);
   const got = await fetchVerified(char, seconds, fetcher, maxBytes(env));
@@ -87,11 +87,22 @@ async function handleSheet(request: Request, env: Env, fetcher: typeof fetch): P
   if (env.SHEET_LIMITER) {
     const key = request.headers.get('CF-Connecting-IP') ?? 'unknown';
     const { success } = await env.SHEET_LIMITER.limit({ key });
-    if (!success) return json({ error: 'too many sheets at once, try again in a minute' }, 429, { 'Retry-After': '60' });
+    if (!success) return json({ error: 'too many sheets at once, try again in a minute' }, 429, { 'Retry-After': String(retryAfterSeconds(env)) });
   }
+  const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+  if (type !== 'application/json') {
+    return json({ error: 'send the request as JSON (Content-Type: application/json)' }, 415);
+  }
+  const limit = sheetMaxBodyBytes(env);
+  const declared = Number(request.headers.get('Content-Length'));
+  const tooBig = () => json({ error: `that request is too big; keep it under ${limit} bytes` }, 413);
+  if (Number.isFinite(declared) && declared > limit) return tooBig();
+  const raw = await readCapped(request.body, limit);
+  if (!raw) return tooBig();
+
   let body: Record<string, unknown>;
   try {
-    const parsed = (await request.json()) as unknown;
+    const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
     body = parsed as Record<string, unknown>;
   } catch {
@@ -142,6 +153,7 @@ ${pages}
       'X-Sheet-Chars': encodeURIComponent(parsed.chars.join('')),
       'X-Sheet-Missing': encodeURIComponent(sheet.missing.join('')),
       'X-Sheet-Truncated': String(parsed.truncated),
+      'X-Sheet-Input-Cut': String(parsed.inputCut),
       ...SECURITY_HEADERS,
     },
   });
