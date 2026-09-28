@@ -16,7 +16,9 @@ stroke by stroke, in the right order, on their phones. Details in [`trace-race/R
 
 ![Trace Race demo: a kid traces on a phone while the race board updates](trace-race/docs/demo/trace-race-demo.gif)
 
-<!-- mp4 user-attachments URL: pending, commander adds -->
+**Demo video (29 sec):**
+
+https://github.com/user-attachments/assets/1c61a22c-04d1-467c-a0d9-ebecc2bd6169
 
 Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 
@@ -88,6 +90,8 @@ Demo, recorded on the live site with `tianzige-generator/scripts/record-demo.py`
 
 ![Tianzige Generator demo: paste a messy list, get a practice sheet](tianzige-generator/docs/demo/tianzige-generator-demo.gif)
 
-<!-- mp4 user-attachments URL: pending, commander adds -->
+**Demo video (27 sec):**
+
+https://github.com/user-attachments/assets/fc43b356-a96b-4179-b52d-b3ad4891b9ae
 
 Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [gif](tianzige-generator/docs/demo/tianzige-generator-demo.gif).
