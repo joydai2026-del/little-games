@@ -18,7 +18,7 @@ Before the run:
 ⛅️ wrangler 4.128.0 (update available 4.143.0)
 ───────────────────────────────────────────────
 Created:     2026-09-28T19:06:03.609Z
-Author:      joyd.ai.2026@gmail.com
+Author:      <owner email redacted>
 Source:      Unknown (deployment)
 Message:     -
 Version(s):  (100%) a45810ce-ffe2-40ab-a84f-963bff0c3952
@@ -33,7 +33,7 @@ After the run:
 ⛅️ wrangler 4.128.0 (update available 4.143.0)
 ───────────────────────────────────────────────
 Created:     2026-09-28T19:06:03.609Z
-Author:      joyd.ai.2026@gmail.com
+Author:      <owner email redacted>
 Source:      Unknown (deployment)
 Message:     -
 Version(s):  (100%) a45810ce-ffe2-40ab-a84f-963bff0c3952
