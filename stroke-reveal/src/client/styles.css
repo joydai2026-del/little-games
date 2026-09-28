@@ -92,6 +92,9 @@ button.word-card { cursor: pointer; }
 /* A <summary> is a tap target too. */
 summary.tap-summary { min-height: var(--tap); display: flex; align-items: center; font-weight: 700; cursor: pointer; border-radius: 12px; padding: 0 8px; }
 summary.tap-summary:focus-visible { outline: 3px solid var(--pink-deep); outline-offset: 2px; }
+summary.tap-summary::-webkit-details-marker { display: none; }
+summary.tap-summary::before { content: "\25B8"; margin-right: 8px; }
+details[open] > summary.tap-summary::before { content: "\25BE"; }
 .robots-divider { margin: 16px 0 4px; padding-top: 12px; border-top: 3px dashed var(--ink-faint); font-weight: 800; color: var(--ink-soft); }
 
 /* Race board */
