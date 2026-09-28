@@ -1,0 +1,160 @@
+* { box-sizing: border-box; }
+/* Brand colours, fonts, header, footer and buttons: public/theme.css (the kit). */
+html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); font-family: var(--font); }
+body { min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+#app { max-width: 720px; margin: 0 auto; padding: 0 16px 16px; }
+#app.wide { max-width: 1100px; }
+h1 { font-size: 2rem; margin: 8px 0; }
+h2 { font-size: 1.4rem; margin: 16px 0 8px; }
+p { line-height: 1.5; }
+/* pink and mint are fill colours, never small text on paper (2.2:1 and 1.6:1). */
+a { color: var(--ink); }
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 64px; height: 64px; object-fit: contain; flex: none; }
+.nowrap { white-space: nowrap; } /* a Chinese word never splits across lines */
+.brand .sub { color: var(--ink-soft); margin: 0; }
+
+.card { background: var(--card); border-radius: var(--radius); padding: 20px; margin: 16px 0; box-shadow: 0 2px 0 var(--ink-faint); }
+/* Buttons are the kit's .btn-primary / .btn-secondary; .btn only sets the game's layout. */
+.btn { width: 100%; border-radius: var(--radius); font-size: 1.25rem; }
+.btn.small { font-size: 1.4rem; width: auto; }
+label { display: block; font-weight: 700; margin: 12px 0 6px; }
+input, textarea, select { width: 100%; min-height: var(--tap); font: inherit; font-size: 1.25rem; padding: 12px 16px; border: 3px solid var(--mascot); border-radius: var(--radius); background: var(--card); color: var(--ink); }
+textarea { min-height: 140px; resize: vertical; }
+input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900; text-align: center; font-size: 2rem; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.row > * { flex: 1; }
+.muted { color: var(--ink-soft); }
+.notice { background: var(--sage-soft); border-radius: var(--radius); padding: 12px 16px; font-weight: 700; }
+.notice.warn { background: var(--butter-soft); border: 3px dashed var(--pink); }
+/* pink text fails on paper, so errors are cocoa on a soft pink chip (10.5:1). */
+.error { color: var(--ink); background: var(--pink-soft); border-radius: 12px; padding: 8px 12px; font-weight: 800; }
+.error:empty { display: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--font-han); font-size: 2rem; width: 56px; height: 56px; display: grid; place-items: center; background: var(--card); border: 2px solid var(--mascot); border-radius: 12px; }
+.chip.missing { border-color: var(--pink); color: var(--ink-soft); }
+
+.roomcode { font-size: 4.5rem; font-weight: 900; letter-spacing: 0.2em; text-align: center; margin: 0; }
+.joinlink { text-align: center; font-size: 1.1rem; word-break: break-all; }
+
+.roomcode, .countdown { font-family: var(--font-head); }
+/* Momo is the official puppy PNG; every reaction is CSS on the one image. */
+.momo { width: 128px; height: 128px; object-fit: contain; display: block; margin: 8px auto; transform-origin: 50% 85%; }
+.momo.bounce { animation: bounce 1.2s ease-in-out infinite; }
+.momo.tilt { animation: tilt 2.4s ease-in-out infinite; }
+.winners-head { display: flex; align-items: center; gap: 16px; }
+.winners-head .momo { width: 96px; height: 96px; margin: 0; }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px) rotate(-4deg); } }
+@keyframes tilt { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@media (prefers-reduced-motion: reduce) { .momo, .cheer .momo { animation: none !important; } }
+
+/* Kid tracing screen */
+.race-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 1.2rem; }
+.timer { background: var(--ink); color: var(--paper); border-radius: 999px; padding: 6px 16px; font-variant-numeric: tabular-nums; }
+.pad-wrap { position: relative; margin: 12px auto; background: var(--card); border: 4px solid var(--pink); border-radius: 8px; touch-action: none; }
+.pad-wrap svg.grid { position: absolute; inset: 0; pointer-events: none; }
+.pad-wrap .writer { position: relative; }
+.pad-wrap.wiggle { animation: wiggle 0.35s ease-in-out; }
+@keyframes wiggle { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 75% { transform: translateX(10px); } }
+.dots { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
+.dot { width: 18px; height: 18px; border-radius: 50%; background: var(--ink-faint); }
+.dot.done { background: var(--mascot-2); }
+.dot.now { background: var(--pink); }
+.cheer { position: fixed; inset: 0; display: grid; place-items: center; background: var(--paper); z-index: 10; text-align: center; }
+.cheer .momo { width: 200px; height: 200px; animation: pop 0.5s ease-out, bounce 1.2s ease-in-out 0.5s infinite; }
+.cheer .big { font-family: var(--font-head); font-size: 3rem; font-weight: 800; color: var(--ink); margin: 0; }
+@keyframes pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.countdown { font-size: 9rem; font-weight: 800; text-align: center; color: var(--pink-deep); margin: 40px 0; }
+
+/* Race board */
+.board { list-style: none; padding: 0; margin: 0; }
+.lane { display: grid; grid-template-columns: 48px 1fr 72px; gap: 12px; align-items: center; background: var(--card); border-radius: var(--radius); padding: 10px 14px; margin: 8px 0; }
+.lane .place { font-size: 1.6rem; font-weight: 900; text-align: center; border-radius: 50%; width: 44px; height: 44px; display: grid; place-items: center; background: var(--paper-deep); }
+.lane .place.p1 { background: var(--gold); }
+.lane .place.p2 { background: var(--silver); }
+.lane .place.p3 { background: var(--bronze); }
+.lane .name { font-weight: 800; font-size: 1.3rem; }
+.tag { display: inline-block; font-size: 0.9rem; font-weight: 700; background: var(--mascot); border-radius: 999px; padding: 4px 12px; margin: 2px 6px 2px 0; vertical-align: middle; }
+.lane .tag { font-size: 0.8rem; padding: 2px 8px; margin-left: 6px; }
+.wide .lane { grid-template-columns: 64px 1fr 96px; padding: 14px 20px; }
+.wide .lane .place { width: 56px; height: 56px; font-size: 2rem; }
+.wide .lane .name { font-size: 1.8rem; }
+.wide .lane .bar { height: 20px; }
+.wide .lane .now { font-size: 3.6rem; }
+.wide .lane .now.fin { font-size: 1.4rem; }
+.lane .bar { height: 14px; background: var(--paper-deep); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.lane .bar > span { display: block; height: 100%; background: var(--sage); }
+.lane .now { font-family: var(--font-han); font-size: 2.6rem; text-align: center; }
+.lane .now.fin { font-family: var(--font); font-size: 1rem; font-weight: 900; color: var(--ink); background: var(--mascot); border-radius: 999px; padding: 4px 10px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper .val { min-width: 64px; text-align: center; font-size: 1.5rem; font-weight: 900; }
+.toggle { display: flex; align-items: center; gap: 12px; min-height: var(--tap); font-weight: 700; }
+.toggle input { width: var(--tap); min-height: var(--tap); height: var(--tap); flex: none; margin: 0; accent-color: var(--pink-deep); }
+
+/* ---- Dictation Dash ------------------------------------------------------ */
+h3 { font-size: 1.15rem; margin: 16px 0 8px; }
+.chip { width: auto; min-width: 56px; padding: 0 10px; }
+
+/* The two level buttons: big, side by side, a picture of the box on each. */
+.levels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 4px; }
+.level { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 180px; padding: 14px 10px;
+  background: var(--card); color: var(--ink); border: 4px solid var(--paper-deep); border-radius: var(--radius);
+  font-family: var(--font-ui); cursor: pointer; }
+.level .level-name { font-family: var(--font-head); font-size: 2rem; font-weight: 800; line-height: 1; }
+.level .level-blurb { font-size: 1rem; font-weight: 700; color: var(--ink-soft); text-align: center; }
+.level .level-tick { font-size: 0.95rem; font-weight: 800; border-radius: 999px; padding: 4px 12px; background: var(--paper-deep); }
+.level-easy.chosen { border-color: var(--mascot-2); background: var(--sage-soft); }
+.level-hard.chosen { border-color: var(--pink-deep); background: var(--pink-soft); }
+.level.chosen .level-tick { background: var(--ink); color: var(--paper); }
+.level:focus-visible { outline: 3px solid var(--pink-deep); outline-offset: 2px; }
+.sample { position: relative; width: 64px; height: 64px; background: var(--card); border: 3px solid var(--pink); border-radius: 6px;
+  background-image: linear-gradient(var(--grid), var(--grid)), linear-gradient(var(--grid), var(--grid));
+  background-size: 2px 100%, 100% 2px; background-position: center; background-repeat: no-repeat; display: grid; place-items: center; }
+.sample .ghost { font-family: var(--font-han); font-size: 48px; line-height: 1; color: var(--outline-easy); }
+.level-badge { display: inline-block; margin: 6px 0; padding: 6px 14px; border-radius: 999px; font-weight: 800; font-size: 1rem; }
+.level-badge.level-easy { background: var(--sage-soft); border: 2px solid var(--mascot-2); }
+.level-badge.level-hard { background: var(--pink-soft); border: 2px solid var(--pink-deep); }
+
+/* Listening: Momo, the hear button, the word clock. */
+.kid-round .race-head { gap: 8px; }
+.btn.mute { width: var(--tap); padding: 0; font-size: 1.6rem; }
+.listen-row { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.listen-row .momo { width: 72px; height: 72px; margin: 0; flex: none; }
+.momo.talk { animation: bounce 0.6s ease-in-out infinite; }
+.btn.hear { flex: 1; font-size: 1.3rem; }
+.btn.hear.speaking { background: var(--pink-deep); color: var(--card); }
+.wordclock { height: 12px; background: var(--paper-deep); border-radius: 999px; overflow: hidden; margin: 4px 0 8px; }
+.wordclock > span { display: block; height: 100%; background: var(--sage); transition: width 0.25s linear; }
+.notice.warn p { margin: 0 0 8px; }
+
+/* One small 田字格 per character of the word; the big pad below is the one being written. */
+.boxes { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
+.box { width: 64px; height: 64px; display: grid; place-items: center; font-family: var(--font-han); font-size: 46px; line-height: 1;
+  background: var(--card); border: 3px solid var(--ink-faint); border-radius: 6px;
+  background-image: linear-gradient(var(--grid), var(--grid)), linear-gradient(var(--grid), var(--grid));
+  background-size: 2px 100%, 100% 2px; background-position: center; background-repeat: no-repeat; }
+.box.now { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-soft); }
+.box.done { border-color: var(--mascot-2); }
+.pad-hard { border-color: var(--pink-deep); }
+.pad-locked { text-align: center; padding: 24px 0; font-weight: 800; font-size: 1.2rem; }
+.problem { background: var(--butter-soft); border: 3px dashed var(--pink); border-radius: var(--radius); padding: 16px; margin: 12px 0; font-weight: 700; }
+.problem .row > * { min-width: 160px; }
+
+/* The class board: a bean per kid that jumps one step per word written. */
+.lane { grid-template-columns: 48px 1fr 72px; }
+.track { position: relative; height: calc(var(--bean) + 8px); margin-top: 6px; background: var(--paper-deep); border-radius: 999px; }
+.track .finish-line { position: absolute; right: 6px; top: 6px; bottom: 6px; width: 6px; border-radius: 3px;
+  background: repeating-linear-gradient(var(--ink) 0 6px, var(--card) 6px 12px); }
+.bean { position: absolute; top: 4px; width: var(--bean); height: var(--bean); border-radius: 50% 50% 46% 46%;
+  display: grid; place-items: center; background: var(--mascot); border: 3px solid var(--mascot-2);
+  font-weight: 900; font-size: 1.2rem; transition: left 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.lane.mine .bean { background: var(--pink); border-color: var(--pink-deep); }
+.bean.jump { animation: beanjump 0.8s ease-out 0.2s 2; }
+@keyframes beanjump { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-18px) scale(1.1); } }
+.board.compact .lane { grid-template-columns: 36px 1fr; padding: 6px 10px; margin: 4px 0; text-align: left; }
+.board.compact .lane .now { display: none; }
+.board.compact .lane .place { width: 32px; height: 32px; font-size: 1.1rem; }
+.cheer > div { max-width: 560px; width: 100%; padding: 0 16px; }
+@media (prefers-reduced-motion: reduce) { .bean, .bean.jump, .momo.talk { animation: none !important; transition: none !important; } }
