@@ -83,6 +83,7 @@ def main():
     ap.add_argument("--blip", action="store_true")
     ap.add_argument("--cut", choices=["abort", "hang"], default="abort",
                     help="abort: sends fail at once; hang: sends never answer (the phone's timeout must fire)")
+    ap.add_argument("--cut-seconds", type=float, default=6.0, help="how long the cut lasts")
     ap.add_argument("--record", action="store_true")
     args = ap.parse_args()
     raw = OUT / "_raw"
@@ -130,6 +131,12 @@ def main():
         shots = set()
         deadline = time.time() + 150
         while time.time() < deadline:
+            if blip_started and time.time() - blip_started > args.cut_seconds and "unrouted" not in log.get("blip", {}):
+                k.unroute("**/stroke")
+                log["blip"]["unrouted"] = True
+                log["blip"]["unrouted_after_s"] = round(time.time() - blip_started, 1)
+                log["blip"]["requests_left_hanging"] = len(hung)
+                log["blip"]["server_at_unroute"] = k.evaluate(PROGRESS_JS, code)["me"]
             prog = k.evaluate(PROGRESS_JS, code)
             if prog["phase"] != "racing" or (prog["me"] and prog["me"]["finishedAt"]):
                 if not k.query_selector(".cheer"):
@@ -157,12 +164,7 @@ def main():
                 else:
                     hung.clear()
                     k.route("**/stroke", lambda route: hung.append(route))  # never answered
-                log["blip"] = {"mode": args.cut, "char": ch, "cut_at_stroke": stroke, "cut_at": time.time()}
-            if blip_started and time.time() - blip_started > 6 and "unrouted" not in log.get("blip", {}):
-                k.unroute("**/stroke")
-                log["blip"]["unrouted"] = True
-                log["blip"]["requests_left_hanging"] = len(hung)
-                log["blip"]["server_at_unroute"] = k.evaluate(PROGRESS_JS, code)["me"]
+                log["blip"] = {"mode": args.cut, "seconds": args.cut_seconds, "char": ch, "cut_at_stroke": stroke, "cut_at": time.time()}
             drag(k, k.evaluate(TRACE_JS, [ch, stroke]))
             k.wait_for_timeout(450)
             if ch == chars[1] and stroke == 1 and "tracing" not in shots:

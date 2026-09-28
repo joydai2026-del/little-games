@@ -298,6 +298,7 @@ class KidRace {
   private cheering = false;
   private pending = 0;
   private hiccupUntil = 0;
+  private gaveUp = false;
   /** Only states at least this new may be used to reconcile (drops a stale poll that crossed a send). */
   private minVersion = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -344,6 +345,7 @@ class KidRace {
     this.tracer?.destroy();
     this.tracer = null;
     delete this.stage.dataset.fin;
+    this.gaveUp = false;
     this.adoptServer();
     this.status.textContent = 'Oops, the internet hiccuped. Keep going from here!';
     this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
@@ -416,6 +418,9 @@ class KidRace {
     this.queue = this.queue.then(async () => {
       const waits = GAME.strokeRetryBackoffMs;
       try {
+        // An earlier send already gave up: the room is behind this stroke, so it
+        // would only be refused. Skip it; the resync below puts the pad right.
+        if (this.gaveUp) return;
         for (let attempt = 0; attempt <= waits.length; attempt++) {
           try {
             const env = await sendStroke(this.ctx.code, this.ctx.seat, { race, seq, charIndex, strokeIndex, result });
@@ -424,7 +429,10 @@ class KidRace {
             return;
           } catch (err) {
             const retryable = !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500;
-            if (!retryable || attempt === waits.length) return; // refused or gave up: reconcile below
+            if (!retryable || attempt === waits.length) {
+              this.gaveUp = true; // refused or gave up: skip the rest, reconcile below
+              return;
+            }
             await new Promise((r) => setTimeout(r, waits[attempt]));
           }
         }
