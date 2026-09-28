@@ -40,8 +40,9 @@
   text-align: center; font-family: var(--font-ui); font-size: 0.85rem; color: var(--muted);
 }
 .avery-footer .avery-line { margin: 0 0 4px; font-weight: 500; }
-.avery-footer a { color: inherit; display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 6px; }
-.avery-footer .avery-credits { margin: 0; line-height: 1.5; }
+/* Inline links stay in the sentence; vertical padding grows the tap area to ~64px. */
+.avery-footer a { color: inherit; padding: 21px 2px; }
+.avery-footer .avery-credits { margin: 0; line-height: 1.6; }
 
 /* Buttons. White on mint-deep fails contrast (2.9:1), so primary uses INK text
    (4.3:1), which passes only as LARGE text: keep button labels 19px+ bold. */
