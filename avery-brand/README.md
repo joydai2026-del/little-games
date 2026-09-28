@@ -14,11 +14,13 @@ The old ink-drop `momo.svg` is retired: `check-brand.sh` fails if any game still
 |---|---|---|---|
 | `momo.png` | `momo-brush-official.png` | 256 px, transparent | In-game Momo: speech line, cheers, hints, winners |
 | `momo@2x.png` | `momo-brush-official.png` | 512 px, transparent | The same, for retina screens (`srcset` 2x) |
-| `momo-icon.png` | `momo-brush-tpt-icon.png` | 64 px, transparent | Header lockup (shown at 44 px) and favicon |
-| `momo-icon@2x.png` | `momo-brush-tpt-icon.png` | 128 px, transparent | The same, for retina screens (`srcset` 2x) |
+| `momo-icon.png` | `momo-brush-official.png` | 64 px, transparent | Header lockup (shown at 44 px) and favicon |
+| `momo-icon@2x.png` | `momo-brush-official.png` | 128 px, transparent | The same, for retina screens (`srcset` 2x) |
 | `theme.css` | guide sections 3 and 4 | | Tokens, fonts, header, footer, buttons |
 | `../scripts/make-momo-assets.py` | | | Rebuilds all four PNGs byte-for-byte from the locked files (needs Pillow) |
 | `../scripts/check-brand.sh` | | | The check (see below) |
+
+**One drawing everywhere in the games**: all four PNGs come from `momo-brush-official.png`; the tight `momo-brush-tpt-icon.png` is for the TPT store only.
 
 **Face-only Momo is for in-game stickers only.** The store logo is always the L4 lockup
 (Momo + wordmark + coral underline), never Momo alone: `docs/avery/brand/avatars/momo/lockups/L4-official-horizontal.png`

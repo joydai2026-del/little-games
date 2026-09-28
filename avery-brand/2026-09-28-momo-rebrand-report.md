@@ -18,18 +18,15 @@ this session, B = checked locally, C = assumed.
 
 **Needs JJ (WHAT decisions):**
 
-- **Two different puppy drawings sit side by side.** The header icon comes from `momo-brush-tpt-icon.png`
-  (fluffy, brush on the right) and the in-game Momo from `momo-brush-official.png` (smooth, brush on the
-  left), as instructed. On Tianzige both are visible at once. The guide itself calls the tpt icon
-  "archive after L4 TPT swap". Pick one source for both? (A one-line change in `scripts/make-momo-assets.py`.)
+- ~~Two different puppy drawings~~ Decided 2026-09-28: one drawing. All four PNGs now come from
+  `momo-brush-official.png`; the tight TPT icon stays for the store only.
 - The mp4 user-attachments URLs are reset to `pending, JJ adds` in the root README and both game READMEs,
   because the recordings changed.
 
 ## Recommended actions
 
 1. Review and merge the PR.
-2. Decide which puppy drawing is the single face-only Momo.
-3. Drop the two new mp4s into a GitHub comment box and paste the URLs into the READMEs.
+2. Drop the two new mp4s into a GitHub comment box and paste the URLs into the READMEs.
 
 ## What changed
 

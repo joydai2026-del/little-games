@@ -2,9 +2,10 @@
 # matte the flat cream paper to transparent (flood fill from the border), trim,
 # downscale, quantize. Run from the repo root:
 #   python3 scripts/make-momo-assets.py avery-brand
-# Writes momo.png (256 px) + momo@2x.png (512 px), from momo-brush-official.png,
-# and momo-icon.png (64 px) + momo-icon@2x.png (128 px), from
-# momo-brush-tpt-icon.png. The @2x files are for retina screens (srcset). Needs Pillow.
+# Writes momo.png (256 px), momo@2x.png (512 px), momo-icon.png (64 px) and
+# momo-icon@2x.png (128 px), ALL from momo-brush-official.png: one drawing
+# everywhere in the games. The tight TPT icon stays for the store only.
+# The @2x files are for retina screens (srcset). Needs Pillow.
 import sys, os
 from collections import deque
 from PIL import Image
@@ -41,8 +42,8 @@ def square(img, size, pad=0.04):
     return small.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
 out = sys.argv[1]
 hero, bg1 = matte(f"{SRC}/momo-brush-official.png")
-icon, bg2 = matte(f"{SRC}/momo-brush-tpt-icon.png")
-print("bg", bg1, bg2, "trim", hero.size, icon.size)
+icon = hero  # JJ 2026-09-28: one Momo drawing; the icon is the hero, tighter
+print("bg", bg1, "trim", hero.size)
 square(hero, 256).save(f"{out}/momo.png", optimize=True)
 square(hero, 512).save(f"{out}/momo@2x.png", optimize=True)
 square(icon, 64, pad=0.02).save(f"{out}/momo-icon.png", optimize=True)
