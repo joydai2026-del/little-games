@@ -2,7 +2,7 @@
  ⛅️ wrangler 4.128.0 (update available 4.143.0)
 ───────────────────────────────────────────────
 Created:     2026-09-28T16:11:45.253Z
-Author:      joyd.ai.2026@gmail.com
+Author:      <owner email redacted>
 Source:      Unknown (deployment)
 Message:     -
 Version(s):  (100%) 7fc83969-e497-4d82-ab14-a5e2c8e13d29
