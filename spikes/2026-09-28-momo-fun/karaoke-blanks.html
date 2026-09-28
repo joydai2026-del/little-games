@@ -52,7 +52,7 @@ textarea{min-height:170px}
 .strip span{font:700 34px var(--zh);opacity:.45}
 .strip span.now{opacity:1;color:var(--mint-deep)}
 .strip span.gap{color:var(--coral)}
-.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;width:100%}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;width:100%}
 .kword{font:700 170px/1.15 var(--zh);letter-spacing:.04em;text-align:center;max-width:100%;word-break:break-all;line-break:anywhere}
 .kword span{color:var(--ink)}
 /* Sweep runs character by character, so a word that wraps onto two lines still lights up in reading order */
@@ -149,7 +149,7 @@ var CONFIG = {
   afterRevealMs: 1400,                                 // pause after a reveal before the song continues
   minWords: 3,
   maxWords: 30,                                        // longer lists: only the first maxWords are used
-  maxCharsPerLine: 4, wordMaxPx: 170,
+  maxCharsPerLine: 6, wordMaxPx: 170,
   storageKey: "momo-spike-list"
 };
 // ---- Shared helpers: MUST stay identical in all three spikes (check.py compares them) ----
@@ -164,12 +164,14 @@ function parseList(text){
     line = line.replace(/^\s*[\(（\[]?\s*[0-9０-９]+\s*[\.\)、．:：）\]-]?\s*/, "");
     // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
     // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
-    var items = [], lead = [];
-    (line.match(TOKEN) || []).forEach(function(t){
-      if (HAN.test(t)) items.push({ zh: t, py: [] });
-      else if (isPinyin(t)) (items.length ? items[items.length - 1].py : lead).push(t);
+    // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
+    var toks = line.match(TOKEN) || [], before = toks.length && !HAN.test(toks[0]) && isPinyin(toks[0]);
+    var items = [], pending = [];
+    toks.forEach(function(t){
+      if (HAN.test(t)){ items.push({ zh: t, py: before ? pending : [] }); pending = []; }
+      else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
     });
-    if (lead.length && items.length && !items[0].py.length) items[0].py = lead;          // "píngguǒ 苹果"
+    if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
     var last = items[items.length - 1], tail = last ? last.py.slice() : [];
     if (items.length > 1 && tail.length === items.length &&
         items.slice(0, -1).every(function(w){ return !w.py.length; })){                   // "苹果 香蕉 píngguǒ xiāngjiāo"
@@ -187,10 +189,23 @@ function store(k, v){ try { if (v === undefined) return localStorage.getItem(k);
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
 function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
 function charCount(s){ return Array.from(s).length; }
-// Font size so a word fits its box: long words split into balanced lines of at most maxPerLine characters.
-function fitSize(text, boxWidth, maxPx, maxPerLine){
-  var n = charCount(text), per = Math.ceil(n / Math.ceil(n / maxPerLine));
-  return Math.max(16, Math.min(maxPx, Math.floor(boxWidth / (per * 1.12))));
+// Biggest font size that fits a word inside a box by BOTH width and height. Tries every line count
+// (at most maxPerLine characters a line) and caps the element width so the lines come out even.
+function fitWord(text, boxW, boxH, maxPx, maxPerLine){
+  var n = Math.max(1, charCount(text)), best = { px: 0, per: n };
+  for (var lines = Math.ceil(n / maxPerLine); lines <= n; lines++){
+    var per = Math.ceil(n / lines), rows = Math.ceil(n / per);
+    var px = Math.floor(Math.min(maxPx, boxW / (per * 1.12), boxH / (rows * 1.2)));
+    if (px > best.px) best = { px: px, per: per };
+  }
+  best.px = Math.max(14, best.px);
+  return best;
+}
+function applyFit(el, text, boxW, boxH, maxPx, maxPerLine){
+  var f = fitWord(text, boxW, boxH, maxPx, maxPerLine);
+  el.style.fontSize = f.px + "px";
+  el.style.maxWidth = Math.ceil(f.px * f.per * 1.1) + "px";   // wraps after f.per characters
+  el.style.marginLeft = el.style.marginRight = "auto";
 }
 var ICON = {
   play:    '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
@@ -252,6 +267,12 @@ function moveStrip(){
   var el = spans[idx]; if (!el) return;
   $("strip").style.transform = "translateX(" + ($("strip").parentNode.offsetWidth / 2 - (el.offsetLeft + el.offsetWidth / 2)) + "px)";
 }
+// Height left for the sung word: the screen minus the lyric strip above and Momo, the button and padding below.
+function wordHeight(){
+  var main = getComputedStyle(document.querySelector("main"));
+  var below = document.querySelector(".momo-row").offsetHeight + $("reveal").offsetHeight + 16 + parseFloat(main.paddingBottom) + 12;
+  return window.innerHeight - $("stage").getBoundingClientRect().top - below;
+}
 function step(){
   clearTimeout(timer);
   if (!playing) return;
@@ -265,7 +286,7 @@ function step(){
   moveStrip(); stage.classList.remove("reveal"); $("cheer").classList.remove("show"); $("momo").classList.remove("cheer", "shouting");
   k.innerHTML = chars.map(function(c, i){ return '<span style="--d:' + Math.round(i * ms / chars.length) + 'ms">' + esc(c) + "</span>"; }).join("");
   k.style.setProperty("--char-ms", Math.round(ms / chars.length) + "ms");
-  k.style.fontSize = fitSize(w.zh, stage.clientWidth, CONFIG.wordMaxPx, CONFIG.maxCharsPerLine) + "px";
+  applyFit(k, w.zh, stage.clientWidth, wordHeight(), CONFIG.wordMaxPx, CONFIG.maxCharsPerLine);
   k.classList.remove("sing", "enter"); void k.offsetWidth;
   if (blanks[idx]){
     stage.classList.add("is-gap"); $("momo").classList.add("shouting");

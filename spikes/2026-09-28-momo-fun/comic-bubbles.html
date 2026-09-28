@@ -91,8 +91,8 @@ textarea{min-height:200px}
   .print-title{display:block;font:800 18pt var(--ui);margin:0 0 8pt}
   .print-title span{font-weight:400;font-size:12pt;margin-left:12pt}
   .strip{gap:8pt}
-  /* 3 panels fit inside both Letter and A4 with the CONFIG print margin */
-  .panel{height:2.95in;break-inside:avoid;border-width:3pt}
+  /* panel height is worked out from the paper and CONFIG print margin in setPaper(), so 3 panels always fit one page */
+  .panel{break-inside:avoid;border-width:3pt}
   .bubble{font-size:calc(var(--fs,42px) * 1.6);animation:none!important}
   .bubble.empty{color:transparent}
   .bubble.sel{background:var(--white);border-color:var(--ink)}
@@ -160,7 +160,9 @@ var CONFIG = {
   emptyLabel: "tap me",
   minWords: 3,               // fewer than this and the comic would repeat one word everywhere
   maxWords: 24,              // longer lists: only the first maxWords go in the tray
-  paper: "letter", printMargin: "0.5in",
+  paper: "letter", printMargin: "0.5in",              // any "in", "mm" or "cm" value; panels shrink to keep one page
+  paperHeightIn: { letter: 11, A4: 11.69 },
+  printTitleIn: 0.55,                                  // "Act it out! Name:" line plus gaps between panels
   storageKey: "momo-spike-list"
 };
 // ---- Shared helpers: MUST stay identical in all three spikes (check.py compares them) ----
@@ -175,12 +177,14 @@ function parseList(text){
     line = line.replace(/^\s*[\(（\[]?\s*[0-9０-９]+\s*[\.\)、．:：）\]-]?\s*/, "");
     // Pair each Chinese word with the pinyin that follows it BEFORE looking at separators,
     // so tab columns (Sheets, Excel), CSV and "苹果/píngguǒ" all keep their pinyin.
-    var items = [], lead = [];
-    (line.match(TOKEN) || []).forEach(function(t){
-      if (HAN.test(t)) items.push({ zh: t, py: [] });
-      else if (isPinyin(t)) (items.length ? items[items.length - 1].py : lead).push(t);
+    // Lines that start with pinyin ("píngguǒ 苹果 xiāngjiāo 香蕉") give each word the pinyin BEFORE it; otherwise the pinyin after it.
+    var toks = line.match(TOKEN) || [], before = toks.length && !HAN.test(toks[0]) && isPinyin(toks[0]);
+    var items = [], pending = [];
+    toks.forEach(function(t){
+      if (HAN.test(t)){ items.push({ zh: t, py: before ? pending : [] }); pending = []; }
+      else if (isPinyin(t)){ if (before || !items.length) pending.push(t); else items[items.length - 1].py.push(t); }
     });
-    if (lead.length && items.length && !items[0].py.length) items[0].py = lead;          // "píngguǒ 苹果"
+    if (pending.length && items.length && !items[items.length - 1].py.length) items[items.length - 1].py = pending;
     var last = items[items.length - 1], tail = last ? last.py.slice() : [];
     if (items.length > 1 && tail.length === items.length &&
         items.slice(0, -1).every(function(w){ return !w.py.length; })){                   // "苹果 香蕉 píngguǒ xiāngjiāo"
@@ -198,10 +202,23 @@ function store(k, v){ try { if (v === undefined) return localStorage.getItem(k);
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
 function plural(n, one, many){ return n + " " + (n === 1 ? one : many); }
 function charCount(s){ return Array.from(s).length; }
-// Font size so a word fits its box: long words split into balanced lines of at most maxPerLine characters.
-function fitSize(text, boxWidth, maxPx, maxPerLine){
-  var n = charCount(text), per = Math.ceil(n / Math.ceil(n / maxPerLine));
-  return Math.max(16, Math.min(maxPx, Math.floor(boxWidth / (per * 1.12))));
+// Biggest font size that fits a word inside a box by BOTH width and height. Tries every line count
+// (at most maxPerLine characters a line) and caps the element width so the lines come out even.
+function fitWord(text, boxW, boxH, maxPx, maxPerLine){
+  var n = Math.max(1, charCount(text)), best = { px: 0, per: n };
+  for (var lines = Math.ceil(n / maxPerLine); lines <= n; lines++){
+    var per = Math.ceil(n / lines), rows = Math.ceil(n / per);
+    var px = Math.floor(Math.min(maxPx, boxW / (per * 1.12), boxH / (rows * 1.2)));
+    if (px > best.px) best = { px: px, per: per };
+  }
+  best.px = Math.max(14, best.px);
+  return best;
+}
+function applyFit(el, text, boxW, boxH, maxPx, maxPerLine){
+  var f = fitWord(text, boxW, boxH, maxPx, maxPerLine);
+  el.style.fontSize = f.px + "px";
+  el.style.maxWidth = Math.ceil(f.px * f.per * 1.1) + "px";   // wraps after f.per characters
+  el.style.marginLeft = el.style.marginRight = "auto";
 }
 var ICON = {
   play:    '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
@@ -224,8 +241,11 @@ var $ = function(id){ return document.getElementById(id); };
 var words = [], fills = [], sel = 0, nBubbles = 0, longOk = false;
 function show(id){ document.querySelectorAll(".screen").forEach(function(s){ s.classList.toggle("on", s.id === id); }); }
 function bubblePx(w){ var n = charCount(w); for (var i = 0; i < CONFIG.bubbleFonts.length; i++) if (n <= CONFIG.bubbleFonts[i].upTo) return CONFIG.bubbleFonts[i].px; return 18; }
+function inches(v){ var m = /([\d.]+)\s*(in|mm|cm)/.exec(v) || [0, 0.5, "in"]; return +m[1] / ({ in: 1, mm: 25.4, cm: 2.54 })[m[2]]; }
 function setPaper(size){
-  $("page-size").textContent = "@page{size:" + size + ";margin:" + CONFIG.printMargin + "}";
+  var panelIn = (CONFIG.paperHeightIn[size] - 2 * inches(CONFIG.printMargin) - CONFIG.printTitleIn) / CONFIG.panels.length - 0.05;
+  $("page-size").textContent = "@page{size:" + size + ";margin:" + CONFIG.printMargin + "}" +
+    "@media print{#strip .panel{height:" + panelIn.toFixed(2) + "in}}";
   document.querySelectorAll("#paper button").forEach(function(x){ x.setAttribute("aria-pressed", x.dataset.size === size); });
 }
 
@@ -284,7 +304,9 @@ $("shuffle").onclick = function(){
 $("clear").onclick = function(){ fills = []; sel = 0; paint(); };
 $("paper").onclick = function(e){ var b = e.target.closest("button"); if (b) setPaper(b.dataset.size); };
 $("print").onclick = function(){ window.print(); };
-$("new-list").onclick = function(){ show("s-paste"); };
+$("new-list").onclick = function(){   // the old comic is gone: nothing stale can be printed
+  document.body.classList.remove("has-comic"); $("strip").innerHTML = ""; $("tray").innerHTML = ""; fills = []; sel = 0; show("s-paste");
+};
 setPaper(CONFIG.paper);
 var saved = store(CONFIG.storageKey); if (saved) $("paste").value = saved;
 </script>
