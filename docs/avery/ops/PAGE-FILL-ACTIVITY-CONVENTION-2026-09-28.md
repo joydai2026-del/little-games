@@ -60,3 +60,23 @@ JD approved both styles. Apply storewide to Active Avery PDFs with large white b
 ## Related
 
 - Prior whitespace pass: `halloween-chinese-2026/QA-WHITESPACE-2026-09-24.md` (flex-grow approach — superseded for empty interiors).
+
+### Applied batch 2 — 2026-09-28 PM ET
+Storewide empty-bottom audit + Sample A/B fills on remaining Active priority PDFs:
+
+| Product | TPT id | Notes |
+|---|---|---|
+| Halloween Chinese Activities (p6 densify) | #17734157 | Re-submitted cover+≥3 previews |
+| Halloween Chinese Vocab Pack | #17597831 | Restored factory source + SVG icons + A/B fills; emoji removed |
+| FREE Halloween Chinese Vocab | #17597740 | Same |
+| Thanksgiving Chinese Gratitude Vocab Pack | #17614375 | Circle/sentences/bingo/teacher filled |
+| FREE Thanksgiving Chinese Gratitude Vocab | #17613095 | Sentences page filled |
+| Mid-Autumn Lantern / Mooncake / Jade Rabbit crafts | #17711359 / #17711456 / #17711532 | Live PDF swapped to denser v2 (compressed); craft cut-template white remains intentional |
+| Halloween Pumpkin Craft | #17774630 | Still deferred (intentional craft white) |
+
+Shared helpers:
+- HTML: `avery-factory/products/halloween-chinese-2026/shared/page_fill.py`
+- SVG vocab packs: `avery-factory/scripts/hanzi/page_fill_svg.py`
+- Empty-bottom detector audit: `/workspace/avery-ops/reports/empty-bottom-audit-2026-09-28/`
+
+Soft remains (cover / TOC / teacher-only): acceptable; content student pages ≤0.9in empty-bottom PASS.
