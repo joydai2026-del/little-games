@@ -116,11 +116,12 @@ Where things live:
 
 | Thing | File |
 |---|---|
-| Colors (only place; `momo.svg` image art is the one documented exception) | `public/theme.css` |
+| Brand colours, fonts, header, footer, buttons (Avery Studio kit, copied unedited from `avery-brand/`; `npm run check:brand`) | `public/theme.css` |
+| Game-only colour tokens (grid, practice ink; `npm run check:palette`) | `:root` block of `public/sheet.css` |
 | Printed sheet styles | `public/sheet.css` |
 | Layout numbers, teacher options, limits | `src/shared/config.ts` |
 | Paste parsing | `src/shared/parse.ts` |
 | The locked grid rules | `src/shared/layout.ts` |
 | Sheet to SVG (used by browser and API) | `src/shared/render.ts` |
-| Momo (placeholder art) | `public/momo.svg` |
+| Momo (placeholder art, copied unedited from `avery-brand/momo.svg`) | `public/momo.svg` |
 | Cache times, size caps, rate limit, Retry-After | `wrangler.jsonc` |
