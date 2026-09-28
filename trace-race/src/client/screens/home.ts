@@ -2,13 +2,13 @@
 import { createRoom, joinRoom } from '../api';
 import { parseCharList } from '../../shared/parse';
 import { GAME } from '../../shared/config';
-import { brand, credits, h } from '../ui';
+import { brand, h } from '../ui';
 
 export function renderHome(root: HTMLElement, prefillCode: string): () => void {
   const kidError = h('p', { class: 'error', role: 'status' });
   const code = h('input', { class: 'code', maxlength: 4, placeholder: 'CODE', autocomplete: 'off', value: prefillCode, 'aria-label': 'Room code' });
   const name = h('input', { maxlength: GAME.maxNameLength, placeholder: 'Your first name', autocomplete: 'off', 'aria-label': 'Your name' });
-  const join = h('button', { class: 'btn', text: 'Join the race' });
+  const join = h('button', { class: 'btn btn-primary', text: 'Join the race' });
   join.addEventListener('click', async () => {
     kidError.textContent = '';
     const c = code.value.toUpperCase().trim();
@@ -39,7 +39,7 @@ export function renderHome(root: HTMLElement, prefillCode: string): () => void {
       : '';
   };
   paste.addEventListener('input', showPreview);
-  const make = h('button', { class: 'btn coral', text: 'Make a room' });
+  const make = h('button', { class: 'btn btn-primary', text: 'Make a room' });
   make.addEventListener('click', async () => {
     teachError.textContent = '';
     if (paste.value.length > GAME.maxPasteLength) return void (teachError.textContent = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`);
@@ -66,8 +66,7 @@ export function renderHome(root: HTMLElement, prefillCode: string): () => void {
   ]);
   root.replaceChildren(
     brand('Write it fast, write it right.'),
-    ...(prefillCode ? [kidCard, teacherCard] : [kidCard, teacherCard]),
-    credits()
+    ...(prefillCode ? [kidCard, teacherCard] : [kidCard, teacherCard])
   );
   (prefillCode ? name : code).focus();
   return () => {};

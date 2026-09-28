@@ -43,19 +43,6 @@ export function brand(subtitle: string): HTMLElement {
   ]);
 }
 
-export function credits(): HTMLElement {
-  return h('p', { class: 'footer' }, [
-    'Character stroke data: ',
-    h('a', {
-      href: '/licenses/ARPHICPL.TXT',
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      text: 'Make Me a Hanzi / Arphic Technology, Arphic Public License',
-    }),
-    '. Stroke checking: Hanzi Writer (MIT). An Avery Studio game.',
-  ]);
-}
-
 /** Reads a colour token from theme.css so no colour literal lives in TS. */
 export function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

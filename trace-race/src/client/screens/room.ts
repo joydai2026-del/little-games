@@ -4,7 +4,7 @@ import { ApiError, act, clearSeat, loadSeat, type Envelope, poll, sendStroke, se
 import { GAME, OPTION_LIMITS } from '../../shared/config';
 import type { PublicState, StrokeResult } from '../../shared/types';
 import { startTrace, type TraceHandle } from '../tracer';
-import { brand, credits, h, momo } from '../ui';
+import { brand, h, momo } from '../ui';
 import { goTo } from '../route';
 import { StrokeSender } from '../sender';
 import { HICCUP_TEXT, finishState, kidStatusText } from '../status';
@@ -132,7 +132,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
         // The saved seat is for a room that is gone (codes are reused): forget it, so the
         // join link works again instead of looping back here.
         clearSeat(code);
-        const again = h('button', { class: 'btn', text: 'Join again' });
+        const again = h('button', { class: 'btn btn-primary', text: 'Join again' });
         again.addEventListener('click', () => goTo(`#/join/${code}`, window, () => new HashChangeEvent('hashchange')));
         root.replaceChildren(brand('This room has ended.'), h('p', {}, [again]));
         stopped = true;
@@ -154,8 +154,8 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
 // --- teacher ---------------------------------------------------------------
 
 function stepper(label: string, value: number, min: number, max: number, step: number, onSet: (n: number) => void): HTMLElement {
-  const minus = h('button', { class: 'btn secondary small', text: '−', 'aria-label': `less ${label}` });
-  const plus = h('button', { class: 'btn secondary small', text: '+', 'aria-label': `more ${label}` });
+  const minus = h('button', { class: 'btn btn-secondary small', text: '−', 'aria-label': `less ${label}` });
+  const plus = h('button', { class: 'btn btn-secondary small', text: '+', 'aria-label': `more ${label}` });
   minus.addEventListener('click', () => onSet(Math.max(min, value - step)));
   plus.addEventListener('click', () => onSet(Math.min(max, value + step)));
   return h('div', {}, [h('label', { text: label }), h('div', { class: 'stepper' }, [minus, h('span', { class: 'val', text: String(value) }), plus])]);
@@ -179,7 +179,7 @@ function teacherLobby(ctx: Ctx): HTMLElement {
   hints.checked = s.options.hints;
   hints.addEventListener('change', () => void save({ hints: hints.checked }));
 
-  const start = h('button', { class: 'btn coral', text: 'Start the race' });
+  const start = h('button', { class: 'btn btn-primary', text: 'Start the race' });
   const why = !s.list.chars.length ? 'Add a character list first.' : !kids.length ? 'Waiting for kids to join...' : '';
   start.disabled = Boolean(why);
   start.addEventListener('click', async () => {
@@ -194,7 +194,7 @@ function teacherLobby(ctx: Ctx): HTMLElement {
   });
 
   const paste = h('textarea', { 'aria-label': 'New character list', placeholder: 'Paste a new list to replace this one' });
-  const replace = h('button', { class: 'btn secondary', text: 'Use this list' });
+  const replace = h('button', { class: 'btn btn-secondary', text: 'Use this list' });
   replace.addEventListener('click', async () => {
     try {
       await setList(ctx.code, ctx.seat, paste.value);
@@ -234,7 +234,6 @@ function teacherLobby(ctx: Ctx): HTMLElement {
       why ? h('p', { class: 'muted', text: why }) : null,
       err,
     ]),
-    credits(),
   ]);
 }
 
@@ -244,7 +243,7 @@ function teacherRace(ctx: Ctx): HTMLElement {
   const counting = s.phase === 'racing' && s.goAt != null && serverNow(ctx) < s.goAt;
   let footer: HTMLElement | null = null;
   if (s.phase === 'done') {
-    const again = h('button', { class: 'btn coral', text: 'Race again (next characters)' });
+    const again = h('button', { class: 'btn btn-primary', text: 'Race again (next characters)' });
     again.addEventListener('click', async () => {
       again.disabled = true;
       try {
@@ -346,7 +345,9 @@ class KidRace {
   }
 
   private size(): number {
-    return Math.min(window.innerWidth - 40, window.innerHeight - 220, 520);
+    // The Avery header sits above the pad on every screen; leave room for it.
+    const header = document.querySelector('.avery-header')?.getBoundingClientRect().height ?? 0;
+    return Math.min(window.innerWidth - 40, window.innerHeight - 220 - header, 520);
   }
 
   /** Take the room's word for where this kid is. */

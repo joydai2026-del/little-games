@@ -2,7 +2,7 @@
 //   #/            home (teacher makes a room, kid joins)
 //   #/join/ABCD   home with the code filled in (the link the teacher shares)
 //   #/room/ABCD   the room (teacher board or kid tracing pad)
-import './theme.css';
+import './game.css';
 import './styles.css';
 import { renderHome } from './screens/home';
 import { renderRoom } from './screens/room';

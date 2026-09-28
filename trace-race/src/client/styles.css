@@ -1,7 +1,8 @@
 * { box-sizing: border-box; }
+/* Brand colours, fonts, header, footer and buttons: public/theme.css (the kit). */
 html, body { margin: 0; padding: 0; background: var(--cream); color: var(--ink); font-family: var(--font); }
 body { min-height: 100vh; -webkit-tap-highlight-color: transparent; }
-#app { max-width: 720px; margin: 0 auto; padding: 16px; }
+#app { max-width: 720px; margin: 0 auto; padding: 0 16px 16px; }
 #app.wide { max-width: 1100px; }
 h1 { font-size: 2rem; margin: 8px 0; }
 h2 { font-size: 1.4rem; margin: 16px 0 8px; }
@@ -13,11 +14,9 @@ a { color: var(--mint-deep); }
 .brand .sub { color: var(--ink-soft); margin: 0; }
 
 .card { background: var(--paper); border-radius: var(--radius); padding: 20px; margin: 16px 0; box-shadow: 0 2px 0 var(--ink-faint); }
-.btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); min-width: var(--tap); padding: 0 24px; border: 0; border-radius: var(--radius); font: inherit; font-size: 1.25rem; font-weight: 800; cursor: pointer; background: var(--mint-deep); color: var(--paper); width: 100%; }
-.btn.secondary { background: var(--mint); color: var(--ink); }
-.btn.coral { background: var(--coral); color: var(--paper); }
-.btn:disabled { opacity: 0.45; cursor: default; }
-.btn.small { min-height: var(--tap); font-size: 1.4rem; width: auto; }
+/* Buttons are the kit's .btn-primary / .btn-secondary; .btn only sets the game's layout. */
+.btn { width: 100%; border-radius: var(--radius); font-size: 1.25rem; }
+.btn.small { font-size: 1.4rem; width: auto; }
 label { display: block; font-weight: 700; margin: 12px 0 6px; }
 input, textarea, select { width: 100%; min-height: var(--tap); font: inherit; font-size: 1.25rem; padding: 12px 16px; border: 3px solid var(--mint); border-radius: var(--radius); background: var(--paper); color: var(--ink); }
 textarea { min-height: 140px; resize: vertical; }
@@ -78,8 +77,6 @@ input.code { text-transform: uppercase; letter-spacing: 0.4em; font-weight: 900;
 .lane .bar > span { display: block; height: 100%; background: var(--mint-deep); }
 .lane .now { font-family: var(--font-han); font-size: 2.6rem; text-align: center; }
 .lane .now.fin { font-family: var(--font); font-size: 1rem; font-weight: 900; color: var(--mint-deep); }
-.footer { margin: 32px 0 16px; font-size: 0.85rem; color: var(--ink-soft); text-align: center; }
-.footer a { color: var(--ink-soft); }
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper .val { min-width: 64px; text-align: center; font-size: 1.5rem; font-weight: 900; }
 .toggle { display: flex; align-items: center; gap: 12px; min-height: var(--tap); font-weight: 700; }

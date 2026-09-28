@@ -1,12 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Momo the ink drop">
-  <!-- PLACEHOLDER mascot. No canonical 墨墨 (Momo) art exists yet; swap this one file. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Momo, the ink drop">
+  <!-- PLACEHOLDER 墨墨 (Momo). No canonical mascot art exists yet. Canonical copy:
+       little-games/avery-brand/momo.svg. Fills use only the theme.css tokens
+       (ink, cream, coral, mint). Swap this one file for the real asset. -->
   <path d="M60 8 C60 8 22 52 22 76 A38 38 0 0 0 98 76 C98 52 60 8 60 8 Z" fill="#2D3436"/>
   <ellipse cx="46" cy="72" rx="7" ry="9" fill="#FFF7E8"/>
   <ellipse cx="74" cy="72" rx="7" ry="9" fill="#FFF7E8"/>
   <circle cx="47" cy="74" r="4" fill="#2D3436"/>
   <circle cx="75" cy="74" r="4" fill="#2D3436"/>
-  <circle cx="38" cy="88" r="5" fill="#FF7B6B" opacity="0.7"/>
-  <circle cx="82" cy="88" r="5" fill="#FF7B6B" opacity="0.7"/>
-  <path d="M52 90 Q60 98 68 90" stroke="#FFF7E8" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <circle cx="37" cy="88" r="5" fill="#FF7B6B" opacity="0.75"/>
+  <circle cx="83" cy="88" r="5" fill="#FF7B6B" opacity="0.75"/>
+  <path d="M52 90 Q60 98 68 90" fill="none" stroke="#FFF7E8" stroke-width="4" stroke-linecap="round"/>
   <ellipse cx="44" cy="46" rx="5" ry="9" fill="#BFE8D8" opacity="0.45" transform="rotate(25 44 46)"/>
 </svg>

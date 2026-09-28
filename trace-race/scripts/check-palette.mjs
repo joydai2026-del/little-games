@@ -1,4 +1,5 @@
-// Palette gate: src/client/theme.css is the ONE source of colour.
+// Palette gate: public/theme.css (the Avery Studio kit) and src/client/game.css
+// (game-only tokens) are the ONLY sources of colour.
 //   - No colour literal anywhere else in src/client (CSS or TS).
 //   - index.html and public/*.svg cannot read CSS variables (the <meta> tag
 //     and an <img> SVG are outside the page's CSS), so they may REPEAT a
@@ -8,7 +9,7 @@ import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 const HEX = /#[0-9a-fA-F]{3,8}\b/g;
-const theme = readFileSync(join(root, 'src/client/theme.css'), 'utf8');
+const theme = readFileSync(join(root, 'public/theme.css'), 'utf8') + readFileSync(join(root, 'src/client/game.css'), 'utf8');
 const tokens = new Set((theme.match(HEX) ?? []).map((c) => c.toUpperCase()));
 
 function walk(dir) {
@@ -20,13 +21,13 @@ function walk(dir) {
 
 const problems = [];
 for (const file of walk(join(root, 'src/client'))) {
-  if (file.endsWith('theme.css') || !/\.(css|ts)$/.test(file)) continue;
-  for (const hit of readFileSync(file, 'utf8').match(HEX) ?? []) problems.push(`${file}: literal ${hit} (use a theme.css token)`);
+  if (file.endsWith('game.css') || !/\.(css|ts)$/.test(file)) continue;
+  for (const hit of readFileSync(file, 'utf8').match(HEX) ?? []) problems.push(`${file}: literal ${hit} (use a token)`);
 }
 const statics = [join(root, 'index.html'), ...walk(join(root, 'public')).filter((f) => f.endsWith('.svg'))];
 for (const file of statics) {
   for (const hit of readFileSync(file, 'utf8').match(HEX) ?? []) {
-    if (!tokens.has(hit.toUpperCase())) problems.push(`${file}: ${hit} is not a theme.css token`);
+    if (!tokens.has(hit.toUpperCase())) problems.push(`${file}: ${hit} is not a token`);
   }
 }
 if (problems.length) {
