@@ -7,12 +7,12 @@ import {
   advanceIfDue,
   buildQuestion,
   createRoom,
-  dealWords,
   drawMs,
   join,
   nextAlarmAt,
   openAt,
   parseGuessInput,
+  pickWord,
   pointsAt,
   publicView,
   setOptions,
@@ -26,11 +26,16 @@ import { drawnChar } from '../src/shared/parse';
 import type { RoomState, WordList } from '../src/shared/types';
 
 const T0 = 1_800_000_000_000;
+// mulberry32: a small seeded generator with well-mixed output (a plain LCG with small
+// seeds gives correlated first draws, which skews the chance-level attack tests).
 const seeded = (seed = 1) => {
-  let s = seed;
+  let a = seed >>> 0;
   return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 2 ** 32;
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 };
 
@@ -58,14 +63,25 @@ const guess = (s: RoomState, who: string, seq: number, base: number, at: number,
   submitGuess(s, who, { race, question, seq, card: q0(s).orders[who].indexOf(base) }, at);
 
 describe('dealing words and cards', () => {
-  it('deals rounds from a private shuffled deck: no repeats inside a round, every word once before any repeats', () => {
-    const words = ['a', 'b', 'c', 'd', 'e'];
-    const r1 = dealWords([], words, 2, seeded(3));
-    const r2 = dealWords(r1.deck, words, 2, seeded(4));
-    const r3 = dealWords(r2.deck, words, 2, seeded(5));
-    expect(new Set([...r1.picked, ...r2.picked, r3.picked[0]]).size).toBe(5);
-    expect(new Set(r3.picked).size).toBe(2);
-    expect(dealWords([], ['a', 'b'], 5, seeded(1)).picked.sort()).toEqual(['a', 'b']);
+  it('picks each word independently from the whole list: no immediate repeat (when the list is long enough), and that word stays off the cards', () => {
+    const long = list(['大', '小', '山', '人', '口', '火']);
+    const counts: Record<string, number> = {};
+    const rnd = seeded(9);
+    for (let seed = 1; seed <= 600; seed++) {
+      const { word, avoid } = pickWord(long, '山', rnd);
+      expect(word).not.toBe('山');
+      expect(avoid).toBe('山');
+      counts[word] = (counts[word] ?? 0) + 1;
+      const q = buildQuestion(word, long, rnd, [], avoid)!;
+      expect(q.cards).not.toContain('山');
+    }
+    expect(Object.keys(counts).sort()).toEqual(['人', '口', '大', '小', '火'].sort());
+    // Too short to keep the last word off the cards: fully independent, a repeat is allowed.
+    const short = list(['大', '小', '山', '人']);
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 200; seed++) seen.add(pickWord(short, '山', rnd).word);
+    expect(seen.has('山')).toBe(true);
+    expect(pickWord(short, '山', seeded(1)).avoid).toBeNull();
   });
 
   it('builds cards from the list: one right card, wrong cards never start with the drawn character, each kid gets their own order', () => {
@@ -160,24 +176,40 @@ describe('minimum reveal and scoring', () => {
     expect(standings(w).find((r) => r.name === 'Ava')!.status).toBe('out');
   });
 
-  it('K-2: a wrong guess costs no points, only a pause, then you can still get it', () => {
+  it('K-2: a wrong guess takes no points away, only a pause; a right tap after it earns half', () => {
     const s = room({ level: 'k2' });
     const at = openAt(s);
     const w = guess(s, 'A', 1, wrongOf(s), at).state;
-    const pause = Math.max(LEVELS.k2.wrongCooldownMs, Math.round(LEVELS.k2.wrongCooldownShare * drawMs(s, q0(s))));
-    expect(pause).toBe(LEVELS.k2.wrongCooldownMs); // 3 strokes: the 2 s floor applies
+    const pause = LEVELS.k2.wrongCooldownMs;
     expect(w.attempts.A).toMatchObject({ locked: false, coolUntil: at + pause });
     expect(w.scores.A.points).toBe(0);
     expect(guess(w, 'A', 2, answerOf(s), at + 100)).toMatchObject({ status: 429 });
     expect(guess(w, 'A', 2, wrongOf(s), at + pause)).toMatchObject({ status: 409, error: 'you already tried that card' });
     const ok = guess(w, 'A', 2, answerOf(s), at + pause).state;
-    expect(ok.scores.A).toMatchObject({ correct: 1, wrong: 1, points: pointsAt(s, at + pause) });
+    expect(ok.scores.A).toMatchObject({ correct: 1, wrong: 1, points: Math.round(pointsAt(s, at + pause) * LEVELS.k2.rightAfterMissFactor) });
   });
 
-  it('K-2: the pause stretches on long characters', () => {
-    const s = room({ level: 'k2', counts: Object.fromEntries(WORDS.map((w) => [w, 12])) });
-    const w = guess(s, 'A', 1, wrongOf(s), openAt(s)).state;
-    expect(w.attempts.A.coolUntil! - openAt(s)).toBe(Math.round(0.4 * 12 * LEVELS.k2.strokeMs));
+  it('K-2: the pause is the same for every character (it never tells the stroke count), and 3 tries fit after the drawing', () => {
+    const pauses = [2, 8, 20].map((n) => {
+      const s = room({ level: 'k2', counts: Object.fromEntries(WORDS.map((w) => [w, n])) });
+      return guess(s, 'A', 1, wrongOf(s), openAt(s)).state.attempts.A.coolUntil! - openAt(s);
+    });
+    expect(new Set(pauses).size).toBe(1);
+    expect(3 * LEVELS.k2.wrongCooldownMs).toBeLessThanOrEqual(GAME.holdAfterDrawnMs);
+    // A kid who first taps when the drawing is complete still reaches the fourth card in time.
+    const s = room({ level: 'k2', counts: Object.fromEntries(WORDS.map((w) => [w, 20])) });
+    const q = q0(s);
+    const wrong = q.cards.map((_, i) => i).filter((i) => i !== q.answer);
+    let st = s;
+    let at = s.qStartAt! + drawMs(s, q);
+    let seq = 0;
+    for (const card of [...wrong, q.answer]) {
+      const r = guess(st, 'A', ++seq, card, at);
+      expect(r.error, `tap ${seq}`).toBeUndefined();
+      st = r.state;
+      at = st.attempts.A.coolUntil ?? at;
+    }
+    expect(st.attempts.A.correctAt).not.toBeNull();
   });
 });
 
@@ -315,17 +347,17 @@ describe('what each viewer may see', () => {
       expect(view.list).toBeNull();
       expect(view.expiresAt).toBeNull();
       expect(view.question).toMatchObject({ char: null, answer: null, strokes: null, endsAt: null });
-      for (const k of ['questions', 'deck', 'attempts', 'orders', 'strokeCounts', '"word"']) expect(text).not.toContain(k);
+      for (const k of ['questions', 'lastWord', 'attempts', 'orders', 'strokeCounts', '"word"']) expect(text).not.toContain(k);
       // No word outside this question's cards appears anywhere (the next words cannot be read off).
       const visible = new Set(view.question!.cards);
-      for (const w of EIGHT) if (!visible.has(w)) expect(text, `${w} leaked to ${who}`).not.toContain(w);
+      for (const w of EIGHT) if (!visible.has(w)) expect(text, `${w} leaked to ${who}`).not.toContain(JSON.stringify(w));
     }
     const teacher = publicView(s, 'T', T0);
     expect(teacher.list?.words).toEqual(EIGHT);
     expect(teacher.question).toMatchObject({ char: q0(s).char, answer: answerOf(s) });
   });
 
-  it('the old attack fails: guessing from anything in the kid payload (pasted order, card position, what an earlier round showed) is right no more than chance', () => {
+  it('the old attack fails: guessing from anything in the kid payload (pasted order, card position) is right no more than chance', () => {
     const tries = 300;
     const hits = { pastedOrder: 0, firstCard: 0, sameAsBigScreen: 0 };
     for (let seed = 1; seed <= tries; seed++) {
@@ -333,16 +365,110 @@ describe('what each viewer may see', () => {
       const kid = publicView(s, 'A', T0).question!;
       const screen = publicView(s, 'T', T0).question!;
       const right = kid.cards[q0(s).orders.A.indexOf(answerOf(s))];
-      // 1. The old exploit: the answer is the card that comes first in the pasted list.
       const byPaste = [...kid.cards].sort((x, y) => EIGHT.indexOf(x) - EIGHT.indexOf(y))[0];
       if (byPaste === right) hits.pastedOrder++;
-      // 2. Always tap the first card.
       if (kid.cards[0] === right) hits.firstCard++;
-      // 3. A kid who copies the card POSITION of the answer from someone else's phone or the big screen
-      //    (the positions differ per phone).
       if (kid.cards[screen.cards.indexOf(right)] === right) hits.sameAsBigScreen++;
     }
     for (const [how, n] of Object.entries(hits)) expect(n / tries, how).toBeLessThan(0.4);
+  });
+
+  // The elimination attack (Codex round 2): remember every word that already played (the
+  // closed-word history on the phone, this round and earlier rounds) and tap a card that has
+  // NOT played yet, preferring the one that played longest ago. It must stay near 1 in 4.
+  const nextWord = (s: RoomState) => advanceIfDue(advanceIfDue(s, s.qEndsAt!), s.qEndsAt! + GAME.answerShowMs);
+  function eliminationGuess(cards: string[], played: string[]): string {
+    const rank = (w: string) => (played.includes(w) ? played.lastIndexOf(w) : -1);
+    return [...cards].sort((x, y) => rank(x) - rank(y))[0];
+  }
+  const within = (rate: number) => rate > 0.18 && rate < 0.32;
+
+  it('elimination fails on a 4-word list at question 4 (about 1 in 4 over 500 rooms)', () => {
+    let hits = 0;
+    for (let seed = 1; seed <= 500; seed++) {
+      let s = room({ words: ['大', '山', '人', '口'], per: 4, seed });
+      for (let i = 0; i < 3; i++) s = nextWord(s);
+      expect(s.qIndex).toBe(3);
+      const view = publicView(s, 'A', s.qStartAt!);
+      expect(view.history).toHaveLength(3);
+      const pick = eliminationGuess(view.question!.cards, view.history.map((h) => h.word));
+      if (pick === q0(s).word) hits++;
+    }
+    expect(within(hits / 500), `hit rate ${hits / 500}`).toBe(true);
+  });
+
+  it('elimination fails on a 41-word list at round 3 question 1, using rounds 1 and 2 (about 1 in 4 over 500 rooms)', () => {
+    const FORTY_ONE = Array.from('的一是了我不人在他有这个上们来到时大地为子中你说生国年着就那和要她出也得里后自以会');
+    expect(new Set(FORTY_ONE).size).toBe(41);
+    let hits = 0;
+    for (let seed = 1; seed <= 500; seed++) {
+      let s = room({ words: FORTY_ONE, per: 20, seed });
+      const played: string[] = [];
+      let t = T0;
+      for (let round = 1; round <= 2; round++) {
+        while (s.phase === 'playing') {
+          const next = nextWord(s);
+          if (next.phase === 'done') played.push(...publicView(next, 'A', next.endedAt!).history.map((h) => h.word));
+          t = s.qEndsAt! + GAME.answerShowMs;
+          s = next;
+        }
+        for (const id of ['A', 'B']) s = touch(s, id, t);
+        s = startRound(s, 'T', t, seeded(seed * 7 + round)).state;
+      }
+      expect(s.round).toBe(3);
+      expect(played).toHaveLength(40);
+      const pick = eliminationGuess(publicView(s, 'A', s.qStartAt!).question!.cards, played);
+      if (pick === q0(s).word) hits++;
+    }
+    expect(within(hits / 500), `hit rate ${hits / 500}`).toBe(true);
+  });
+
+  it('ruling out drawn words across every question of 3 rounds stays near 1 in 4, and scores below a mid-reveal reader', () => {
+    let first = 0;
+    let asked = 0;
+    let attacker = 0;
+    let reader = 0;
+    for (let seed = 1; seed <= 150; seed++) {
+      let s = room({ level: 'k2', words: EIGHT, per: 5, seed });
+      const played: string[] = [];
+      let t = T0;
+      for (let round = 1; round <= 3; round++) {
+        while (s.phase === 'playing') {
+          const view = publicView(s, 'A', s.qStartAt!);
+          const seen = [...played, ...view.history.map((h) => h.word)];
+          const cards = view.question!.cards;
+          const rank = (w: string) => (seen.includes(w) ? seen.lastIndexOf(w) : -1);
+          const order = [...cards].sort((x, y) => rank(x) - rank(y));
+          const q = q0(s);
+          asked++;
+          if (order[0] === q.word) first++;
+          // Attacker: tap in that order as fast as the rules allow.
+          let st = s;
+          let at = openAt(s);
+          let seq = st.scores.A.seq;
+          for (const w of order) {
+            const r = submitGuess(st, 'A', { race: st.round, question: st.qIndex, seq: ++seq, card: cards.indexOf(w) }, at);
+            if (r.error) break;
+            st = r.state;
+            if (st.attempts.A.correctAt != null) break;
+            at = st.attempts.A.coolUntil ?? at;
+          }
+          attacker += st.attempts.A?.points ?? 0;
+          // Reader: taps the right card at mid-drawing.
+          const end = Math.max(s.qStartAt! + drawMs(s, q), openAt(s) + LEVELS.k2.strokeMs);
+          reader += pointsAt(s, Math.round(openAt(s) + (end - openAt(s)) / 2));
+          const next = nextWord(s);
+          if (next.phase === 'done') played.push(...publicView(next, 'A', next.endedAt!).history.map((h) => h.word));
+          t = s.qEndsAt! + GAME.answerShowMs;
+          s = next;
+        }
+        for (const id of ['A', 'B']) s = touch(s, id, t);
+        if (round < 3) s = startRound(s, 'T', t, seeded(seed * 11 + round)).state;
+      }
+    }
+    expect(asked).toBe(150 * 15);
+    expect(within(first / asked), `first-tap hit rate ${first / asked}`).toBe(true);
+    expect(attacker / asked, `attacker ${attacker / asked} vs reader ${reader / asked}`).toBeLessThan(reader / asked);
   });
 
   it('once a word closes, a kid sees its answer in their own order, and history lists closed words only', () => {

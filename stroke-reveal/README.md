@@ -48,11 +48,18 @@ always exactly one right card. A list needs at least 4 words that start with dif
 characters (4 cards per word; fewer cards make blind tapping pay). A word whose first character
 has no stroke data is left out, with a note on the teacher screen.
 
-Surprise order: every round deals words from a private shuffled deck (no word repeats until all
-have played), and every phone gets the four cards in its own order. The pasted order, the card
-positions on the big screen and a neighbour's phone say nothing about the answer. Kids' phones
-never receive the list, the drawn character, its stroke count, the right card or any timing
-that would give one away while a word is open (the teacher's big screen does).
+Surprise order: every word is picked independently from the whole list, so the words that
+already played (which every phone sees in its history) never rule anything out; a word can come
+back in a later question. The one exception is no immediate repeat: when the list has at least
+5 words with different first characters, the previous word is skipped AND kept off the cards, so
+its absence says nothing (on a shorter list, picks are fully independent). The wrong cards are
+drawn from the whole list the same way. Every phone gets the four cards in its own order. The
+pasted order, what played before, the card positions on the big screen and a neighbour's phone
+say nothing about the answer (tests: about 1 in 4 over 500 rooms, and over every word of 3
+rounds). Kids' phones never receive the list, the drawn character, its stroke count, the right
+card, or any timing that reveals the stroke count or the answer while a word is open (the
+teacher's big screen does). A phone still gets ordinary timing: `startAt`, `openAt`,
+`strokeMs`, `closedAt` and the server clock.
 
 Minimum reveal (`GAME.firstStrokeShowMs` 800 ms + `GAME.minRevealDelayMs` 600 ms): taps are
 refused until stroke 1 is fully on the screen plus 600 ms. Scoring starts at that moment: 1000
@@ -63,23 +70,29 @@ Levels (`LEVELS` in `src/shared/config.ts`):
 
 | Level | Momo draws a stroke every | A wrong tap |
 |---|---|---|
-| K-2 | 1.5 s | no points lost; cards go grey for 2 s or 40% of the drawing, whichever is longer, then try again (the tried card is marked) |
+| K-2 | 1.5 s | nothing is taken away; cards go grey for 2 s (the same for every character, so it never tells the stroke count), then try again (the tried card is marked); a right tap after a miss earns half, after two misses a quarter |
 | Grades 3-5 | 0.9 s | you sit out that word |
 
 Blind tapping never beats reading: `tests/reveal.test.ts` taps cards at random as fast as the
 rules allow and checks it scores below a kid who reads at mid-drawing, for 1 to 20 strokes at
-both levels. A flat 2 s pause failed that test on characters of 5 or more strokes, which is why
-the K-2 pause also stretches with the drawing (`wrongCooldownShare`).
+both levels, and that tapping "cards that have not played yet" first scores about 317 points a
+word against 550 for a mid-drawing reader. A flat 2 s pause alone failed that test on characters
+of 5 or more strokes; a pause that grows with the drawing told kids the stroke count; so the
+pause stays 2 s (3 tries fit in the 6 s after the drawing) and a right tap after a miss earns
+`rightAfterMissFactor` (half) per miss.
 
 AI players are ranked in their own "Robo players" line under the kids, never in a kid's place,
-and they never hold a word open or close it early.
+and they never hold a word open or close it early. Like the "AI" tag in Fair play below, this is
+honor-based: a script that joins without `"agent": true` ranks among the kids.
 
 A word closes when time runs out (6 s after the drawing is complete) or when every kid (not
 counting AI players) has it right or is out. A kid who joins after Start watches and plays the next round. A kid whose phone
 has not checked in for 45 seconds is left out of the next round.
 
 Fair play: kids' phones never receive the drawn character or the right card while a word is open
-(the teacher's big screen does). Beyond that, it is honor-based: the "AI" tag is what the joiner says.
+(the teacher's big screen does). Beyond that, it is honor-based: the "AI" tag is what the joiner
+says, so AI ranking apart depends on the joiner being honest (a script can read `/drawing` and
+match stroke 1 exactly; kids would have to write code to do that).
 
 ## Let an AI agent play
 

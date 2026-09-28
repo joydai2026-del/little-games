@@ -19,21 +19,21 @@ A = seen on the live site with a saved receipt. B = proven by tests or indirectl
 |---|---|---|
 | Site, stroke proxy (manifest hash for 我, rejects traversal / two chars / no-data char), licence served | A | `docs/evidence/2026-09-28-live-gate.json` |
 | Messy paste: heading 第一课 skipped and reported, 𠮷野 listed as not drawable | A | live gate + lobby still |
-| A kid's payload carries no list, no other words from the list (6 playable, 0 found outside the 4 cards), no stroke count, no `endsAt`/`expiresAt`, no right card while a word is open | A | live gate |
+| A kid's payload carries no list, no other words from the list (6 playable, 0 found outside the 4 cards), no stroke count, no `endsAt`/`expiresAt`, no right card while a word is open; it does carry ordinary timing (`startAt`, `openAt`, `strokeMs`, `closedAt`, server clock), none of which reveals the stroke count or the answer | A | live gate |
 | Card order is shuffled independently for each phone (round 2: big screen 山/口/大人/学校, Robo 学校/口/山/大人, Leo 学校/口/山/大人; the two phones matched each other by chance, 1 in 24, and both differ from the big screen) | A for differing from the big screen; B for independence per phone (`tests/reveal.test.ts`) | live gate `round2CardOrders` |
-| The answer cannot be derived from the payload (pasted order, first card, big-screen position all at chance or below over 300 rooms) | B | `tests/reveal.test.ts` "the old attack fails" (reducer, not live) |
+| The answer cannot be derived from the payload: pasted order, first card, big-screen position at chance or below (300 rooms); ruling out words that already played, using history and earlier rounds: 21.8% on a 4-word list at question 4 and 23.2% on a 41-word list at round 3 question 1 (500 rooms each), 25.5% over every word of 3 rounds (150 rooms), scoring 317 points a word against 550 for a mid-drawing reader | B | `tests/reveal.test.ts` (reducer, not live) |
 | Minimum reveal: a tap 250 ms after the drawing starts is refused (status 409); guessing opens 1400 ms after the start | A | live gate |
 | An agent sees exactly one matching card after the reveal and scores 732 points, tapping 268 ms after guessing opened (2 strokes x 900 ms) | A | live gate (numbers quoted from the receipt) |
 | Retried guess (same seq) changes nothing | A | live gate |
 | Guess before drawing starts refused; late joiner waits, then plays round 2 among the kids | A | live gate |
 | Word closes on the clock by the alarm with nobody polling (`closedAt === endsAt`), round ends after the answer shows (`endedAt === nextAt`) | A | live gate |
-| AI players ranked in their own line; no AI in the kids' places | A | live gate + winners still |
+| AI players ranked in their own line; no AI in the kids' places (honor-based: a script that omits the AI flag ranks among kids) | A for joiners who say they are AI | live gate + winners still |
 | Round-1 guess refused in round 2; Grades 3-5 wrong tap locks the player out of that word | A | live gate |
 | Full round in a browser: the big screen draws in step, a scripted-reader kid taps 3 words right (one wrong tap on word 2 first, K-2 pause shown), the AI agent plays, Winners, kid sees their place | A for the flow; the kid is a script matching stroke data from its own seat, so it does NOT show a child can read the drawing | `docs/evidence/2026-09-28-live-run-record.json`, stills in `docs/demo/` (looked at) |
 | hanzi-writer 3.7.3 loads with the pinned SRI hash (it drew in live headless Chromium, so the hash matched) | A | board-live still |
 | Brand kit and L4 header; header plain text for a kid mid-round | A | `npm run check:brand`; the review panel checked the header live |
-| Blind tapping over 4 cards scores below a mid-reveal reader, 1 to 20 strokes, both levels (and the test fails with a flat 2 s K-2 pause) | B | `tests/reveal.test.ts` |
-| Scoring curve, K-2 pause, ties share a place, late-alarm catch-up, deck deals without repeats, two tabs on one seat apply exactly one result, a stale poll never replaces newer state | B | `tests/reveal.test.ts`, `tests/route.test.ts` |
+| Blind tapping over 4 cards scores below a mid-reveal reader, 1 to 20 strokes, both levels; the K-2 pause is 2 s for every character (it no longer tells the stroke count) and 3 tries fit after the drawing | B | `tests/reveal.test.ts` |
+| Scoring curve, K-2 pause, ties share a place, late-alarm catch-up, independent word picks with no immediate repeat, two tabs on one seat apply exactly one result, a stale poll never replaces newer state | B | `tests/reveal.test.ts`, `tests/route.test.ts` |
 | Parser, stroke proxy mitigations, agent end to end | B | `tests/parse.test.ts`, `tests/strokes.test.ts`, `tests/agent-flow.test.ts` |
 | Totals | B | vitest 78 passed, node agent tests 4 passed; typecheck, check:xss, check:palette, check:brand clean |
 | Real phones, iPads, Safari animation timing (is 800 ms enough for stroke 1 on a slow iPad?) | C | only headless Chromium at 390x844 and 1100x900 |
@@ -41,8 +41,8 @@ A = seen on the live site with a saved receipt. B = proven by tests or indirectl
 | Kids find it fun and readable | C | no kid has played it |
 
 ## Fixed after the review panel (both reviewers FIX-FIRST)
-1. **The answer was predictable** (critical, proven live on room JS5D): kids received the whole list in order and rounds played it in order. Now: a private shuffled deck, per-phone card order, and no list, stroke counts or leaking timings in a kid's payload.
-2. **Minimum reveal**: taps open only after stroke 1 is visible plus 600 ms; points count from then; K-2 wrong taps cost no points, only a pause; at least 4 cards. The pause is max(2 s, 40% of the drawing): the coordinator's flat 2 s default failed the blind-tap test on 5+ stroke characters, so the floor stays 2 s and it stretches on long characters.
+1. **The answer was predictable** (critical, proven live on room JS5D): kids received the whole list in order and rounds played it in order. Round 1 fix used a private no-repeat deck, which round 2 (Codex and Claude, 54% live) showed was predictable by elimination from the history. Now every word and every wrong card is picked independently from the whole list (no immediate repeat when the list allows, and that word stays off the cards), each phone has its own card order, and a kid's payload has no list, stroke counts, or timing that reveals either.
+2. **Minimum reveal**: taps open only after stroke 1 is visible plus 600 ms; points count from then; K-2 wrong taps take nothing away; at least 4 cards. Round 1 stretched the pause to 40% of the drawing to stop blind tapping, but round 2 showed that pause told kids the stroke count and locked slow kids out of long characters. Now the pause is a fixed 2 s and a right tap after N misses earns 0.5^N of its points (`rightAfterMissFactor`). This changes how K-2 feels, so it needs JJ's OK.
 3. AI players ranked apart and never close a word early (so in the demo the AI got fewer words: the kid closed them first).
 4. A forced poll can no longer roll a phone back to older state.
 5. "Change the list" is a 64 px target with a focus ring.

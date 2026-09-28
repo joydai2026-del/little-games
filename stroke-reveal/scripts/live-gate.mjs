@@ -79,7 +79,7 @@ const kidView = await req('GET', `/api/rooms/${code}`, undefined, early);
 const kq = kidView.json.state.question;
 const playable = made.json.state.list.words;
 const leaked = playable.filter((w) => !kq.cards.includes(w) && kidView.text.includes(w));
-note('a kid payload carries no list, no other words, no stroke count or timing that leaks one, no right card', kq.char === null && kq.answer === null && kq.strokes === null && kq.endsAt === null && kidView.json.state.list === null && kidView.json.state.expiresAt === null && leaked.length === 0 && !/"(questions|deck|orders|strokeCounts|attempts)"/.test(kidView.text), {
+note('a kid payload carries no list, no other words, no stroke count, no timing that reveals the stroke count or the answer, no right card', kq.char === null && kq.answer === null && kq.strokes === null && kq.endsAt === null && kidView.json.state.list === null && kidView.json.state.expiresAt === null && leaked.length === 0 && !/"(questions|lastWord|orders|strokeCounts|attempts)"/.test(kidView.text), {
   question: kq, list: kidView.json.state.list, expiresAt: kidView.json.state.expiresAt, otherWordsInPayload: leaked, playableWords: playable.length,
 });
 // Look up the public stroke data of this kid's own cards during the countdown.

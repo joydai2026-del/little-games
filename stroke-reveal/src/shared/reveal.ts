@@ -89,7 +89,7 @@ export function createRoom(
     ],
     scores: {},
     attempts: {},
-    deck: [],
+    lastWord: null,
   };
 }
 
@@ -112,7 +112,7 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
 export function setList(state: RoomState, byId: string, list: WordList): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can change the list', 403);
   if (state.phase === 'playing') return fail(state, 'wait for this round to end', 409);
-  return { state: bump({ ...state, list, deck: [], round: state.phase === 'lobby' ? 0 : state.round }) };
+  return { state: bump({ ...state, list, lastWord: null, round: state.phase === 'lobby' ? 0 : state.round }) };
 }
 
 export function setOptions(state: RoomState, byId: string, input: Partial<Record<keyof RevealOptions, unknown>>): Result {
@@ -137,9 +137,9 @@ function shuffle<T>(items: T[], random: () => number): T[] {
  * both match the drawing), so there is always exactly one right card.
  * Returns null when the list has no word that starts with another character.
  */
-export function buildQuestion(word: string, list: WordList, random: () => number, playerIds: string[] = []): Question | null {
+export function buildQuestion(word: string, list: WordList, random: () => number, playerIds: string[] = [], avoid: string | null = null): Question | null {
   const char = drawnChar(word);
-  const pool = list.words.filter((w) => drawnChar(w) !== char);
+  const pool = list.words.filter((w) => drawnChar(w) !== char && w !== avoid);
   if (pool.length < GAME.minCardsPerQuestion - 1) return null;
   const wrong = shuffle(pool, random).slice(0, GAME.cardsPerQuestion - 1);
   const cards = shuffle([word, ...wrong], random);
@@ -150,20 +150,20 @@ export function buildQuestion(word: string, list: WordList, random: () => number
 }
 
 /**
- * Deals the next round's words from the private shuffled deck, refilling it
- * with a fresh shuffle when it runs out (never repeating a word inside one
- * round). Pasted order says nothing about play order.
+ * Picks the word for the next question INDEPENDENTLY from the whole list, so
+ * what has already played (the history every phone sees, this round and
+ * earlier ones) never narrows down what comes next. The one exception: no
+ * immediate repeat of the previous word. That word is then also kept off the
+ * cards, so its absence says nothing. When the list is too short to leave it
+ * off the cards (fewer than cardsPerQuestion + 1 words with different first
+ * characters), picks are fully independent and a repeat is allowed: an
+ * elimination clue would be worse than hearing a word twice.
  */
-export function dealWords(deck: string[], words: string[], perRound: number, random: () => number): { picked: string[]; deck: string[] } {
-  let d = deck.filter((w) => words.includes(w));
-  const picked: string[] = [];
-  const count = Math.min(perRound, words.length);
-  while (picked.length < count) {
-    if (d.length === 0) d = shuffle(words.filter((w) => !picked.includes(w)), random);
-    if (d.length === 0) break;
-    picked.push(d.shift()!);
-  }
-  return { picked, deck: d };
+export function pickWord(list: WordList, previous: string | null, random: () => number): { word: string; avoid: string | null } {
+  const firsts = new Set(list.words.map(drawnChar));
+  const canAvoid = previous != null && list.words.includes(previous) && firsts.size >= GAME.cardsPerQuestion + 1;
+  const pool = canAvoid ? list.words.filter((w) => w !== previous) : list.words;
+  return { word: pool[Math.floor(random() * pool.length)], avoid: canAvoid ? previous : null };
 }
 
 /** Taps count from here: stroke 1 fully visible on the big screen plus the minimum reveal delay. */
@@ -196,11 +196,13 @@ export function startRound(state: RoomState, byId: string, now: number, random: 
   const active = presentKids(state, now);
   if (active.length === 0) return fail(state, 'wait for at least one kid to join', 409);
   const questions: Question[] = [];
-  const dealt = dealWords(state.deck ?? [], state.list.words, state.options.charsPerRound, random);
-  for (const word of dealt.picked) {
-    const q = buildQuestion(word, state.list, random, active.map((k) => k.id));
+  let previous = state.lastWord ?? null;
+  for (let i = 0; i < state.options.charsPerRound; i++) {
+    const { word, avoid } = pickWord(state.list, previous, random);
+    const q = buildQuestion(word, state.list, random, active.map((k) => k.id), avoid) ?? buildQuestion(word, state.list, random, active.map((k) => k.id));
     if (!q) return fail(state, `add at least ${GAME.minCardsPerQuestion} words that start with different characters`, 409);
     questions.push(q);
+    previous = word;
   }
   const goAt = now + GAME.countdownSeconds * 1000;
   const scores: Record<string, Score> = {};
@@ -217,7 +219,7 @@ export function startRound(state: RoomState, byId: string, now: number, random: 
     endedAt: null,
     scores,
     attempts: {},
-    deck: dealt.deck,
+    lastWord: previous,
   };
   const qEndsAt = goAt + drawMs(next, questions[0]) + GAME.holdAfterDrawnMs;
   // A room never expires in the middle of a round.
@@ -318,17 +320,17 @@ export function submitGuess(state: RoomState, playerId: string, input: GuessInpu
 
   let attempt: Attempt;
   let nextScore: Score;
+  const rules = LEVELS[state.options.level];
   if (card === q.answer) {
-    const points = pointsAt(state, now);
+    const points = Math.round(pointsAt(state, now) * rules.rightAfterMissFactor ** a.tried.length);
     attempt = { ...a, correctAt: now, points, coolUntil: null, rightCard: card };
     nextScore = { ...score, points: score.points + points, correct: score.correct + 1, seq: input.seq };
   } else {
-    const rules = LEVELS[state.options.level];
     attempt = {
       ...a,
       tried: [...a.tried, card],
       locked: rules.lockOnWrong,
-      coolUntil: rules.lockOnWrong ? null : now + Math.max(rules.wrongCooldownMs, Math.round(rules.wrongCooldownShare * drawMs(state, q))),
+      coolUntil: rules.lockOnWrong ? null : now + rules.wrongCooldownMs,
     };
     nextScore = { ...score, wrong: score.wrong + 1, seq: input.seq };
   }

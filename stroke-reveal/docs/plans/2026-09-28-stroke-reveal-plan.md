@@ -26,8 +26,8 @@ One alarm per room: the next timeline moment, or room expiry. A late alarm catch
 | Rule | Where |
 |---|---|
 | Points: 1000 at openAt, straight line down to 100 once drawn | `SCORING`, `pointsAt` |
-| Wrong tap: lock (Grades 3-5) or a pause of max(2 s, 40% of the drawing), no points lost (K-2) | `LEVELS` |
-| Private shuffled deck per room; each kid has their own card order; 4 cards minimum | `dealWords`, `buildQuestion` |
+| Wrong tap: lock (Grades 3-5), or a fixed 2 s pause and a right tap after N misses earns 0.5^N (K-2) | `LEVELS` |
+| Every word picked independently from the whole list (no immediate repeat when the list allows, and then the previous word stays off the cards); each kid has their own card order; 4 cards minimum | `pickWord`, `buildQuestion` |
 | AI ranked apart, never closes a word early | `standings(state, true)`, `everyoneDone` |
 | Ties: equal points and right answers share a place | `standings` |
 | Idempotency: round id + per-player seq; a repeated seq is a no-op | `submitGuess` |

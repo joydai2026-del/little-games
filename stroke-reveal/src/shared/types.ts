@@ -101,8 +101,8 @@ export interface RoomState {
   scores: Record<string, Score>;
   /** One entry per player who has tapped a card on the current question. */
   attempts: Record<string, Attempt>;
-  /** PRIVATE: words not yet played, in a shuffled order no phone ever sees. Rounds deal from it. */
-  deck: string[];
+  /** PRIVATE: the word of the last question played (this round or the one before), so the next one is not an immediate repeat. */
+  lastWord: string | null;
 }
 
 export type QuestionStatus = 'thinking' | 'got' | 'out';

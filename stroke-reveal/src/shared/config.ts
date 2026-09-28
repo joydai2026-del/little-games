@@ -12,26 +12,30 @@ export interface LevelRules {
   strokeMs: number;
   /** A wrong guess locks the kid out of this character (true), or only pauses them (false). */
   lockOnWrong: boolean;
-  /** With no lock: the shortest time the cards stay grey after a wrong guess (ms). */
+  /**
+   * With no lock: how long the cards stay grey after a wrong guess (ms). The
+   * SAME for every character, so the pause never tells a kid the stroke count,
+   * and short enough that 3 tries fit in the answer window after the drawing
+   * (GAME.holdAfterDrawnMs).
+   */
   wrongCooldownMs: number;
   /**
-   * With no lock: the pause also lasts at least this share of the whole drawing.
-   * A flat 2 s pause lets blind tapping beat reading on long characters (four
-   * quick taps would reach the right card while it is still worth a lot); with
-   * this, random tapping always scores below a kid who reads at mid-drawing
+   * With no lock: a right tap after N wrong taps earns this factor^N of its
+   * points. Nothing is ever taken away, but blind tapping all four cards fast
+   * cannot beat a kid who reads at mid-drawing, however long the character
    * (tests/reveal.test.ts "blind tapping").
    */
-  wrongCooldownShare: number;
+  rightAfterMissFactor: number;
 }
 
 export const LEVELS: Record<Level, LevelRules> = {
-  k2: { label: 'K-2', strokeMs: 1500, lockOnWrong: false, wrongCooldownMs: 2000, wrongCooldownShare: 0.4 },
-  g35: { label: 'Grades 3-5', strokeMs: 900, lockOnWrong: true, wrongCooldownMs: 0, wrongCooldownShare: 0 },
+  k2: { label: 'K-2', strokeMs: 1500, lockOnWrong: false, wrongCooldownMs: 2000, rightAfterMissFactor: 0.5 },
+  g35: { label: 'Grades 3-5', strokeMs: 900, lockOnWrong: true, wrongCooldownMs: 0, rightAfterMissFactor: 1 },
 };
 
 export interface RevealOptions {
   level: Level;
-  /** How many characters one round draws, dealt from a private shuffled deck of the teacher's list. */
+  /** How many characters one round draws. Each one is drawn independently from the whole list (see pickWord). */
   charsPerRound: number;
 }
 
