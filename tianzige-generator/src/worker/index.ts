@@ -6,7 +6,7 @@
 //
 // No accounts, no storage, nothing about the caller is kept.
 
-import { normalizeOptions, type SheetSpec } from '../shared/config';
+import { LIMITS, normalizeOptions, type SheetSpec } from '../shared/config';
 import { buildSheet } from '../shared/layout';
 import { pageCss } from '../shared/pagecss';
 import { parseChars } from '../shared/parse';
@@ -52,6 +52,20 @@ async function handleStrokes(raw: string, env: Env, fetcher: typeof fetch): Prom
       ...SECURITY_HEADERS,
     },
   });
+}
+
+/** Percent-encoded JSON array, capped at LIMITS.skippedHeaderMax bytes; the tail becomes "+N more".
+ *  Node's fetch refuses response headers over 16 KB, so an agent must never get a huge one. */
+export function skippedHeader(skipped: string[], max = LIMITS.skippedHeaderMax): string {
+  const enc = (list: string[]) => encodeURIComponent(JSON.stringify(list));
+  if (enc(skipped).length <= max) return enc(skipped);
+  const kept: string[] = [];
+  for (const item of skipped) {
+    const more = `+${skipped.length - kept.length - 1} more`;
+    if (enc([...kept, item, more]).length > max) break;
+    kept.push(item);
+  }
+  return enc([...kept, `+${skipped.length - kept.length} more`]);
 }
 
 async function loadStrokes(chars: string[], env: Env, fetcher: typeof fetch): Promise<StrokeMap> {
@@ -160,7 +174,7 @@ ${pages}
       'X-Sheet-Truncated': String(parsed.truncated),
       'X-Sheet-Input-Cut': String(parsed.inputCut),
       // JSON arrays, percent-encoded UTF-8.
-      'X-Sheet-Skipped': encodeURIComponent(JSON.stringify(parsed.skipped)),
+      'X-Sheet-Skipped': skippedHeader(parsed.skipped),
       'X-Sheet-Split-Words': encodeURIComponent(JSON.stringify(sheet.splitWords)),
       ...SECURITY_HEADERS,
     },

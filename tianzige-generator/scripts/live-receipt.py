@@ -126,6 +126,9 @@ def main() -> None:
         ("lesson marker leading a line", "第三课 生字：校"),
         ("list numbering", "一、生字 大\n（二）小\n㊀山\n㈡水"),
         ("list items that look like headings", "1. 第五课\n一、第六课\n• 第七课"),
+        ("numerals separated by 、", "一、二、三、四、五"),
+        ("numeral-only lines", "一、\n二、\n三、"),
+        ("glossary with colons", "学校：\nschool\n老师：\nteacher"),
         ("enclosed ideographs mid-line", "我爱㊀ ㊊ ㊥"),
     ):
         s, h, b = req("POST", "/api/sheet", json.dumps({"chars": chars}).encode(), j)
@@ -189,9 +192,11 @@ def browser_checks() -> list[str]:
             };
             requestAnimationFrame(tick);
         }""")
-        for gap in (520, 580, 640):
+        # Fresh characters every run: the page caches strokes per tab, and a cached
+        # character never waits on the network, so it cannot exercise the race.
+        for gap, (a, b2, c) in ((520, "口日目"), (580, "耳手足"), (640, "田禾米")):
             pg.fill("#chars", "")
-            for text in ("人", "人 口", "人 口 日"):
+            for text in (a, f"{a} {b2}", f"{a} {b2} {c}"):
                 pg.fill("#chars", text)
                 pg.wait_for_timeout(gap)
             pg.wait_for_function(ready, timeout=20000)

@@ -118,6 +118,10 @@ export const LIMITS = {
   maxInput: 4000,
   /** A run of Han characters this long or shorter is kept together as one word. */
   maxWordLen: 4,
+  /** Most Chinese characters a colon-ended line can have and still be a heading label. */
+  headingLineMax: 8,
+  /** Longest X-Sheet-Skipped header value (percent-encoded bytes); the rest becomes "+N more". */
+  skippedHeaderMax: 2048,
 };
 
 /** Clamp any incoming options object to the allowed choices. */

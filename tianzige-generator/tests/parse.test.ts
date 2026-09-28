@@ -79,6 +79,27 @@ describe('parseChars edges', () => {
     expect(parseChars('一 二 三').chars.join('')).toBe('一二三');
   });
 
+  it('a numeral followed by 、 is vocabulary unless it prefixes a Chinese item', () => {
+    const list = parseChars('一、二、三、四、五');
+    expect(list.chars.join('')).toBe('一二三四五');
+    expect(list.skipped).toEqual([]);
+    expect(parseChars('一、\n二、\n三、').chars.join('')).toBe('一二三');
+    expect(parseChars('十、百、千、万').chars.join('')).toBe('十百千万');
+    expect(parseChars('一、生字 大').chars.join('')).toBe('生字大');
+    expect(parseChars('一、学校\n（二）老师\n㊀大').chars.join('')).toBe('学校老师大');
+  });
+
+  it('a colon line is a heading only when the NEXT non-blank line has Chinese, and it is short', () => {
+    const glossary = parseChars('学校：\nschool\n老师：\nteacher');
+    expect(glossary.words.map((w) => w.text)).toEqual(['学校', '老师']);
+    expect(glossary.skipped).toEqual([]);
+    const sentence = parseChars('今天早上妈妈对我说：\n你要好好学习');
+    expect(sentence.skipped).toEqual([]);
+    const label = parseChars('我的家人：\n\n爸 妈');
+    expect(label.skipped).toEqual(['我的家人']);
+    expect(label.chars.join('')).toBe('爸妈');
+  });
+
   it('a list item that looks like a heading is vocabulary, not a heading', () => {
     for (const paste of ['1. 第五课', '一、第五课', '• 第五课', '㊄ 第五课', '(3) 第五课']) {
       const out = parseChars(paste);

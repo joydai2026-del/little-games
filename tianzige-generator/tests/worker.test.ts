@@ -4,7 +4,7 @@ import ren from './fixtures/人.json?raw';
 import shan from './fixtures/山.json?raw';
 import xue from './fixtures/学.json?raw';
 import xiao from './fixtures/校.json?raw';
-import { makeHandler, type Env } from '../src/worker/index';
+import { makeHandler, skippedHeader, type Env } from '../src/worker/index';
 import { STROKES_UPSTREAM, validShape } from '../src/worker/strokes';
 
 const RAW: Record<string, string> = { 大: da, 人: ren, 山: shan, 学: xue, 校: xiao };
@@ -193,6 +193,19 @@ describe('POST /api/sheet (the agent path)', () => {
     const body = (await empty.json()) as { error: string; skipped: string[] };
     expect(body.skipped).toEqual(['第三课']);
     expect(body.error).toContain('第三课');
+  });
+
+  it('caps the X-Sheet-Skipped header and says how many were left out', async () => {
+    const many = Array.from({ length: 500 }, (_, i) => `第${i + 1}课`);
+    const header = skippedHeader(many);
+    expect(header.length).toBeLessThanOrEqual(2048);
+    const list = JSON.parse(decodeURIComponent(header)) as string[];
+    expect(list[list.length - 1]).toMatch(/^\+\d+ more$/);
+    expect(list.length - 1 + Number(list[list.length - 1].slice(1, -5))).toBe(500);
+    const handle = makeHandler(upstream().fetcher);
+    const res = await handle(post({ chars: many.join('\n') + '\n大' }), env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Sheet-Skipped')!.length).toBeLessThanOrEqual(2048);
   });
 
   it('rejects bad bodies in plain words', async () => {

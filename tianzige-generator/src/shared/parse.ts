@@ -51,9 +51,22 @@ const NOT_CHARACTERS = /[々〻]/gu;
  *  simply normalizes: 我爱㊀ -> 我爱一, ㊊ -> 月. */
 const ENCLOSED_NUMBER_AT_START = /^(\s*)[\u3220-\u3229\u3280-\u3289](?=\s*\S)/gmu;
 const BULLET = '\u2022';
-/** A list marker at the start of a line: 1. 2、 3) (4) 一、 （一） (二) 三. • · - * */
-const LIST_MARKER =
-  /^\s*(?:[（(]\s*(?:[一二三四五六七八九十]+|\d+)\s*[)）]|(?:[一二三四五六七八九十]+|\d+)\s*[、．.)）]|[•·●○◦▪■*\-–—])\s*/u;
+/** A list marker at the start of a line that is never a character: 1. 2、 3) (4) （一） (二) • · - * */
+const LIST_MARKER = /^\s*(?:[（(]\s*(?:[一二三四五六七八九十]+|\d+)\s*[)）]|\d+\s*[、．.)）]|[•·●○◦▪■*\-–—])\s*/u;
+/** 一、 二. 十一． : a marker ONLY when the rest of the line has Chinese and no further 、.
+ *  Otherwise the numeral is vocabulary: 一、二、三 is a list of the characters 一 二 三,
+ *  and a line holding only 一、 is the character 一. */
+const NUMERAL_MARKER = /^\s*[一二三四五六七八九十]+\s*[、．.]\s*/u;
+
+function listMarker(line: string): RegExpMatchArray | null {
+  const plain = line.match(LIST_MARKER);
+  if (plain) return plain;
+  const numeral = line.match(NUMERAL_MARKER);
+  if (!numeral) return null;
+  const rest = line.slice(numeral[0].length);
+  return HAN.test(rest) && !rest.includes('、') ? numeral : null;
+}
+
 const LESSON = '第[一二三四五六七八九十百零〇两兩0-9]+(?:课|課|单元|單元)';
 /** 第三课 / 第二单元, alone or leading a line (a shape, not a word list). */
 const LESSON_ALONE = new RegExp(`^${LESSON}$`, 'u');
@@ -66,19 +79,22 @@ export function isHeading(text: string): boolean {
   return runs.length === 1 && LESSON_ALONE.test(runs[0]);
 }
 
-function stripHeadings(text: string): { text: string; skipped: string[] } {
+function stripHeadings(text: string, limits = LIMITS): { text: string; skipped: string[] } {
   const skipped: string[] = [];
   // A line that carried a list marker is a list ITEM: vocabulary, never a heading
   // ("1. 第五课" is the fifth-lesson word, not a heading).
   const lines = text.split(/\r?\n/).map((raw) => {
-    const marker = raw.match(LIST_MARKER);
+    const marker = listMarker(raw);
     return { line: (marker ? raw.slice(marker[0].length) : raw).trim(), item: Boolean(marker) };
   });
   const out = lines.map(({ line, item }, i) => {
     const han = (line.match(/\p{Script=Han}+/gu) ?? []).join(' ');
     if (!han || item) return line;
-    // "我的家人：" with more Chinese lines after it is a label for those lines.
-    if (/[:：]$/.test(line) && lines.slice(i + 1).some((l) => HAN.test(l.line))) {
+    // "我的家人：" is a label for the list under it: a short line ending in a colon whose
+    // NEXT non-blank line has Chinese. A glossary (学校：\nschool) and a sentence are not.
+    const next = lines.slice(i + 1).find((l) => l.line !== '');
+    const hanCount = (line.match(/\p{Script=Han}/gu) ?? []).length;
+    if (/[:：]$/.test(line) && hanCount <= limits.headingLineMax && next && HAN.test(next.line)) {
       skipped.push(han);
       return '';
     }
@@ -99,7 +115,7 @@ function stripHeadings(text: string): { text: string; skipped: string[] } {
 export function parseChars(input: string, limits = LIMITS): ParseResult {
   const all = Array.from(String(input ?? '').replace(ENCLOSED_NUMBER_AT_START, `$1${BULLET} `).normalize('NFKC'));
   const inputCut = Math.max(0, all.length - limits.maxInput);
-  const stripped = stripHeadings(all.slice(0, limits.maxInput).join(''));
+  const stripped = stripHeadings(all.slice(0, limits.maxInput).join(''), limits);
   const text = stripped.text.replace(NOT_CHARACTERS, ' ');
   const words: ParsedWord[] = [];
   const seenWords = new Set<string>();
