@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildSheet } from '../src/shared/layout';
 import { DEFAULT_OPTIONS } from '../src/shared/config';
 import { parseChars } from '../src/shared/parse';
-import { renderPages } from '../src/shared/render';
+import { chineseNumber, renderPages, strokeCountLabel } from '../src/shared/render';
 import { readStrokes, isSingleHan, type StrokeMap } from '../src/shared/strokes';
 import { h, toMarkup, type SvgNode } from '../src/shared/svg';
 import { pageCss } from '../src/shared/pagecss';
@@ -60,6 +60,32 @@ describe('renderPages', () => {
     const text = [...markup.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(' ');
     // Only the brand line may carry Latin letters (STYLE-LOCK allows the brand line at the foot).
     expect(text.replace('Avery Studio', '')).not.toMatch(/[A-Za-z]/);
+  });
+});
+
+describe('STYLE-LOCK details', () => {
+  const strokes: StrokeMap = new Map([['大', da]]);
+  const { words } = parseChars('大');
+
+  it('writes the stroke count in Chinese numerals over the reference cell', () => {
+    expect([1, 8, 10, 14, 20, 23].map(chineseNumber)).toEqual(['一', '八', '十', '十四', '二十', '二十三']);
+    expect(strokeCountLabel(8)).toBe('共八画');
+    const nodes = all(renderPages(buildSheet(words, strokes, DEFAULT_OPTIONS), strokes)[0]);
+    const labels = nodes.filter((n) => n.attrs.class === 'sheet-count').map((n) => n.children.join(''));
+    expect(labels).toEqual(['共三画']);
+  });
+
+  it('draws 米字格 diagonals dash-dot at 0.55x the centre-cross width', () => {
+    const nodes = all(renderPages(buildSheet(words, strokes, DEFAULT_OPTIONS), strokes)[0]);
+    const diag = nodes.filter((n) => n.attrs.class === 'g-diag');
+    const cross = nodes.find((n) => n.attrs.class === 'g-guide')!;
+    expect(Number(diag[0].attrs.height) / Number(cross.attrs['stroke-width'])).toBeCloseTo(0.55, 2);
+    const widths = new Set(diag.slice(0, 4).map((d) => d.attrs.width));
+    expect(widths.size).toBe(2); // long dash and short dot alternate
+  });
+
+  it('defaults to 田字格 practice cells', () => {
+    expect(DEFAULT_OPTIONS.grid).toBe('tian');
   });
 });
 

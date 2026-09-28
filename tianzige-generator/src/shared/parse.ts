@@ -5,7 +5,7 @@
 //  1. NFKC-normalize. Text copied out of a PDF often carries look-alike code
 //     points (Kangxi radicals like ⼈ U+2F08, CJK compatibility ideographs);
 //     NFKC maps them to the standard character (人), which has stroke data.
-//  2. Drop headings (see isHeading): a line ending in a colon, a label before a
+//  2. Drop headings (see isHeading): a short line ending in a colon, a label before a
 //     colon that is a heading, and a line made only of heading words
 //     (第三课, 生字, 词语, 课文, 练习, 姓名, 日期 ...).
 //  3. A Chinese character is anything in the Han script, minus iteration marks
@@ -41,6 +41,8 @@ const HAN_RUN = /\p{Script=Han}+/gu;
 /** Han-script marks that are not characters to write: iteration marks. */
 const NOT_CHARACTERS = /[々〻]/gu;
 const COLON = /[:：]/;
+/** Most Chinese characters a colon-ended line can have and still count as a heading. */
+const HEADING_LINE_MAX = 8;
 
 /** Common heading words on a teacher's list. Policy: add a word here, nothing else changes. */
 const HEADING_WORDS = '生字|生词|生詞|词语|詞語|课文|課文|练习|練習|姓名|日期|听写|聽寫|写字|寫字';
@@ -64,7 +66,9 @@ function stripHeadings(text: string): string {
     .split(/\r?\n/)
     .map((line) => {
       const trimmed = line.trim();
-      if (/[:：]$/.test(trimmed)) return '';
+      // A heading-sized line ending in a colon ("我的家人：", "Unit 3 词语:") is a label.
+      // A long line that happens to end in a colon is still content.
+      if (/[:：]$/.test(trimmed) && (trimmed.match(/\p{Script=Han}/gu) ?? []).length <= HEADING_LINE_MAX) return '';
       let rest = trimmed;
       const colon = rest.search(COLON);
       if (colon >= 0 && isHeading(rest.slice(0, colon))) rest = rest.slice(colon + 1);

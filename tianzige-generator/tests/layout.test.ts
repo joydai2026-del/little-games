@@ -9,8 +9,12 @@ import ren from './fixtures/人.json';
 import shan from './fixtures/山.json';
 import xue from './fixtures/学.json';
 import xiao from './fixtures/校.json';
+import hua from './fixtures/画.json';
+import she from './fixtures/蛇.json';
+import tian from './fixtures/添.json';
+import zu from './fixtures/足.json';
 
-const FIX: Record<string, unknown> = { 大: da, 人: ren, 山: shan, 学: xue, 校: xiao };
+const FIX: Record<string, unknown> = { 大: da, 人: ren, 山: shan, 学: xue, 校: xiao, 画: hua, 蛇: she, 添: tian, 足: zu };
 
 function real(char: string): string[] {
   const s = readStrokes(FIX[char]);
@@ -24,6 +28,10 @@ const STROKES: StrokeMap = new Map([
   ['山', real('山')],
   ['学', real('学')],
   ['校', real('校')],
+  ['画', real('画')],
+  ['蛇', real('蛇')],
+  ['添', real('添')],
+  ['足', real('足')],
 ]);
 
 const opts = (o: Partial<Options> = {}): Options => ({ ...DEFAULT_OPTIONS, ...o });
@@ -107,6 +115,47 @@ describe('buildSheet', () => {
     expect(xue.firstInWord).toBe(true);
     expect(xiao.firstInWord).toBe(false);
     expect(da.firstInWord).toBe(true);
+  });
+});
+
+describe('words stay together across page breaks', () => {
+  it('a 4-character idiom is never split, wherever the page boundary falls', () => {
+    let boundaryHits = 0;
+    for (const perRow of [6, 8, 10]) {
+      for (const paper of ['letter', 'a4'] as const) {
+        for (let before = 0; before <= 14; before++) {
+          const lead = Array.from({ length: before }, (_, i) => '大人山'[i % 3]).join(' ');
+          // Same single characters repeat, so disable whole-word dedupe by building words directly.
+          const leadWords = lead ? lead.split(' ').map((c) => ({ text: c, chars: [c] })) : [];
+          const words = [...leadWords, { text: '画蛇添足', chars: ['画', '蛇', '添', '足'] }, { text: '学校', chars: ['学', '校'] }];
+          const sheet = buildSheet(words, STROKES, opts({ perRow, paper }));
+          const pageOf = (ch: string) => sheet.pages.findIndex((p) => p.blocks.some((b) => b.char === ch && b.isReference));
+          const idiomPages = new Set(['画', '蛇', '添', '足'].map(pageOf));
+          // A word taller than a whole page (4 many-stroke characters at 6 a row) has to
+          // break between its characters; every word that fits on a page stays whole.
+          const idiomAlone = buildSheet([words[words.length - 2]], STROKES, opts({ perRow, paper }));
+          const fitsOnePage = idiomAlone.pages.length === 1;
+          if (fitsOnePage) expect(idiomPages.size, `${perRow}/${paper}/${before}`).toBe(1);
+          expect(pageOf('学'), `${perRow}/${paper}/${before}`).toBe(pageOf('校'));
+          if (pageOf('画') > 0 && sheet.pages[pageOf('画')].blocks[0].char === '画') boundaryHits++;
+        }
+      }
+    }
+    // The sweep really did push the idiom onto a new page in some cases.
+    expect(boundaryHits).toBeGreaterThan(0);
+  });
+});
+
+describe('page fill', () => {
+  it('gives spare rows to the characters with the most strokes first', () => {
+    const { words } = parseChars('大 人 学');
+    const sheet = buildSheet(words, STROKES, opts());
+    const base = (n: number) => Math.ceil((1 + n + DEFAULT_OPTIONS.trace + LAYOUT.minEmpty) / DEFAULT_OPTIONS.perRow);
+    const extra = Object.fromEntries(sheet.pages[0].blocks.map((b) => [b.char, b.rows.length - base(b.strokeCount)]));
+    // 学 (8 strokes) >= 大 (3) >= 人 (2), and they differ by at most one row.
+    expect(extra['学']).toBeGreaterThanOrEqual(extra['大']);
+    expect(extra['大']).toBeGreaterThanOrEqual(extra['人']);
+    expect(extra['学'] - extra['人']).toBeLessThanOrEqual(1);
   });
 });
 

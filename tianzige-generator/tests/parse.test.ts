@@ -49,6 +49,11 @@ describe('parseChars edges', () => {
     for (const w of ['学校', '第一', '大 小', '练习 学习']) expect(isHeading(w), w).toBe(false);
   });
 
+  it('drops a short colon-ended heading line but keeps a long list that ends in a colon', () => {
+    expect(parseChars('我的家人：\n爸 妈').chars.join('')).toBe('爸妈');
+    expect(parseChars('大 小 多 少 上 下 左 右 山 水：').chars.join('')).toBe('大小多少上下左右山水');
+  });
+
   it('drops iteration marks, keeps 〇', () => {
     expect(parseChars('人々 〇').chars.join('')).toBe('人〇');
   });

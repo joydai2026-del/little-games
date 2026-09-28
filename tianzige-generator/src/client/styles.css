@@ -37,7 +37,8 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
 .seg label { flex: 1; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg span {
-  display: block; text-align: center; padding: 9px 6px; border-radius: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; min-height: 64px; min-width: 64px;
+  text-align: center; padding: 8px 6px; border-radius: 14px; cursor: pointer;
   background: var(--cream); border: 2px solid var(--mint); font-weight: 700; font-size: 0.95rem;
   transition: transform 0.08s;
 }
@@ -51,7 +52,7 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
 }
 .print-bar .hint { margin: 0; flex: 1; min-width: 180px; }
 #print {
-  padding: 14px 34px; border: 0; border-radius: 999px; cursor: pointer;
+  min-height: 64px; min-width: 160px; padding: 14px 34px; border: 0; border-radius: 999px; cursor: pointer;
   background: var(--mint-deep); color: var(--white); font: inherit; font-weight: 800; font-size: 1.15rem;
   box-shadow: 0 4px 0 var(--ink);
 }
@@ -62,7 +63,8 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
   padding: 3%; border-radius: 6px; box-shadow: 0 2px 0 var(--mint), 0 10px 30px var(--shadow);
 }
 .credits { font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
-.credits a { color: inherit; }
+.credits a { color: inherit; display: inline-flex; align-items: center; min-height: 64px; padding: 0 8px; }
+.sheet.loading { opacity: 0.45; transition: opacity 0.15s; }
 
 @media print {
   body { background: none; }
