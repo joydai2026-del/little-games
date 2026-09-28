@@ -58,14 +58,14 @@ textarea:focus{outline:none;border-color:var(--mint-deep)}
 .stage.is-gap .kword{display:none}.stage.is-gap .gapbox{display:flex}.stage.is-gap .shout{display:block}
 .reveal .kword{animation:popin .45s cubic-bezier(.3,1.8,.5,1);color:var(--mint-deep);background:none;-webkit-background-clip:initial;background-clip:initial}
 @keyframes popin{from{transform:scale(.3)}}
-.momo-row{display:flex;align-items:flex-end;justify-content:center;gap:10px;height:130px}
+.momo-row{position:relative;display:flex;align-items:flex-end;justify-content:center;height:130px}
 .momo-wrap{width:110px;height:120px;position:relative}
 .momo{width:100%;height:100%;overflow:visible;transform-origin:50% 90%;animation:sway 1.4s ease-in-out infinite alternate}
 .momo .m-o{opacity:0}
 .momo-wrap.cheer .momo{animation:jump .6s cubic-bezier(.3,1.8,.5,1) 3}
 .momo-wrap.shouting .m-happy{opacity:0}.momo-wrap.shouting .m-o{opacity:1}
-.cheer-bubble{background:#fff;border:4px solid var(--ink);border-radius:22px;padding:8px 16px;font:800 26px var(--zh);opacity:0;transform:scale(.5);transition:all .25s cubic-bezier(.3,1.6,.5,1);margin-bottom:70px}
-.cheer-bubble.show{opacity:1;transform:scale(1)}
+.cheer-bubble{background:#fff;border:4px solid var(--ink);border-radius:22px;padding:8px 16px;font:800 26px var(--zh);opacity:0;transform:translateX(-50%) scale(.5);transition:all .25s cubic-bezier(.3,1.6,.5,1);position:absolute;left:50%;bottom:180px;white-space:nowrap;transform-origin:50% 100%}
+.cheer-bubble.show{opacity:1;transform:translateX(-50%) scale(1)}
 @keyframes sway{from{transform:rotate(-6deg)}to{transform:rotate(6deg)}}
 @keyframes jump{40%{transform:translateY(-40px) scale(.94,1.08)}70%{transform:translateY(0) scale(1.1,.9)}}
 .done-title{font:800 34px/1.2 var(--ui);text-align:center;margin:40px 0 10px}
