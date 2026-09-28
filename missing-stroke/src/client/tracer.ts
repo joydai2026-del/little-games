@@ -19,6 +19,7 @@
 
 import { GAME } from '../shared/config';
 import { h, svg, token } from './ui';
+import { timeoutSignal } from './timeout';
 
 export const HANZI_WRITER_VERSION = '3.7.3';
 export const HANZI_WRITER_URL = `https://cdn.jsdelivr.net/npm/hanzi-writer@${HANZI_WRITER_VERSION}/dist/hanzi-writer.min.js`;
@@ -75,7 +76,7 @@ const dataCache = new Map<string, Promise<CharData>>();
 export function charData(char: string): Promise<CharData> {
   let p = dataCache.get(char);
   if (!p) {
-    p = fetch(`/api/strokes/${encodeURIComponent(char)}`).then((res) =>
+    p = fetch(`/api/strokes/${encodeURIComponent(char)}`, { signal: timeoutSignal(GAME.requestTimeoutMs) }).then((res) =>
       res.ok ? (res.json() as Promise<CharData>) : Promise.reject(new Error(`no stroke data for ${char}`))
     );
     p.catch(() => dataCache.delete(char));

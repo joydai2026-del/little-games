@@ -120,8 +120,10 @@ export function renderRoom(root: HTMLElement, backend: Backend): () => void {
       const readNo = ++sentReads;
       const res = await backend.poll(full ? undefined : s0!.version);
       const stale = readNo < appliedRead;
-      if (!stale) appliedRead = readNo;
-      ctx.offset = res.serverTime - Date.now();
+      if (!stale) {
+        appliedRead = readNo;
+        ctx.offset = res.serverTime - Date.now();
+      }
       // An answer to an older request, or an older version than we show, is dropped.
       if (stale || (res.state && ctx.state && res.state.version < ctx.state.version)) {
         wait = GAME.pollMs[ctx.state?.phase ?? 'lobby'];

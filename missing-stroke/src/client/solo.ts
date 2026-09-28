@@ -24,13 +24,17 @@ export async function soloList(text: string): Promise<CharList> {
   // Same order as the class room (src/worker/strokes.ts resolveList): drop characters with no
   // stroke data FIRST, then keep the first GAME.maxListChars playable ones. Looked up in small
   // batches, stopping once enough are found (the paste itself is capped at GAME.maxPasteLength).
+  // At most GAME.soloMaxLookups characters are looked up, and every lookup has a deadline, so
+  // "Getting the strokes..." always ends.
   const parsed = parseCharList(text, Number.MAX_SAFE_INTEGER);
   const chars: string[] = [];
   const missing: string[] = [];
+  const overflow: string[] = [];
   const strokeCounts: Record<string, number> = {};
+  const limit = Math.min(parsed.chars.length, GAME.soloMaxLookups);
   let next = 0;
-  while (next < parsed.chars.length && chars.length < GAME.maxListChars) {
-    const batch = parsed.chars.slice(next, next + GAME.soloLookupBatch);
+  while (next < limit && chars.length < GAME.maxListChars) {
+    const batch = parsed.chars.slice(next, Math.min(limit, next + GAME.soloLookupBatch));
     next += batch.length;
     const found = await Promise.all(batch.map((c) => charData(c).then((d) => d.strokes.length, () => 0)));
     batch.forEach((c, i) => {
@@ -38,10 +42,11 @@ export async function soloList(text: string): Promise<CharList> {
       else if (chars.length < GAME.maxListChars) {
         chars.push(c);
         strokeCounts[c] = found[i];
-      }
+      } else overflow.push(c);
     });
   }
-  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow: parsed.chars.slice(next) };
+  overflow.push(...parsed.chars.slice(next));
+  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow };
 }
 
 /** Makes the solo game and starts it right away (3, 2, 1...). */

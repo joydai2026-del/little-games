@@ -90,6 +90,8 @@ export const GAME = {
   lastSeenWriteMs: 15_000,
   /** Solo mode looks pasted characters up in batches of this many, until maxListChars are playable. */
   soloLookupBatch: 20,
+  /** Solo mode never looks up more than this many pasted characters. */
+  soloMaxLookups: 120,
   /** Solo mode: the player's name on this phone. */
   soloName: 'You',
 } as const;
