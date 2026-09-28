@@ -2,7 +2,7 @@
 // Colors are CSS classes whose values live in public/theme.css; line weights
 // and dash patterns come from config.ts. No color literals here.
 
-import { LAYOUT, SHEET_TEXT } from './config';
+import { LAYOUT, SHEET_GEOM, SHEET_TEXT } from './config';
 import type { Cell, Sheet } from './layout';
 import type { StrokeMap } from './strokes';
 import { h, r2, type SvgNode } from './svg';
@@ -20,23 +20,30 @@ function dashedDiagonal(x1: number, y1: number, x2: number, y2: number, layout =
   const dy = y2 - y1;
   const length = Math.hypot(dx, dy);
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  const [dash, gap] = layout.diagDash;
-  const w = layout.diagWidth;
+  const pattern = layout.diagDashDot; // dash, gap, dot, gap
+  const w = layout.guideWidth * layout.diagWidthRatio;
   const out: SvgNode[] = [];
-  for (let pos = 0; pos < length; pos += dash + gap) {
-    const seg = Math.min(dash, length - pos);
-    const px = x1 + (dx / length) * pos;
-    const py = y1 + (dy / length) * pos;
-    out.push(
-      h('rect', {
-        x: r2(px),
-        y: r2(py - w / 2),
-        width: r2(seg),
-        height: w,
-        class: 'g-diag',
-        transform: `rotate(${r2(angle)} ${r2(px)} ${r2(py)})`,
-      }),
-    );
+  let pos = 0;
+  let k = 0;
+  while (pos < length) {
+    const len = pattern[k % pattern.length];
+    if (k % 2 === 0) {
+      const seg = Math.min(len, length - pos);
+      const px = x1 + (dx / length) * pos;
+      const py = y1 + (dy / length) * pos;
+      out.push(
+        h('rect', {
+          x: r2(px),
+          y: r2(py - w / 2),
+          width: r2(seg),
+          height: r2(w),
+          class: 'g-diag',
+          transform: `rotate(${r2(angle)} ${r2(px)} ${r2(py)})`,
+        }),
+      );
+    }
+    pos += len;
+    k++;
   }
   return out;
 }
@@ -103,23 +110,41 @@ function cellContent(cell: Cell, char: string, ids: string[] | null, x: number, 
   return glyph(ids, upto, x, y, ink, layout);
 }
 
-function textLine(label: string, x: number, y: number, lineW: number, size: number): SvgNode[] {
+function textLine(label: string, x: number, y: number, lineW: number, size: number, g = SHEET_GEOM): SvgNode[] {
+  const x1 = r2(x + size * g.ruleIndent);
+  const ry = r2(y + size * g.ruleDrop);
   return [
     h('text', { x, y, 'font-size': r2(size), class: 'sheet-label' }, [label]),
-    h('line', { x1: r2(x + size * 2.4), y1: r2(y + size * 0.15), x2: r2(x + size * 2.4 + lineW), y2: r2(y + size * 0.15), class: 'sheet-rule', 'stroke-width': 1.2 }),
+    h('line', { x1, y1: ry, x2: r2(x1 + lineW), y2: ry, class: 'sheet-rule', 'stroke-width': g.ruleWidth }),
   ];
+}
+
+const DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
+/** 1..99 as a Chinese numeral: 8 -> 八, 10 -> 十, 14 -> 十四, 20 -> 二十, 23 -> 二十三. */
+export function chineseNumber(n: number): string {
+  if (!Number.isInteger(n) || n < 0 || n > 99) return String(n);
+  if (n < 10) return DIGITS[n];
+  const tens = Math.floor(n / 10);
+  const ones = n % 10;
+  return `${tens === 1 ? '' : DIGITS[tens]}十${ones ? DIGITS[ones] : ''}`;
+}
+
+export function strokeCountLabel(n: number): string {
+  return `${SHEET_TEXT.countPrefix}${chineseNumber(n)}${SHEET_TEXT.countSuffix}`;
 }
 
 export function renderPages(sheet: Sheet, strokes: StrokeMap, layout = LAYOUT): SvgNode[] {
   const { width: W, height: H, header, footer } = sheet;
-  const labelSize = header * 0.42;
-  const footSize = footer * 0.5;
+  const g = SHEET_GEOM;
+  const labelSize = header * g.labelSize;
+  const footSize = footer * g.footSize;
   return sheet.pages.map((page, pageIndex) => {
     const children: SvgNode[] = [];
     // Name and date line.
-    const baseY = header * 0.62;
-    children.push(...textLine(SHEET_TEXT.name, 0, baseY, W * 0.36, labelSize));
-    children.push(...textLine(SHEET_TEXT.date, W * 0.56, baseY, W * 0.3, labelSize));
+    const baseY = header * g.labelBaseline;
+    children.push(...textLine(SHEET_TEXT.name, 0, baseY, W * g.nameWidth, labelSize));
+    children.push(...textLine(SHEET_TEXT.date, W * g.dateX, baseY, W * g.dateWidth, labelSize));
 
     // Every shape used more than once is defined once per page: the two grid
     // cells and each stroke path. Keeps a 40-character sheet small.
@@ -146,6 +171,21 @@ export function renderPages(sheet: Sheet, strokes: StrokeMap, layout = LAYOUT): 
     for (const block of page.blocks) {
       const ids = strokeIds.get(block.char) ?? null;
       const top = header + block.y;
+      // 共N画 over the reference cell (STYLE-LOCK: stroke counts in Chinese numerals).
+      if (block.isReference && block.hasData) {
+        children.push(
+          h(
+            'text',
+            {
+              x: 0,
+              y: r2(top - layout.cell * layout.countLabelLift),
+              'font-size': r2(layout.cell * layout.countLabelSize),
+              class: 'sheet-count',
+            },
+            [strokeCountLabel(block.strokeCount)],
+          ),
+        );
+      }
       block.rows.forEach((row, r) => {
         const y = r2(top + r * layout.cell * (1 + layout.rowGap));
         row.forEach((cell, c) => {
@@ -159,7 +199,7 @@ export function renderPages(sheet: Sheet, strokes: StrokeMap, layout = LAYOUT): 
       });
     }
 
-    const footY = H - footer * 0.3;
+    const footY = H - footer + footer * g.footBaseline;
     children.push(h('text', { x: 0, y: r2(footY), 'font-size': r2(footSize), class: 'sheet-foot' }, [SHEET_TEXT.brand]));
     children.push(
       h('text', { x: W, y: r2(footY), 'font-size': r2(footSize), 'text-anchor': 'end', class: 'sheet-foot' }, [

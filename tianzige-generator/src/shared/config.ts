@@ -59,8 +59,8 @@ export const LAYOUT = {
   cell: 100,
   /** Gap between two rows of the same character. */
   rowGap: 0.12,
-  /** Gap before a new character inside the same word. */
-  charGap: 0.12,
+  /** Gap before a new character inside the same word. Holds the 共N画 label. */
+  charGap: 0.22,
   /** Gap before a new word. */
   wordGap: 0.4,
   /** Name/date line at the top of every page (fraction of page width). */
@@ -75,11 +75,30 @@ export const LAYOUT = {
   borderWidth: 2.4,
   guideWidth: 1.6,
   guideDash: [5, 4],
-  /** 米字格 diagonals are QUIETER than the centre cross (STYLE-LOCK): thinner, finer dashes. */
-  diagWidth: 1.2,
-  diagDash: [3, 4.2],
+  /** 米字格 diagonals are QUIETER than the centre cross (STYLE-LOCK): dash-dot,
+   *  0.55x the centre-cross width, paler colour (--grid-diag in theme.css). */
+  diagWidthRatio: 0.55,
+  /** Dash-dot pattern along the diagonal: dash, gap, dot, gap. */
+  diagDashDot: [5, 2.6, 1.2, 2.6],
   /** Font size of a character with no stroke data, as a fraction of the cell. */
   fallbackGlyph: 0.78,
+  /** 共N画 label above each reference cell: font size and lift, fractions of a cell. */
+  countLabelSize: 0.15,
+  countLabelLift: 0.035,
+};
+
+/** Header and footer geometry, as fractions of the header / footer / page width. */
+export const SHEET_GEOM = {
+  labelSize: 0.42, // of header height
+  labelBaseline: 0.62, // of header height
+  nameWidth: 0.36, // of page width
+  dateX: 0.56, // of page width
+  dateWidth: 0.3, // of page width
+  ruleIndent: 2.4, // of label font size
+  ruleDrop: 0.15, // of label font size
+  ruleWidth: 1.2, // SVG units
+  footSize: 0.5, // of footer height
+  footBaseline: 0.7, // of footer height, from its top
 };
 
 /** The student page carries no English (STYLE-LOCK). These are the only words on it. */
@@ -87,6 +106,9 @@ export const SHEET_TEXT = {
   name: '姓名',
   date: '日期',
   brand: 'Avery Studio · 墨墨',
+  /** Stroke-count label, filled with a Chinese numeral: 共八画. */
+  countPrefix: '共',
+  countSuffix: '画',
 };
 
 export const LIMITS = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseChars } from '../src/shared/parse';
+import { isHeading, parseChars } from '../src/shared/parse';
 import { LIMITS } from '../src/shared/config';
 import { PASTES } from './fixtures/pastes';
 
@@ -31,9 +31,26 @@ describe('parseChars edges', () => {
     expect(out.truncated).toBe(true);
   });
 
-  it('ignores input past LIMITS.maxInput', () => {
-    const out = parseChars('a'.repeat(LIMITS.maxInput) + '大');
+  it('ignores input past LIMITS.maxInput and says how much was cut', () => {
+    const out = parseChars('a'.repeat(LIMITS.maxInput) + '大小');
     expect(out.chars).toEqual([]);
+    expect(out.inputCut).toBe(2);
+    expect(parseChars('大').inputCut).toBe(0);
+  });
+
+  it('dedupes the same way in either order', () => {
+    expect(parseChars('大 大人').chars.join('')).toBe('大大人');
+    expect(parseChars('大人 大').chars.join('')).toBe('大人大');
+    expect(parseChars('学校 学生').chars.join('')).toBe('学校学生');
+  });
+
+  it('recognises five real heading lines and leaves real words alone', () => {
+    for (const h of ['第三课', '生字', '第三课 生字', '本周生字', '第二单元 词语']) expect(isHeading(h), h).toBe(true);
+    for (const w of ['学校', '第一', '大 小', '练习 学习']) expect(isHeading(w), w).toBe(false);
+  });
+
+  it('drops iteration marks, keeps 〇', () => {
+    expect(parseChars('人々 〇').chars.join('')).toBe('人〇');
   });
 
   it('handles characters outside the Basic Multilingual Plane as one character', () => {

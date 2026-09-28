@@ -27,6 +27,10 @@
   font-family: "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", "Noto Sans CJK SC", sans-serif;
 }
 .sheet-page .sheet-rule { stroke: var(--rule); }
+.sheet-page .sheet-count {
+  fill: var(--ink-soft);
+  font-family: "Kaiti SC", "STKaiti", "KaiTi", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
 
 @media print {
   .sheet-page {

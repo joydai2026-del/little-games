@@ -7,8 +7,9 @@
 //   - Then empty cells to the end of the row. The grid wraps across rows, so a
 //     14-stroke character behaves like a 1-stroke one.
 //   - A two-character word gets two grids, kept together.
+//   - Pages break between WORDS, so 学校 never splits across two pages.
 //   - Page fill: leftover space on every page becomes extra practice rows,
-//     shared round-robin by the characters on that page. No dead lower half.
+//     most-strokes-first. No dead lower half.
 //
 // Pure functions only. Sizes come from config.ts.
 
@@ -29,6 +30,8 @@ export interface Block {
   hasData: boolean;
   strokeCount: number;
   firstInWord: boolean;
+  /** The block that starts with the model cell (not the continuation of a split grid). */
+  isReference: boolean;
   rows: Cell[][];
   /** Top of the block on its page, in SVG units (set by paginate). */
   y: number;
@@ -91,7 +94,8 @@ function spacingBefore(block: Block, layout = LAYOUT): number {
 
 /** Lay out every block and set y. Returns the used height. */
 function stack(blocks: Block[], layout = LAYOUT): number {
-  let y = 0;
+  // The first block on a page also needs room above it for its 共N画 label.
+  let y = layout.charGap * layout.cell;
   blocks.forEach((b, i) => {
     if (i > 0) y += spacingBefore(b, layout);
     b.y = y;
@@ -106,49 +110,72 @@ export function buildSheet(words: ParsedWord[], strokes: StrokeMap, options: Opt
   const maxRows = Math.max(1, Math.floor((size.avail + layout.rowGap * layout.cell) / rowPitch));
   const missing: string[] = [];
 
-  const blocks: Block[] = [];
+  // One group per word; a character too tall for a page is split at a row
+  // boundary (rare: 60+ strokes at 6 squares a row), each piece its own block.
+  const groups: Block[][] = [];
   for (const word of words) {
+    const group: Block[] = [];
     word.chars.forEach((char, i) => {
       const paths = strokes.get(char);
       const hasData = Array.isArray(paths) && paths.length > 0;
       if (!hasData && !missing.includes(char)) missing.push(char);
       const strokeCount = hasData ? paths!.length : 0;
       const rows = toRows(cellsFor(strokeCount, options, layout), options.perRow);
-      // A grid taller than a page is split at a row boundary (rare: 60+ strokes
-      // at 6 squares a row). Each piece starts its own page.
       for (let r = 0; r < rows.length; r += maxRows) {
-        blocks.push({
+        group.push({
           char,
           hasData,
           strokeCount,
           firstInWord: i === 0 && r === 0,
+          isReference: r === 0,
           rows: rows.slice(r, r + maxRows),
           y: 0,
         });
       }
     });
+    groups.push(group);
   }
 
-  // Greedy pagination: a block moves to the next page if it does not fit whole.
+  // Pagination by WORD: a word moves to the next page whole when it does not
+  // fit. Only a word taller than a whole page is placed character by character.
   const pages: Page[] = [];
   let current: Block[] = [];
-  for (const block of blocks) {
-    if (current.length && stack([...current, block], layout) > size.avail) {
-      pages.push({ blocks: current });
-      current = [];
+  const fits = (blocks: Block[]) => stack(blocks, layout) <= size.avail;
+  const newPage = () => {
+    if (current.length) pages.push({ blocks: current });
+    current = [];
+  };
+  for (const group of groups) {
+    if (fits([...current, ...group])) {
+      current.push(...group);
+      continue;
     }
-    current.push(block);
+    if (fits(group)) {
+      newPage();
+      current.push(...group);
+      continue;
+    }
+    for (const block of group) {
+      if (current.length && !fits([...current, block])) newPage();
+      current.push(block);
+    }
   }
-  if (current.length) pages.push({ blocks: current });
+  newPage();
 
-  // Page fill: turn leftover space into extra empty rows, shared round-robin.
+  // Page fill: leftover space becomes extra empty rows. They go to the
+  // characters with the MOST strokes first (the hardest ones get the extra
+  // practice), then round again. Deliberate, not first-come.
   for (const page of pages) {
+    const order = page.blocks
+      .map((b, i) => ({ b, i }))
+      .sort((a, z) => z.b.strokeCount - a.b.strokeCount || a.i - z.i)
+      .map((x) => x.b);
     let i = 0;
     let guard = 0;
     while (guard++ < 1000) {
-      const b = page.blocks[i % page.blocks.length];
+      const b = order[i % order.length];
       b.rows.push(emptyRow(options.perRow));
-      if (stack(page.blocks, layout) > size.avail) {
+      if (!fits(page.blocks)) {
         b.rows.pop();
         break;
       }
