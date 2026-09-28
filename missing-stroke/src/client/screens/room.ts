@@ -490,7 +490,8 @@ class KidRace {
       const key = `count:${n}`;
       if (this.viewKey !== key) {
         this.viewKey = key;
-        this.stage.replaceChildren(h('p', { class: 'countdown', text: String(n) }), h('p', { class: 'notice', text: 'Momo forgot one stroke. Get your finger ready!' }));
+        const skipped = this.ctx.backend.solo && s.list.skipped?.length ? h('p', { class: 'notice warn', text: skippedNote(s.list.skipped) }) : null;
+        this.stage.replaceChildren(h('p', { class: 'countdown', text: String(n) }), h('p', { class: 'notice', text: 'Momo forgot one stroke. Get your finger ready!' }), skipped ?? '');
       }
     } else if (t && (stage === 'drawing' || stage === 'right')) {
       const key = `${this.round}:${t.index}`;

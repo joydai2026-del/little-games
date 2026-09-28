@@ -20,8 +20,9 @@
   // Policy lives here, not in source. `period` may only be 10 or 60.
   "ratelimits": [
     { "name": "ROOM_CREATE_LIMITER", "namespace_id": "1051", "simple": { "limit": 20, "period": 60 } },
-    // Joins per IP. A whole class shares one school IP, so this sits above a class size.
-    { "name": "JOIN_LIMITER", "namespace_id": "1052", "simple": { "limit": 60, "period": 60 } }
+    // Joins per IP, at or below the per-room limit (GAME.joinsPerRoomPerWindow = 40/min).
+    // A whole class shares one school IP, so it still fits a class.
+    { "name": "JOIN_LIMITER", "namespace_id": "1052", "simple": { "limit": 40, "period": 60 } }
   ],
   "vars": {
     // The stroke-data SOURCE is not a var on purpose: it is pinned in

@@ -97,12 +97,19 @@ export function createRoom(
 export function join(state: RoomState, who: { id: string; name: string; agent?: boolean }, now: number): Result {
   const name = cleanName(who.name);
   if (!name) return fail(state, 'please type your name', 400);
-  // The cap counts kids who are HERE, so seats of kids who left are reused. The
-  // player list itself is bounded by maxPlayersEver (names only, for the room's life).
+  // The caps count ACTIVE seats (kids here now). Seats of kids who left are
+  // reclaimed, so a flood of joins that then go quiet can never lock a real
+  // kid out; only kids who are actually here can fill a room.
   const recent = state.players.filter((p) => p.role === 'kid' && now - p.joinedAt < GAME.joinWindowMs).length;
   if (recent >= GAME.joinsPerRoomPerWindow) return fail(state, 'lots of people are joining right now, wait a minute and try again', 429);
   if (presentKids(state, now).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
-  if (state.players.length >= GAME.maxPlayersEver) return fail(state, 'this room is full, ask your teacher for a new one', 409);
+  let players = state.players;
+  if (players.length >= GAME.maxPlayersEver) {
+    const reclaimable = departedSeats(state, now);
+    if (reclaimable.length === 0) return fail(state, 'this room is full, ask your teacher for a new one', 409);
+    const gone = reclaimable[0].id;
+    players = players.filter((p) => p.id !== gone);
+  }
   const player: Player = {
     id: who.id,
     name: uniqueName(state.players, name),
@@ -112,7 +119,26 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
     lastSeenAt: now,
   };
   // No progress entry: a kid who joins mid-race watches and races the next one.
-  return { state: bump({ ...state, players: [...state.players, player] }) };
+  return { state: bump({ ...state, players: [...players, player] }) };
+}
+
+/**
+ * Seats that may be reclaimed, longest-gone first: a kid who has not checked
+ * in for GAME.rosterActiveMs, joined before the current join window (so the
+ * join rate still counts them), is not in the current or last game, and did
+ * not win a character in it (the board still names winners).
+ */
+export function departedSeats(state: RoomState, now: number): Player[] {
+  const winners = new Set(state.results.flatMap((r) => r.winners));
+  return kids(state)
+    .filter(
+      (k) =>
+        now - k.lastSeenAt > GAME.rosterActiveMs &&
+        now - k.joinedAt >= GAME.joinWindowMs &&
+        state.progress[k.id] === undefined &&
+        !winners.has(k.id)
+    )
+    .sort((a, b) => a.lastSeenAt - b.lastSeenAt);
 }
 
 export function setList(state: RoomState, byId: string, list: CharList): Result {

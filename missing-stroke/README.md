@@ -60,9 +60,11 @@ the teacher's link on the same phone goes straight back to their own seat.
 
 Fair play: the ROOM grades every stroke. A phone or an agent sends the points it drew, never a
 verdict; the room checks them against the missing stroke (`src/shared/matcher.ts`, the same matcher
-solo mode uses). No phone is ever told which stroke is missing: it gets the other strokes' shapes,
-unlabelled, and the missing one only after the character closes, once that kid got it right, or as
-the hint that kid earned. There is also a pace floor (no right stroke sooner than 700 ms after the
+solo mode uses). The missing stroke's number and shape are NOT SENT to phones while a character is
+open: a phone gets the other strokes' shapes, unlabelled, and the missing one only after the
+character closes, once that kid got it right, or as the hint that kid earned. That does not make
+it unrecoverable: the stroke data is public, so a program can work out the missing stroke by
+comparing (the bundled agent does exactly that). It still has to DRAW it, and the room grades the drawing. There is also a pace floor (no right stroke sooner than 700 ms after the
 character opens, `minAnswerMs`). The "AI" tag is what the joiner says it is.
 
 Characters with only one stroke (一 乙 丨 丶 丿 乚 乛 亅) are skipped with a note ("一 has only one
@@ -70,8 +72,9 @@ stroke, so we skipped it"): with that stroke missing there would be nothing on s
 (`minStrokesToPlay` in `src/shared/config.ts`; the API lists them in `state.list.skipped`).
 
 Joining is limited so a room cannot be flooded: at most 40 joins per room per minute
-(`joinsPerRoomPerWindow`), 40 kids here at once (`maxKids`), and a per-IP join limit
-(`JOIN_LIMITER` in `wrangler.jsonc`, generous because a whole class shares one school IP).
+(`joinsPerRoomPerWindow`), 40 per IP per minute (`JOIN_LIMITER` in `wrangler.jsonc`, a whole class
+shares one school IP), and 40 kids HERE at once (`maxKids`). Seats of kids who left are reclaimed
+when the room's 200 stored seats are used up, so joins that go quiet can never lock a real kid out.
 
 ## Let an AI agent play
 
@@ -153,7 +156,7 @@ the same thresholds, plus one change: drawing over ANY stroke already on screen 
 
 History: the first build ran Hanzi Writer's quiz on the phone (`quizStartStrokeNum` + stop after the
 one right stroke, feasibility check in the plan). Review round 1 ruled that the room must grade and
-that phones must never learn which stroke is missing, so no third-party script runs on the page now.
+that the missing stroke must not be sent to phones, so no third-party script runs on the page now.
 
 | Piece | Source | Pin | Licence |
 |---|---|---|---|

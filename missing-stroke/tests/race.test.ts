@@ -91,6 +91,28 @@ describe('options and list', () => {
     expect(join(s, { id: 'x', name: 'Extra' }, full).status).toBe(409);
     expect(join(s, { id: 'x', name: 'Extra' }, full + GAME.rosterActiveMs + 1).error).toBeUndefined();
   });
+  it('a join flood across several rate windows cannot lock a real kid out: departed seats are reclaimed', () => {
+    let s = startRace(withKids(room(), 'A'), 'T', T0, SEED).state;
+    s = advanceIfDue(s, T0 + 10 * 60_000);
+    let t = T0 + 10 * 60_000;
+    let n = 0;
+    // Eight minutes of a script joining at the room's full rate, never polling again.
+    for (let win = 0; win < 8; win++, t += GAME.joinWindowMs) {
+      for (let i = 0; i < GAME.joinsPerRoomPerWindow; i++) {
+        const r = join(s, { id: `bot${n}`, name: `Bot ${n}` }, t + i);
+        n += 1;
+        if (!r.error) s = r.state;
+      }
+    }
+    expect(n).toBeGreaterThan(GAME.maxPlayersEver);
+    expect(s.players.length).toBeLessThanOrEqual(GAME.maxPlayersEver);
+    // A real child arrives after the flood (the last burst went quiet a minute ago) and gets in.
+    const real = join(s, { id: 'mia', name: 'Mia' }, t + GAME.joinWindowMs);
+    expect(real.error).toBeUndefined();
+    expect(real.state.players.some((p) => p.id === 'mia')).toBe(true);
+    // Seats in the last game are never reclaimed.
+    expect(real.state.players.some((p) => p.id === 'A')).toBe(true);
+  });
   it('a burst of joins into one room is refused with a plain message, and the window moves on', () => {
     let s = room();
     for (let i = 0; i < GAME.joinsPerRoomPerWindow; i++) s = join(s, { id: `k${i}`, name: `Kid ${i}` }, T0 + i).state;

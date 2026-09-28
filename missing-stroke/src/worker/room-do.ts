@@ -179,7 +179,10 @@ export class RoomDO implements DurableObject {
       if (result.error) return json({ error: result.error }, result.status ?? 409);
       this.room = result.state;
       const secret = crypto.randomUUID();
-      this.secrets = { ...this.secrets, [playerId]: secret };
+      // A reclaimed seat's secret goes with it.
+      const kept: Record<string, string> = {};
+      for (const p of this.room.players) if (this.secrets[p.id]) kept[p.id] = this.secrets[p.id];
+      this.secrets = { ...kept, [playerId]: secret };
       await this.ctx.storage.put({ [KEY_STATE]: this.room, [KEY_SECRETS]: this.secrets });
       await this.armAlarm(now);
       return this.envelope(playerId, { playerId, playerSecret: secret });

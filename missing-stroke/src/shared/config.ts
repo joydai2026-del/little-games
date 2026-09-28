@@ -61,7 +61,7 @@ export const GAME = {
   maxStrokePoints: 256,
   /** Kids here at once in one room. */
   maxKids: 40,
-  /** Everyone who ever joined one room (kids who left included), so the room stays small. */
+  /** Seats one room stores. When full, the seat of a kid who left is reclaimed for a new join. */
   maxPlayersEver: 200,
   /** Characters kept from one paste. */
   maxListChars: 60,
