@@ -5,7 +5,7 @@ import { GAME, OPTION_LIMITS } from '../../shared/config';
 import type { PublicState, StrokeResult } from '../../shared/types';
 import { startTrace, type TraceHandle } from '../tracer';
 import { brand, h, momo, setHeaderLink } from '../ui';
-import { goTo } from '../route';
+import { goTo, headerLinkOn } from '../route';
 import { StrokeSender } from '../sender';
 import { HICCUP_TEXT, finishState, kidStatusText } from '../status';
 import { board } from './board';
@@ -59,7 +59,7 @@ export function renderRoom(root: HTMLElement, code: string): () => void {
     const s = ctx.state!;
     const key = `${s.phase}:${s.round}:${s.role}`;
     // A kid in a live race must not be able to tap the header and leave.
-    setHeaderLink(!(s.role !== 'teacher' && s.phase === 'racing' && s.progress[s.you]));
+    setHeaderLink(headerLinkOn(s));
     if (s.role === 'teacher') {
       root.className = 'wide';
       if (s.phase === 'lobby') {

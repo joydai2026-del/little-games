@@ -1,3 +1,4 @@
+import type { PublicState } from '../shared/types';
 // Which screen a hash shows. Pure, so it is unit-tested.
 //   #/            home
 //   #/join/ABCD   home with the code filled in, UNLESS this phone already has a
@@ -25,4 +26,11 @@ export function goTo(hash: string, win: { location: { hash: string }; dispatchEv
   const next = hash.startsWith('#') ? hash : `#${hash}`;
   if (win.location.hash === next) win.dispatchEvent(makeEvent());
   else win.location.hash = next;
+}
+
+/** Whether the Avery header may link home on a room screen. Plain text (false)
+ *  only for a kid who is in the roster while the race runs: leaving would drop
+ *  them out of the race. Late kids, teachers, the lobby and done keep the link. */
+export function headerLinkOn(s: Pick<PublicState, 'role' | 'phase' | 'you' | 'progress'>): boolean {
+  return !(s.role === 'kid' && s.phase === 'racing' && Boolean(s.progress[s.you]));
 }
