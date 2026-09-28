@@ -63,36 +63,48 @@ const big = await req('POST', '/api/rooms', undefined, null, JSON.stringify({ te
 note('oversized body is 413 with a plain message', big.status === 413, { status: big.status, body: big.json });
 
 // 3. A class room from a messy paste: two AI agents, an Easy round, then a Hard round.
-const paste = '第三课 听写\n1. 朋友 péngyou friend\n2. 学校 xuéxiào school\n3. 𠮷祥 (no data)\n4. 中华人民共和国 (too long)\n5. 朋友 again\n6. 大山';
+const ZW = String.fromCharCode(0x200b);
+const paste = `第三课\n1. 朋友 péngyou friend\n2. 学${ZW}校 xuéxiào school\n3. 𠮷祥 (no data)\n4. 中华人民共和国 (too long)\n5. 朋友 again\n6. 大山`;
 const made = await req('POST', '/api/rooms', { text: paste, options: { wordsPerRound: 2, secondsPerWord: 60, level: 'easy' } });
 const code = made.json.code;
 const teacher = seatOf(made.json);
 receipt.room = code;
 const list = made.json.state.list;
-note('messy paste: words kept, the rest reported', made.status === 200 && list.words.join(',') === '第三课,听写,朋友,学校,大山' && list.missing[0] === '𠮷祥' && list.tooLong[0] === '中华人民共和国' && list.repeats === 1, { list });
+note('messy paste: heading skipped by shape and reported, zero-width stripped, the rest reported', made.status === 200 && list.words.join(',') === '朋友,学校,大山' && list.skipped[0] === '第三课' && list.missing[0] === '𠮷祥' && list.tooLong[0] === '中华人民共和国' && list.repeats === 1 && list.strokeCounts === undefined, { list });
 // The teacher's list: use the three real vocabulary words only.
 const setL = await req('POST', `/api/rooms/${code}/list`, { text: '1. 朋友 péngyou\n2. 学校 xuéxiào\n3. 大山 dàshān' }, teacher);
 note('teacher replaces the list', setL.json?.state?.list?.words?.join(',') === '朋友,学校,大山', { words: setL.json?.state?.list?.words });
 
+const STUDIED = ['朋友', '学校', '大山'];
 const clients = [createClient({ baseUrl: U }), createClient({ baseUrl: U })];
 const joins = [];
 for (const [i, c] of clients.entries()) joins.push(await c.join(code, ['Robo', 'Bolt'][i]));
+const leakWords = (obj) => STUDIED.some((w) => [...w].some((ch) => JSON.stringify(obj).includes(ch)));
+note('a kid payload names no word and no stroke count (lobby)', !leakWords(joins[0].state) && !JSON.stringify(joins[0].state).includes('strokeCounts'), { listSeenByKid: joins[0].state.list });
 note('two agents joined', joins.every((j) => j.state.players.find((p) => p.id === j.state.you)?.agent === true), { names: joins.map((j) => j.state.players.find((p) => p.id === j.state.you).name) });
-const noRound = await req('GET', `/api/rooms/${code}/say?w=0`, undefined, seatOf(joins[0]));
+const noRound = await req('GET', `/api/rooms/${code}/say?r=0&w=0`, undefined, seatOf(joins[0]));
 note('no speech before a round starts', noRound.status === 403, { status: noRound.status, body: noRound.json });
 
 async function runRound(action, level, players, duringRound = async () => {}) {
   const started = await req('POST', `/api/rooms/${code}/${action}`, {}, teacher);
   const st = started.json.state;
-  note(`${level} round started`, started.status === 200 && st.options.level === level, { round: st.round, level: st.options.level, words: st.roundWords, roster: Object.keys(st.progress).length, goAt: st.goAt, endsAt: st.endsAt });
+  note(`${level} round started`, started.status === 200 && st.options.level === level, { round: st.round, level: st.options.level, words: st.roundWords, roster: st.standings.length, goAt: st.goAt, endsAt: st.endsAt });
   await sleep(Math.max(0, st.goAt - Date.now()) + 300);
   const clip1 = await hearAndSave(code, seatOf(players[0].joined), 0, `round${st.round}-word0-first`);
   const clip2 = await hearAndSave(code, seatOf(players[1].joined), 0, `round${st.round}-word0-again`);
   note(`${level}: word 1 speech returns audio bytes (saved, never played)`, clip1.status === 200 && clip1.bytes > 1000 && /audio\//.test(clip1.type), clip1);
   note(`${level}: the next listener gets the SAME clip from room storage (no second model call)`, clip2.status === 200 && clip2.sha256 === clip1.sha256 && clip2.cache === 'HIT', { cache: clip2.cache, sha256: clip2.sha256 });
-  const ahead = await req('GET', `/api/rooms/${code}/say?w=1`, undefined, seatOf(players[0].joined));
+  const ahead = await req('GET', `/api/rooms/${code}/say?r=${st.round}&w=1`, undefined, seatOf(players[0].joined));
   note(`${level}: nobody can listen ahead`, ahead.status === 409, { status: ahead.status, body: ahead.json });
-  const tSay = await req('GET', `/api/rooms/${code}/say?w=0`, undefined, teacher);
+  const tSay = await req('GET', `/api/rooms/${code}/say?r=${st.round}&w=0`, undefined, teacher);
+  const noR = await req('GET', `/api/rooms/${code}/say?w=0`, undefined, seatOf(players[0].joined));
+  note(`${level}: every speech request must name the round`, noR.status === 400, { status: noR.status });
+  const kidView = (await req('GET', `/api/rooms/${code}`, undefined, seatOf(players[0].joined))).json.state;
+  note(`${level}: mid-round kid payload has the audio handle and box count, never the word or stroke counts`, !leakWords(kidView) && kidView.me?.charCount === [...st.roundWords[0]].length && /say\?r=\d+&w=0$/.test(kidView.me?.audio ?? '') && (level === 'hard' ? kidView.me.outline === null : Array.isArray(kidView.me.outline)), {
+    me: { ...kidView.me, outline: kidView.me?.outline ? `${kidView.me.outline.length} paths` : null }, roundWordsSeenByKid: kidView.roundWords,
+  });
+  const assertOnly = await req('POST', `/api/rooms/${code}/stroke`, { race: st.round, seq: 99, wordIndex: 0, charIndex: 0, strokeIndex: 0, result: 'correct' }, seatOf(players[0].joined));
+  note(`${level}: a stroke that only asserts "correct" is refused`, assertOnly.status === 400, { status: assertOnly.status, body: assertOnly.json });
   if (st.round > 1) {
     const old = await req('GET', `/api/rooms/${code}/say?r=${st.round - 1}&w=0`, undefined, seatOf(players[0].joined));
     note(`${level}: a URL from the last round never gets this round's word`, old.status === 409, { status: old.status, body: old.json });
@@ -103,11 +115,11 @@ async function runRound(action, level, players, duringRound = async () => {}) {
   await duringRound(st);
   const results = await Promise.all(
     players.map((p, i) =>
-      playRound({ client: p.client, code, name: '', joined: { state: p.joined.state }, paceMs: 350 + i * 150, mistakeRate: 0.15, listen: true, random: seededRandom(11 + i) })
+      playRound({ client: p.client, code, name: '', joined: { state: p.joined.state }, words: STUDIED, paceMs: 350 + i * 150, mistakeRate: 0.15, random: seededRandom(11 + i) })
     )
   );
   const end = (await req('GET', `/api/rooms/${code}`, undefined, teacher)).json.state;
-  note(`${level} round played to the end by every agent in it`, end.phase === 'done' && end.standings.length === players.length && end.standings.every((r) => r.finished), {
+  note(`${level} round played to the end by every agent in it, graded by the room from real points`, end.phase === 'done' && end.standings.length === players.length && end.standings.every((r) => r.finished && r.wordsDone === end.roundWords.length) && results.every((r) => r.mistakes > 0), {
     standings: end.standings,
     agentResults: results.map((r) => ({ strokes: r.strokes, mistakes: r.mistakes, wordsDone: r.wordsDone, place: r.place, heard: r.heard })),
   });
@@ -120,15 +132,21 @@ let lateJoin = null;
 const easy = await runRound('start', 'easy', players, async (st) => {
   // A kid who joins mid-round waits for the next one: no word, no strokes.
   lateJoin = await lateClient.join(code, 'Late Leo');
-  const s = await req('GET', `/api/rooms/${code}/say?w=0`, undefined, seatOf(lateJoin));
-  const k = await req('POST', `/api/rooms/${code}/stroke`, { race: st.round, seq: 1, wordIndex: 0, charIndex: 0, strokeIndex: 0, result: 'correct' }, seatOf(lateJoin));
+  const s = await req('GET', `/api/rooms/${code}/say?r=${st.round}&w=0`, undefined, seatOf(lateJoin));
+  const k = await req('POST', `/api/rooms/${code}/stroke`, { race: st.round, seq: 1, wordIndex: 0, charIndex: 0, points: [[500, 500], [500, 100]] }, seatOf(lateJoin));
   note('late joiner waits: no speech, no strokes, not on this board', s.status === 403 && k.status === 409 && !lateJoin.state.standings.some((r) => r.name === 'Late Leo'), { say: s.status, stroke: [k.status, k.json?.error] });
 });
 const hardSet = await req('POST', `/api/rooms/${code}/options`, { level: 'hard' }, teacher);
 note('teacher switches to Hard between rounds', hardSet.json?.state?.options?.level === 'hard', { options: hardSet.json?.state?.options });
 const hard = await runRound('next', 'hard', [...players, { client: lateClient, joined: lateJoin }]);
 note('Hard round used the next words', hard.roundWords.join(',') !== easy.roundWords.join(','), { easy: easy.roundWords, hard: hard.roundWords });
-note('the late joiner wrote the Hard round', Boolean(hard.progress[lateJoin.state.you]?.finishedAt), { late: hard.progress[lateJoin.state.you] });
+const lateRow = hard.standings.find((r) => r.playerId === lateJoin.state.you);
+note('the late joiner wrote the Hard round', Boolean(lateRow?.finished), { late: lateRow });
+
+// Budget readback: every model attempt is counted against the room and the game.
+const roomBudget = (await req('GET', `/api/rooms/${code}/budget`, undefined, teacher)).json;
+const globalBudget = (await req('GET', '/api/tts-budget')).json;
+note('budget readback: room and global counters, with the policy', roomBudget?.used >= 1 && roomBudget?.limit > 0 && globalBudget?.used >= roomBudget.used && globalBudget?.globalDailyLimit > 0, { roomBudget, globalBudget });
 
 // 4. A round that ends on the clock (nobody writes, nobody polls): the alarm ends it.
 const clockRoom = await req('POST', '/api/rooms', { text: '大', options: { secondsPerWord: 15 } });
@@ -147,7 +165,20 @@ const soloJoin = await req('POST', `/api/rooms/${solo.json.code}/join`, { name: 
 const soloStart = (await req('POST', `/api/rooms/${solo.json.code}/start`, {}, soloSeat)).json.state;
 await sleep(Math.max(0, soloStart.goAt - Date.now()) + 200);
 const soloClip = await hearAndSave(solo.json.code, soloSeat, 0, 'solo-word0');
-note('solo practice: host writes, hears the word, joins refused', soloStart.phase === 'racing' && soloClip.status === 200 && soloJoin.status === 409, { soloClip, joinStatus: soloJoin.status });
+const soloView = (await req('GET', `/api/rooms/${solo.json.code}`, undefined, soloSeat)).json.state;
+note('solo practice: host writes, hears the word (the room starts the word clock), sees no words, joins refused', soloStart.phase === 'racing' && soloClip.status === 200 && soloJoin.status === 409 && soloView.me.heard && soloView.me.deadlineAt > 0 && !JSON.stringify(soloView).includes('朋'), { soloClip, joinStatus: soloJoin.status, heard: soloView.me.heard, deadlineAt: soloView.me.deadlineAt });
+
+// 6. The word clock is the room's: a word left alone past its deadline closes as skipped.
+const tick = await req('POST', '/api/rooms', { text: '大', mode: 'solo', options: { secondsPerWord: 15 } });
+const tSeat = seatOf(tick.json);
+const tStart = (await req('POST', `/api/rooms/${tick.json.code}/start`, {}, tSeat)).json.state;
+await sleep(Math.max(0, tStart.goAt - Date.now()) + 200);
+await hearAndSave(tick.json.code, tSeat, 0, 'clock-word0');
+const dl = (await req('GET', `/api/rooms/${tick.json.code}`, undefined, tSeat)).json.state.me.deadlineAt;
+await sleep(Math.max(0, dl - Date.now()) + 1500);
+const lateStroke = await req('POST', `/api/rooms/${tick.json.code}/stroke`, { race: 1, seq: 1, wordIndex: 0, charIndex: 0, points: [[500, 500], [500, 100]] }, tSeat);
+const tEnd = (await req('GET', `/api/rooms/${tick.json.code}`, undefined, tSeat)).json.state;
+note('the room owns the word clock: a stroke after the deadline is refused and the word closes as skipped', lateStroke.status === 409 && tEnd.me?.closed?.[0]?.result === 'skipped', { deadlineAt: dl, lateStroke: [lateStroke.status, lateStroke.json?.error], closed: tEnd.me?.closed, phase: tEnd.phase });
 
 receipt.finishedAt = new Date().toISOString();
 receipt.allPass = receipt.checks.every((c) => c.pass);
