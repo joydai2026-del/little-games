@@ -81,6 +81,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="https://trace-race.joyd-ai-2026.workers.dev")
     ap.add_argument("--blip", action="store_true")
+    ap.add_argument("--cut", choices=["abort", "hang"], default="abort",
+                    help="abort: sends fail at once; hang: sends never answer (the phone's timeout must fire)")
     ap.add_argument("--record", action="store_true")
     args = ap.parse_args()
     raw = OUT / "_raw"
@@ -124,6 +126,7 @@ def main():
         # Trace whatever the pad shows next (character from data-char, stroke =
         # filled dots), so the loop follows the pad if it resyncs with the room.
         blip_started = None
+        hung = []
         shots = set()
         deadline = time.time() + 150
         while time.time() < deadline:
@@ -149,11 +152,16 @@ def main():
                 continue
             if args.blip and blip_started is None and ch == chars[1]:
                 blip_started = time.time()
-                k.route("**/stroke", lambda route: route.abort())
-                log["blip"] = {"char": ch, "cut_at_stroke": stroke}
+                if args.cut == "abort":
+                    k.route("**/stroke", lambda route: route.abort())
+                else:
+                    hung.clear()
+                    k.route("**/stroke", lambda route: hung.append(route))  # never answered
+                log["blip"] = {"mode": args.cut, "char": ch, "cut_at_stroke": stroke, "cut_at": time.time()}
             if blip_started and time.time() - blip_started > 6 and "unrouted" not in log.get("blip", {}):
                 k.unroute("**/stroke")
                 log["blip"]["unrouted"] = True
+                log["blip"]["requests_left_hanging"] = len(hung)
                 log["blip"]["server_at_unroute"] = k.evaluate(PROGRESS_JS, code)["me"]
             drag(k, k.evaluate(TRACE_JS, [ch, stroke]))
             k.wait_for_timeout(450)
