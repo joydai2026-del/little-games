@@ -27,8 +27,12 @@ export interface Progress {
   mistakes: number;
   /** When the last character was finished, or null. */
   finishedAt: number | null;
-  /** When the last correct stroke landed, for tie-breaks. */
+  /** When this racer reached where they are now (last correct stroke), for tie-breaks. */
   lastProgressAt: number | null;
+  /** Correct strokes this race, for the server-side pace floor. */
+  strokesDone: number;
+  /** Highest stroke sequence number applied this race. Repeats at or below it are no-ops. */
+  seq: number;
 }
 
 /** What the room knows about the teacher's list after the stroke lookup. */
@@ -60,6 +64,7 @@ export interface RoomState {
   endsAt: number | null;
   endedAt: number | null;
   players: Player[];
+  /** One entry per racer in the current race. The roster is frozen at Start: late joiners wait for the next race. */
   progress: Record<string, Progress>;
 }
 

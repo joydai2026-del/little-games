@@ -1,6 +1,7 @@
 // The /api/strokes/:char proxy must not be an open proxy, and must never pass
 // through bytes that differ from the pinned manifest.
 import { describe, expect, it, vi } from 'vitest';
+import woRaw from './fixtures/wo-6211.json?raw';
 import { handleStrokes, isStrokeJson, resolveList, strokeCharFromPath } from '../src/worker/strokes';
 import type { Env } from '../src/worker/env';
 
@@ -42,13 +43,9 @@ describe('handleStrokes', () => {
   });
 
   it('passes a matching body with json, nosniff and cache headers', async () => {
-    // Build a body whose sha256 IS the manifest's, by reading the real file the
-    // manifest was made from when it is on this machine; otherwise skip.
-    const nodeFs = 'node:fs';
-    const fs: any = await import(/* @vite-ignore */ nodeFs);
-    const path = '/Users/joyd/lg-scans/hwd/package/我.json';
-    if (!fs.existsSync(path)) return;
-    const bytes = fs.readFileSync(path);
+    // tests/fixtures/wo-6211.json is the real hanzi-writer-data 2.0.1 file for 我
+    // (U+6211), byte-identical, sha256 08616462...6ac8, which is the manifest's hash.
+    const bytes = new TextEncoder().encode(woRaw);
     const res = await handleStrokes('我', { STROKE_CACHE_SECONDS: '60' } as Env, REQ, {
       fetch: (async () => new Response(bytes)) as never,
     });
@@ -56,6 +53,7 @@ describe('handleStrokes', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('cache-control')).toBe('public, max-age=60, immutable');
+    expect(isStrokeJson(JSON.parse(await res.text()))).toBe(true);
   });
 
   it('502s when the upstream is down', async () => {
@@ -86,7 +84,18 @@ describe('handleStrokes round-2 guards', () => {
 
   it('isStrokeJson accepts the real shape and rejects anything else', () => {
     expect(isStrokeJson({ strokes: ['M 1 2'], medians: [[[1, 2]]] })).toBe(true);
-    for (const bad of [null, [], 'x', {}, { strokes: [], medians: [] }, { strokes: [1], medians: [] }, { strokes: ['M'], medians: 'no' }, { strokes: ['M'], medians: [5] }]) {
+    for (const bad of [
+      null, [], 'x', {},
+      { strokes: [], medians: [] },
+      { strokes: [1], medians: [[[1, 2]]] },
+      { strokes: ['M'], medians: 'no' },
+      { strokes: ['M'], medians: [5] },
+      { strokes: ['M', 'L'], medians: [[[1, 2]]] },
+      { strokes: ['M'], medians: [[]] },
+      { strokes: ['M'], medians: [[[1, 'x']]] },
+      { strokes: ['M'], medians: [[[1, Infinity]]] },
+      { strokes: ['M'], medians: [[[1, 2, 3]]] },
+    ]) {
       expect(isStrokeJson(bad)).toBe(false);
     }
   });

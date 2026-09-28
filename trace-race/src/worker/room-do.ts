@@ -30,8 +30,8 @@ import { resolveList } from './strokes';
 
 const KEY_STATE = 'state';
 const KEY_SECRETS = 'secrets';
-const LAST_SEEN_WRITE_MS = 15_000;
 const ROOM_GONE = 'that room is not around any more';
+const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -153,7 +153,7 @@ export class RoomDO implements DurableObject {
     if (!playerId) return json({ error: 'not a player in this room' }, 403);
 
     this.room = touch(this.room, playerId, now);
-    if (now - this.lastSeenWrittenAt > LAST_SEEN_WRITE_MS) {
+    if (now - this.lastSeenWrittenAt > GAME.lastSeenWriteMs) {
       this.lastSeenWrittenAt = now;
       await this.save();
     }
@@ -178,6 +178,10 @@ export class RoomDO implements DurableObject {
       case 'list': {
         const b = await body(request);
         const text = typeof b.text === 'string' ? b.text : '';
+        if (text.length > GAME.maxPasteLength) {
+          response = json({ error: PASTE_TOO_LONG }, 400);
+          break;
+        }
         response = await this.apply(setList(this.room, playerId, resolveList(text)), playerId);
         break;
       }
@@ -189,7 +193,7 @@ export class RoomDO implements DurableObject {
       case 'stroke': {
         const input = parseStrokeInput(await body(request));
         if (!input) {
-          response = json({ error: 'send charIndex, strokeIndex and result ("correct" or "mistake")' }, 400);
+          response = json({ error: 'send race, seq, charIndex, strokeIndex and result ("correct" or "mistake")' }, 400);
           break;
         }
         const result = submitStroke(this.room, playerId, input, now);
@@ -206,6 +210,7 @@ export class RoomDO implements DurableObject {
   private async handleCreate(request: Request, now: number): Promise<Response> {
     if (this.room) return json({ error: 'code taken' }, 409);
     const b = await body(request);
+    if (typeof b.text === 'string' && b.text.length > GAME.maxPasteLength) return json({ error: PASTE_TOO_LONG }, 400);
     const hostId = newPlayerId();
     const options = b.options && typeof b.options === 'object' ? (b.options as Record<string, unknown>) : undefined;
     this.room = createRoom(

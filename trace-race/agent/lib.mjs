@@ -56,8 +56,8 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
       const q = version === undefined ? '' : `?v=${version}`;
       return call('GET', `/api/rooms/${encodeURIComponent(code)}${q}`);
     },
-    stroke(code, charIndex, strokeIndex, result) {
-      return call('POST', `/api/rooms/${encodeURIComponent(code)}/stroke`, { charIndex, strokeIndex, result });
+    stroke(code, race, seq, charIndex, strokeIndex, result) {
+      return call('POST', `/api/rooms/${encodeURIComponent(code)}/stroke`, { race, seq, charIndex, strokeIndex, result });
     },
     start(code) {
       return call('POST', `/api/rooms/${encodeURIComponent(code)}/start`, {});
@@ -80,7 +80,8 @@ export function planStroke(state, { random = Math.random, mistakeRate = 0.1 } = 
   const char = state.roundChars[me.charIndex];
   if (!char || !state.list.strokeCounts[char]) return null;
   const result = random() < mistakeRate ? 'mistake' : 'correct';
-  return { charIndex: me.charIndex, strokeIndex: me.strokeIndex, result, char };
+  // Every stroke names its race and the next sequence number, so a retry can never count twice.
+  return { race: state.round, seq: (me.seq ?? 0) + 1, charIndex: me.charIndex, strokeIndex: me.strokeIndex, result, char };
 }
 
 /**
@@ -114,12 +115,13 @@ export async function playRace({
       continue;
     }
     try {
-      state = (await client.stroke(code, plan.charIndex, plan.strokeIndex, plan.result)).state;
+      state = (await client.stroke(code, plan.race, plan.seq, plan.charIndex, plan.strokeIndex, plan.result)).state;
       if (plan.result === 'mistake') mistakes += 1;
       else strokes += 1;
       if (plan.result === 'correct' && state.progress[state.you]?.strokeIndex === 0) log(`finished ${plan.char}`);
     } catch (err) {
-      log(`stroke refused: ${err.message}`);
+      // 429 = the server's pace floor; anything else, resync from the room.
+      if (err.status !== 429) log(`stroke refused: ${err.message}`);
       state = (await client.state(code, undefined)).state;
     }
     await sleep(paceMs);

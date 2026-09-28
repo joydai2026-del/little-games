@@ -5,12 +5,14 @@ export interface AgentClient {
   create(name: string, text: string, options?: Record<string, unknown>): Promise<any>;
   join(code: string, name: string): Promise<any>;
   state(code: string, version?: number): Promise<any>;
-  stroke(code: string, charIndex: number, strokeIndex: number, result: 'correct' | 'mistake'): Promise<any>;
+  stroke(code: string, race: number, seq: number, charIndex: number, strokeIndex: number, result: 'correct' | 'mistake'): Promise<any>;
   start(code: string): Promise<any>;
   next(code: string): Promise<any>;
 }
 export function createClient(opts: { baseUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): AgentClient;
 export function planStroke(state: any, opts?: { random?: () => number; mistakeRate?: number }): {
+  race: number;
+  seq: number;
   charIndex: number;
   strokeIndex: number;
   result: 'correct' | 'mistake';

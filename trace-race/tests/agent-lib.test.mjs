@@ -7,13 +7,16 @@ const base = {
   goAt: 1000,
   serverNow: 2000,
   you: 'me',
+  round: 2,
   roundChars: ['人', '口'],
   list: { strokeCounts: { 人: 2, 口: 3 } },
-  progress: { me: { charIndex: 1, strokeIndex: 2, finishedAt: null } },
+  progress: { me: { charIndex: 1, strokeIndex: 2, finishedAt: null, seq: 6 } },
 };
 
 test('plans the next stroke from the room state', () => {
   assert.deepEqual(planStroke(base, { random: () => 0.9, mistakeRate: 0.1 }), {
+    race: 2,
+    seq: 7,
     charIndex: 1,
     strokeIndex: 2,
     result: 'correct',

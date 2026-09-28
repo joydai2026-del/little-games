@@ -48,13 +48,16 @@ describe('RoomDO', () => {
     expect(started.state.phase).toBe('racing');
     expect(storage.alarms.at(-1)).toBe(started.state.endsAt);
 
-    const early = await room.fetch(post('stroke', { charIndex: 0, strokeIndex: 0, result: 'correct' }, kidAuth));
+    const early = await room.fetch(post('stroke', { race: 1, seq: 1, charIndex: 0, strokeIndex: 0, result: 'correct' }, kidAuth));
     expect(early.status).toBe(409);
 
-    vi.setSystemTime(Date.now() + GAME.countdownSeconds * 1000);
-    const ok = (await (await room.fetch(post('stroke', { charIndex: 0, strokeIndex: 0, result: 'correct' }, kidAuth))).json()) as any;
+    vi.setSystemTime(started.state.goAt + 1000);
+    const ok = (await (await room.fetch(post('stroke', { race: 1, seq: 1, charIndex: 0, strokeIndex: 0, result: 'correct' }, kidAuth))).json()) as any;
     expect(ok.state.progress[kid.playerId].strokeIndex).toBe(1);
-    const bad = await room.fetch(post('stroke', { charIndex: 0, strokeIndex: 0, result: 'yes' }, kidAuth));
+    // The same request again (a retry) is accepted and changes nothing.
+    const retry = (await (await room.fetch(post('stroke', { race: 1, seq: 1, charIndex: 0, strokeIndex: 0, result: 'correct' }, kidAuth))).json()) as any;
+    expect(retry.state.version).toBe(ok.state.version);
+    const bad = await room.fetch(post('stroke', { race: 1, seq: 2, charIndex: 0, strokeIndex: 1, result: 'yes' }, kidAuth));
     expect(bad.status).toBe(400);
 
     // Unchanged poll is cheap.
@@ -94,5 +97,19 @@ describe('Worker routes', () => {
     expect((await w.fetch(`/api/rooms/${data.code}/explode`, { method: 'POST', body: '{}' })).status).toBe(404);
     expect((await w.fetch('/api/rooms', { method: 'POST', body: 'not json' })).status).toBe(400);
     expect((await w.fetch('/')).status).toBe(200);
+  });
+
+  it('a malformed code is a 400, not a crash; oversized bodies and pastes get a plain message', async () => {
+    const w = buildWorker();
+    expect((await w.fetch('/api/rooms/%E0')).status).toBe(400);
+    expect((await w.fetch('/api/rooms/%E0/join', { method: 'POST', body: '{}' })).status).toBe(400);
+    const huge = JSON.stringify({ text: '人'.repeat(GAME.maxBodyBytes) });
+    const big = await w.fetch('/api/rooms', { method: 'POST', body: huge });
+    expect(big.status).toBe(413);
+    expect(((await big.json()) as any).error).toMatch(/shorter list/);
+    const longPaste = JSON.stringify({ text: 'a'.repeat(GAME.maxPasteLength + 1) });
+    const long = await w.fetch('/api/rooms', { method: 'POST', body: longPaste });
+    expect(long.status).toBe(400);
+    expect(((await long.json()) as any).error).toMatch(/too long/);
   });
 });

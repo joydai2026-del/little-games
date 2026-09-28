@@ -47,8 +47,21 @@ export const GAME = {
   leniency: 1.3,
   /** Pen width while a kid draws, in grid units of the tracer. */
   drawingWidth: 34,
-  /** Times the phone retries one stroke send before resyncing with the room. */
-  strokeSendRetries: 3,
+  /** Waits between the phone's retries of one stroke send (ms). After the last one it resyncs with the room. */
+  strokeRetryBackoffMs: [300, 800, 1500],
+  /**
+   * Pace floor, in ms per correct stroke, checked on the server: the n-th
+   * correct stroke of a race may not land before GO + n x this. Far below what
+   * a finger needs, it stops a script from finishing instantly while letting a
+   * burst through after a slow network (a cumulative floor, not a per-gap one).
+   */
+  minStrokeMs: 250,
+  /** Largest request body the Worker reads, in bytes. */
+  maxBodyBytes: 32_768,
+  /** Room codes tried before giving up on a create. */
+  roomCodeAttempts: 5,
+  /** How stale a player's lastSeenAt may get on disk before a plain poll writes it. */
+  lastSeenWriteMs: 15_000,
 } as const;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

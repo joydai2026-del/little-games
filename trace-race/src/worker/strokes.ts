@@ -65,17 +65,20 @@ function jsonError(message: string, status: number): Response {
   });
 }
 
-/** The shape hanzi-writer expects; anything else is refused. */
+const isPoint = (p: unknown): boolean =>
+  Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+/**
+ * The shape hanzi-writer expects; anything else is refused: a non-empty
+ * `strokes` array of strings, and a `medians` array of the SAME length whose
+ * entries are non-empty lists of finite [x, y] pairs.
+ */
 export function isStrokeJson(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as { strokes?: unknown; medians?: unknown };
-  return (
-    Array.isArray(v.strokes) &&
-    v.strokes.length > 0 &&
-    v.strokes.every((s) => typeof s === 'string') &&
-    Array.isArray(v.medians) &&
-    v.medians.every((m) => Array.isArray(m))
-  );
+  if (!Array.isArray(v.strokes) || v.strokes.length === 0 || !v.strokes.every((s) => typeof s === 'string')) return false;
+  if (!Array.isArray(v.medians) || v.medians.length !== v.strokes.length) return false;
+  return v.medians.every((m) => Array.isArray(m) && m.length > 0 && m.every(isPoint));
 }
 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {

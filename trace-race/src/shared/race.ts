@@ -35,8 +35,10 @@ function uniqueName(players: Player[], name: string): string {
 }
 
 function freshProgress(): Progress {
-  return { charIndex: 0, strokeIndex: 0, charsDone: 0, mistakes: 0, finishedAt: null, lastProgressAt: null };
+  return { charIndex: 0, strokeIndex: 0, charsDone: 0, mistakes: 0, finishedAt: null, lastProgressAt: null, strokesDone: 0, seq: 0 };
 }
+
+const ttlMs = () => GAME.roomTtlMinutes * 60_000;
 
 export function kids(state: RoomState): Player[] {
   return state.players.filter((p) => p.role === 'kid');
@@ -86,8 +88,8 @@ export function join(
     joinedAt: now,
     lastSeenAt: now,
   };
-  const progress = { ...state.progress, [who.id]: freshProgress() };
-  return { state: bump({ ...state, players: [...state.players, player], progress }) };
+  // No progress entry: a kid who joins mid-race watches and races the next one.
+  return { state: bump({ ...state, players: [...state.players, player] }) };
 }
 
 export function setList(state: RoomState, byId: string, list: CharList): Result {
@@ -129,43 +131,57 @@ export function startRace(state: RoomState, byId: string, now: number): Result {
       goAt,
       endsAt: goAt + state.options.secondsPerChar * roundChars.length * 1000,
       endedAt: null,
+      // A room never expires in the middle of a race.
+      expiresAt: Math.max(state.expiresAt, goAt + state.options.secondsPerChar * roundChars.length * 1000 + ttlMs()),
       progress,
     }),
   };
 }
 
+/** Kids in the current race (the roster frozen at Start). */
+export function racers(state: RoomState): Player[] {
+  return kids(state).filter((k) => state.progress[k.id] !== undefined);
+}
+
 export function allFinished(state: RoomState): boolean {
-  const list = kids(state);
-  return list.length > 0 && list.every((k) => state.progress[k.id]?.finishedAt != null);
+  const list = racers(state);
+  return list.length > 0 && list.every((k) => state.progress[k.id]!.finishedAt != null);
 }
 
 /** Ends the race when time is up or every kid is done. Returns the same object when nothing changed. */
 export function advanceIfDue(state: RoomState, now: number): RoomState {
   if (state.phase !== 'racing') return state;
   if ((state.endsAt != null && now >= state.endsAt) || allFinished(state)) {
-    return bump({ ...state, phase: 'done', endedAt: now });
+    return bump({ ...state, phase: 'done', endedAt: now, expiresAt: Math.max(state.expiresAt, now + ttlMs()) });
   }
   return state;
 }
 
 export interface StrokeInput {
+  /** The race this stroke belongs to (state.round). A stroke from another race is refused. */
+  race: number;
+  /** This racer's stroke counter for the race, 1, 2, 3... A number already applied is a no-op. */
+  seq: number;
   charIndex: number;
   strokeIndex: number;
   result: StrokeResult;
 }
 
+const nonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+
 export function parseStrokeInput(body: Record<string, unknown>): StrokeInput | null {
-  const { charIndex, strokeIndex, result } = body;
-  if (!Number.isInteger(charIndex) || (charIndex as number) < 0) return null;
-  if (!Number.isInteger(strokeIndex) || (strokeIndex as number) < 0) return null;
+  const { race, seq, charIndex, strokeIndex, result } = body;
+  if (!nonNegInt(race) || !nonNegInt(seq) || seq < 1) return null;
+  if (!nonNegInt(charIndex) || !nonNegInt(strokeIndex)) return null;
   if (result !== 'correct' && result !== 'mistake') return null;
-  return { charIndex: charIndex as number, strokeIndex: strokeIndex as number, result };
+  return { race, seq, charIndex, strokeIndex, result };
 }
 
 /**
- * One stroke from a kid (or an agent). Strokes must come in order. A repeat of
- * a stroke already counted (a retried request, a page reload re-tracing from
- * the start) is accepted and changes nothing, so a flaky phone never errors.
+ * One stroke from a kid (or an agent). Every stroke names its race and carries
+ * a per-racer sequence number, so a retried request, a replay from an earlier
+ * race, or a double-sent mistake can never count twice. Strokes must come in
+ * order, and correct strokes must respect the pace floor (GAME.minStrokeMs).
  */
 export function submitStroke(
   state: RoomState,
@@ -174,29 +190,28 @@ export function submitStroke(
   now: number
 ): Result & { duplicate?: boolean } {
   if (state.phase !== 'racing') return fail(state, 'the race is not on right now', 409);
+  if (input.race !== state.round) return fail(state, 'that stroke was for a different race', 409);
   if (state.goAt != null && now < state.goAt) return fail(state, 'wait for GO', 409);
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.role !== 'kid') return fail(state, 'only racers can trace', 403);
-  const prog = state.progress[playerId] ?? freshProgress();
-  if (prog.finishedAt != null) return { state, duplicate: true };
+  const prog = state.progress[playerId];
+  if (!prog) return fail(state, 'this race started before you joined, you are in the next one', 409);
+  if (input.seq <= prog.seq || prog.finishedAt != null) return { state, duplicate: true };
 
   const { charIndex, strokeIndex, result } = input;
-  if (charIndex < prog.charIndex || (charIndex === prog.charIndex && strokeIndex < prog.strokeIndex && result === 'correct')) {
-    return { state, duplicate: true };
-  }
-  if (charIndex > prog.charIndex) return fail(state, 'finish the character you are on first', 409);
-
+  if (charIndex !== prog.charIndex) return fail(state, 'that is not the character you are on', 409);
   const char = state.roundChars[charIndex];
   const strokes = state.list.strokeCounts[char] ?? 0;
   if (strokeIndex >= strokes) return fail(state, 'that character does not have that many strokes', 400);
+  if (strokeIndex !== prog.strokeIndex) return fail(state, 'strokes go in order', 409);
 
   let next: Progress;
   if (result === 'mistake') {
-    if (strokeIndex !== prog.strokeIndex) return { state, duplicate: true };
-    next = { ...prog, mistakes: prog.mistakes + 1 };
+    next = { ...prog, mistakes: prog.mistakes + 1, seq: input.seq };
   } else {
-    if (strokeIndex !== prog.strokeIndex) return fail(state, 'strokes go in order', 409);
-    next = { ...prog, strokeIndex: prog.strokeIndex + 1, lastProgressAt: now };
+    const earliest = (state.goAt ?? 0) + (prog.strokesDone + 1) * GAME.minStrokeMs;
+    if (now < earliest) return fail(state, 'too fast, slow down a little', 429);
+    next = { ...prog, strokeIndex: prog.strokeIndex + 1, strokesDone: prog.strokesDone + 1, lastProgressAt: now, seq: input.seq };
     if (next.strokeIndex >= strokes) {
       next = { ...next, charIndex: prog.charIndex + 1, strokeIndex: 0, charsDone: prog.charsDone + 1 };
       if (next.charIndex >= state.roundChars.length) next = { ...next, finishedAt: now };
@@ -206,26 +221,27 @@ export function submitStroke(
   return { state: advanceIfDue(updated, now) };
 }
 
-/** Characters finished, then fewer mistakes, then whoever got there first. */
+/**
+ * The ranking key, used for BOTH the order and the place number: characters
+ * finished (more first), strokes into the current character (more first),
+ * mistakes (fewer first), then who reached that spot first.
+ */
+function rankKey(p: Progress): [number, number, number, number] {
+  return [-p.charsDone, -p.strokeIndex, p.mistakes, p.lastProgressAt ?? Number.MAX_SAFE_INTEGER];
+}
+
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return 0;
+}
+
+/** The race board, best first. Only kids in the current race are on it. */
 export function standings(state: RoomState): Standing[] {
-  const rows = kids(state).map((k) => {
-    const p = state.progress[k.id] ?? freshProgress();
-    return { k, p };
-  });
-  rows.sort((a, b) => {
-    if (b.p.charsDone !== a.p.charsDone) return b.p.charsDone - a.p.charsDone;
-    if (a.p.mistakes !== b.p.mistakes) return a.p.mistakes - b.p.mistakes;
-    const at = a.p.finishedAt ?? a.p.lastProgressAt ?? Infinity;
-    const bt = b.p.finishedAt ?? b.p.lastProgressAt ?? Infinity;
-    if (at !== bt) return at - bt;
-    return b.p.strokeIndex - a.p.strokeIndex;
-  });
+  const rows = racers(state).map((k) => ({ k, p: state.progress[k.id]!, key: rankKey(state.progress[k.id]!) }));
+  rows.sort((a, b) => compareKeys(a.key, b.key));
   let place = 0;
-  let prevKey = '';
-  return rows.map(({ k, p }, i) => {
-    const key = `${p.charsDone}|${p.mistakes}|${p.finishedAt ?? p.lastProgressAt ?? 'x'}`;
-    if (key !== prevKey) place = i + 1;
-    prevKey = key;
+  return rows.map(({ k, p, key }, i) => {
+    if (i === 0 || compareKeys(rows[i - 1].key, key) !== 0) place = i + 1;
     return {
       playerId: k.id,
       name: k.name,
