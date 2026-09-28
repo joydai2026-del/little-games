@@ -5,18 +5,21 @@ export interface AgentClient {
   create(name: string, text: string, options?: Record<string, unknown>): Promise<any>;
   join(code: string, name: string): Promise<any>;
   state(code: string, version?: number): Promise<any>;
-  stroke(code: string, race: number, seq: number, turn: number, result: 'correct' | 'mistake'): Promise<any>;
+  stroke(code: string, race: number, seq: number, turn: number, points: [number, number][]): Promise<any>;
+  strokes(char: string): Promise<{ strokes: string[]; medians: number[][][] }>;
   start(code: string): Promise<any>;
   next(code: string): Promise<any>;
 }
 export function createClient(opts: { baseUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): AgentClient;
-export function planStroke(state: any, opts?: { random?: () => number; mistakeRate?: number; thinkMs?: number }): {
+export function findMissing(full: { strokes: string[] } | null, visible: string[]): number;
+export function planStroke(state: any, full: { strokes: string[]; medians: number[][][] } | null, opts?: { random?: () => number; mistakeRate?: number; thinkMs?: number }): {
   race: number;
   seq: number;
   turn: number;
-  result: 'correct' | 'mistake';
+  points: [number, number][];
+  kind: 'right' | 'miss';
   char: string;
-  hidden: number;
+  stroke: number;
 } | null;
 export function waitFor(state: any, opts?: { thinkMs?: number; minMs?: number; idleMs?: number }): number;
 export function playRace(opts: {

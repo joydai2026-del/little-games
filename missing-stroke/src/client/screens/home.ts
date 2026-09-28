@@ -89,7 +89,9 @@ export function renderHome(root: HTMLElement, prefillCode: string): () => void {
     solo.textContent = 'Getting the strokes...';
     try {
       const list = await soloList(paste.value);
-      if (list.chars.length === 0) throw new Error('We do not have strokes for those characters yet.');
+      if (list.chars.length === 0) {
+        throw new Error(list.skipped.length ? `${list.skipped.join(' ')}: only one stroke, so there is nothing to find. Try characters with two strokes or more.` : 'We do not have strokes for those characters yet.');
+      }
       startSolo(list, { level, charsPerRound: DEFAULT_OPTIONS.charsPerRound });
       window.location.hash = '#/solo';
     } catch (err) {

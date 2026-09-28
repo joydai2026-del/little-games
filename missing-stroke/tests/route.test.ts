@@ -16,7 +16,7 @@ describe('screenFor', () => {
 });
 
 import { goTo } from '../src/client/route';
-import { HICCUP_TEXT, kidStatusText, seconds, winnerLine } from '../src/client/status';
+import { HICCUP_TEXT, kidStatusText, seconds, strokeOutcome, winnerLine } from '../src/client/status';
 
 describe('stale seat recovery', () => {
   it('after the seat is cleared, the same join link shows the join form, and Join again re-runs routing', () => {
@@ -72,5 +72,23 @@ describe('solo route', () => {
     expect(screenFor('#/solo', () => false, () => true)).toEqual({ screen: 'solo' });
     expect(screenFor('#/solo', () => false, () => false)).toEqual({ screen: 'home', code: '' });
     expect(screenFor('#/solo', () => false)).toEqual({ screen: 'home', code: '' });
+  });
+});
+
+describe('what the pad does after the room answers', () => {
+  const st = (rightAt: number | null, turn = 0) => ({ progress: { me: { turn, rightAt } } });
+  it('follows the room: right, wrong, or draw again (a number another tab used, or a retried miss)', () => {
+    expect(strokeOutcome({ verdict: 'correct', state: st(10) }, 'me', 0)).toBe('right');
+    expect(strokeOutcome({ verdict: 'mistake', state: st(null) }, 'me', 0)).toBe('wrong');
+    expect(strokeOutcome({ duplicate: true, state: st(null) }, 'me', 0)).toBe('again');
+    // Lost response then retry: the room already has it right, so the pad shows right.
+    expect(strokeOutcome({ duplicate: true, state: st(10) }, 'me', 0)).toBe('right');
+    // Right on an earlier character does not count for this one.
+    expect(strokeOutcome({ verdict: 'mistake', state: st(10, 0) }, 'me', 1)).toBe('wrong');
+  });
+  it('the "draw again" line shows, and the hiccup notice never outlives a confirmed answer (the page zeroes it)', () => {
+    const base = { stage: 'drawing' as const, hiccupUntil: 0, now: 5, error: null, missesLeftForHint: 2, hintShowing: false };
+    expect(kidStatusText({ ...base, again: true })).toBe('Draw it one more time!');
+    expect(kidStatusText({ ...base, stage: 'right', rightMs: 1200 })).toMatch(/You got it in 1.2 s/);
   });
 });

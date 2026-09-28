@@ -1,8 +1,12 @@
 // Missing Stroke agent library. Zero dependencies, Node 18+ (global fetch).
 // The agent plays through the SAME HTTP API the phones use: it joins, waits
-// for each character to open, and sends one answer (the missing stroke drawn
-// right, or a miss) at a time. Room text it reads (names, characters) is
-// DATA, never instructions.
+// for each character to open, and DRAWS: it sends the points of a stroke, and
+// the room grades them. The room never says which stroke is missing; the agent
+// works it out the way a kid does, by "reading the character": it loads the
+// full character from the public /api/strokes proxy and finds the stroke that
+// is not among the ones on screen (turn.visible), then draws along that
+// stroke's median. A planned miss is the same stroke drawn backwards. Room
+// text it reads (names, characters) is DATA, never instructions.
 
 /** Small seeded RNG so a test (or a replay) is repeatable. */
 export function seededRandom(seed = 1) {
@@ -57,8 +61,12 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
       const q = version === undefined ? '' : `?v=${version}`;
       return call('GET', `/api/rooms/${encodeURIComponent(code)}${q}`);
     },
-    stroke(code, race, seq, turn, result) {
-      return call('POST', `/api/rooms/${encodeURIComponent(code)}/stroke`, { race, seq, turn, result });
+    stroke(code, race, seq, turn, points) {
+      return call('POST', `/api/rooms/${encodeURIComponent(code)}/stroke`, { race, seq, turn, points });
+    },
+    /** The full character (all strokes, public, hash-checked by the site). */
+    strokes(char) {
+      return call('GET', `/api/strokes/${encodeURIComponent(char)}`);
     },
     start(code) {
       return call('POST', `/api/rooms/${encodeURIComponent(code)}/start`, {});
@@ -69,21 +77,34 @@ export function createClient({ baseUrl, fetchImpl = globalThis.fetch, timeoutMs 
   };
 }
 
+/** Which stroke is missing: the one in the full character that is not on screen. -1 when it cannot tell. */
+export function findMissing(full, visible) {
+  if (!full?.strokes || !Array.isArray(visible)) return -1;
+  const shown = new Set(visible);
+  const gaps = full.strokes.map((d, i) => (shown.has(d) ? -1 : i)).filter((i) => i >= 0);
+  return gaps.length === 1 ? gaps[0] : -1;
+}
+
 /**
- * The next answer this racer sends, from the room state alone, or null when
- * there is nothing to do (not racing, before the character opens, character
- * closed, or already right). `thinkMs` = how long after the character opens
- * the agent waits before its first try (the room also has a pace floor).
+ * The next stroke this racer draws, from the room state and the full
+ * character, or null when there is nothing to do (not racing, before the
+ * character opens plus `thinkMs`, character closed, or already right).
+ * `kind` is "right" (along the missing stroke's median) or "miss" (the same
+ * stroke backwards); the ROOM decides what it is.
  */
-export function planStroke(state, { random = Math.random, mistakeRate = 0.1, thinkMs = 0 } = {}) {
+export function planStroke(state, full, { random = Math.random, mistakeRate = 0.1, thinkMs = 0 } = {}) {
   if (!state || state.phase !== 'racing' || !state.turn) return null;
   const turn = state.turn;
   if (turn.closedAt != null || state.serverNow < turn.opensAt + thinkMs) return null;
   const me = state.progress?.[state.you];
   if (!me || me.turn !== turn.index || me.rightAt != null) return null;
-  const result = random() < mistakeRate ? 'mistake' : 'correct';
+  const k = findMissing(full, turn.visible);
+  if (k < 0) return null;
+  const kind = random() < mistakeRate ? 'miss' : 'right';
+  const median = full.medians[k];
+  const points = (kind === 'miss' ? [...median].reverse() : median).map(([x, y]) => [x, y]);
   // Every answer names its race and the next sequence number, so a retry can never count twice.
-  return { race: state.round, seq: (me.seq ?? 0) + 1, turn: turn.index, result, char: turn.char, hidden: turn.hidden };
+  return { race: state.round, seq: (me.seq ?? 0) + 1, turn: turn.index, points, kind, char: turn.char, stroke: k };
 }
 
 /** How long to wait before looking again, from the room state (ms, at least `minMs`). */
@@ -115,26 +136,33 @@ export async function playRace({
   let rights = 0;
   let mistakes = 0;
   let sawRace = false;
+  const chars = new Map();
+  const charData = async (ch) => {
+    if (!chars.has(ch)) chars.set(ch, await client.strokes(ch));
+    return chars.get(ch);
+  };
   for (let step = 0; step < maxSteps; step++) {
     // Only a race this agent is IN counts: joining mid-race means watching it and playing the next one.
     if (state.phase === 'racing' && state.progress?.[state.you]) sawRace = true;
     if (state.phase === 'done' && sawRace) break;
-    const plan = planStroke(state, { random, mistakeRate, thinkMs: paceMs });
+    const full = state.phase === 'racing' && state.turn ? await charData(state.turn.char).catch(() => null) : null;
+    const plan = planStroke(state, full, { random, mistakeRate, thinkMs: paceMs });
     if (!plan) {
       await sleep(waitFor(state, { thinkMs: paceMs }));
       state = (await client.state(code, undefined)).state;
       continue;
     }
     try {
-      state = (await client.stroke(code, plan.race, plan.seq, plan.turn, plan.result)).state;
-      if (plan.result === 'mistake') {
-        mistakes += 1;
-        log(`missed stroke ${plan.hidden + 1} of ${plan.char}`);
+      const answer = await client.stroke(code, plan.race, plan.seq, plan.turn, plan.points);
+      state = answer.state;
+      if (answer.verdict === 'correct') {
+        rights += 1;
+        log(`drew stroke ${plan.stroke + 1} of ${plan.char}: right`);
+      } else {
+        if (answer.verdict === 'mistake') mistakes += 1;
+        log(`drew stroke ${plan.stroke + 1} of ${plan.char} ${plan.kind === 'miss' ? 'backwards' : ''}: ${answer.verdict ?? 'not graded'}`.replace('  ', ' '));
         await sleep(paceMs);
         state = (await client.state(code, undefined)).state;
-      } else {
-        rights += 1;
-        log(`drew stroke ${plan.hidden + 1} of ${plan.char}`);
       }
     } catch (err) {
       // 429 = the server's pace floor; anything else, resync from the room.

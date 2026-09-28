@@ -5,10 +5,11 @@
 //
 //   node scripts/live-gate.mjs [--url https://missing-stroke.joyd-ai-2026.workers.dev]
 //
-// The race: a room, two agents over the HTTP API (Ava draws the missing stroke
-// right, Bo draws a wrong stroke), then NOBODY sends anything or polls: only
-// the room's own alarm may close the character on the clock (grace after the
-// first right stroke), run the reveal, and end the race.
+// The race: a room, two agents over the HTTP API that DRAW (they send points;
+// the room grades them): Ava draws the missing stroke along its median, Bo
+// draws it backwards. Then NOBODY sends anything or polls: only the room's own
+// alarm may close the character on the clock (grace after the first right
+// stroke), run the reveal, and end the race.
 import { createHash } from 'node:crypto';
 
 const argUrl = process.argv.indexOf('--url');
@@ -33,6 +34,13 @@ async function req(method, path, body, seat, rawBody) {
   return { status: res.status, headers: res.headers, json, text };
 }
 const seatOf = (d) => ({ playerId: d.playerId, playerSecret: d.playerSecret });
+// "Reading the character", like any agent: the full character from the public proxy, minus the strokes on screen.
+async function missingStroke(turn) {
+  const full = (await req('GET', `/api/strokes/${encodeURIComponent(turn.char)}`)).json;
+  const shown = new Set(turn.visible);
+  const k = full.strokes.findIndex((d) => !shown.has(d));
+  return { k, median: full.medians[k] };
+}
 
 // 1. Site and the closed stroke proxy
 const home = await req('GET', '/');
@@ -59,38 +67,46 @@ const long = await req('POST', '/api/rooms', { text: 'a'.repeat(4001) });
 note('over-long paste is 400 with a plain message', long.status === 400, { status: long.status, body: long.json });
 
 // 3. One character, two agents: one right, one wrong, the clock ends it.
-const made = await req('POST', '/api/rooms', { text: '1. 山 shān\n2. 𠮷', options: { level: 'big', charsPerRound: 1 } });
+const made = await req('POST', '/api/rooms', { text: '1. 山 shān\n2. 𠮷\n3. 一 yī', options: { level: 'big', charsPerRound: 1 } });
 const code = made.json.code;
 const teacher = seatOf(made.json);
 receipt.room = code;
-note('room made, missing character noted', made.status === 200 && made.json.state.list.missing[0] === '𠮷', { status: made.status, code, list: made.json.state.list, options: made.json.state.options });
+note('room made: no-data character noted, one-stroke character skipped', made.status === 200 && made.json.state.list.missing[0] === '𠮷' && made.json.state.list.skipped[0] === '一' && made.json.state.list.chars.join('') === '山', { status: made.status, code, list: made.json.state.list, options: made.json.state.options });
 const ava = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Ava', agent: true })).json);
 const bo = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Bo', agent: true })).json);
 const started = await req('POST', `/api/rooms/${code}/start`, {}, teacher);
 const s0 = started.json.state;
-note('race started: one character with one hidden stroke', started.status === 200 && s0.turn.char === '山' && s0.turn.hidden >= 0 && s0.turn.hidden < 3, {
-  status: started.status, round: s0.round, goAt: s0.goAt, turn: s0.turn, rules: s0.rules,
+note('race started: the phones get 2 of 3 strokes and never the missing number', started.status === 200 && s0.turn.char === '山' && s0.turn.visible.length === 2 && !('hidden' in s0.turn) && !('hidden' in s0) && s0.turn.answer === null && !started.text.includes('"hidden"'), {
+  status: started.status, round: s0.round, goAt: s0.goAt, turnKeys: Object.keys(s0.turn), visibleCount: s0.turn.visible.length, rules: s0.rules,
 });
+const miss = await missingStroke(s0.turn);
+const RIGHT = miss.median;
+const BACKWARDS = [...miss.median].reverse();
+receipt.readTheCharacter = { missingStroke: miss.k };
 const late = seatOf((await req('POST', `/api/rooms/${code}/join`, { name: 'Late Leo' })).json);
-const early = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'correct' }, ava);
+const bare = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'correct' }, ava);
+note('a bare "correct" without a drawing is refused (400)', bare.status === 400, { status: bare.status, body: bare.json });
+const early = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: RIGHT }, ava);
 note('an answer before GO is refused', early.status === 409 && early.json?.error === 'wait for GO', { status: early.status, body: early.json });
 await sleep(Math.max(0, s0.goAt - Date.now()) + 150);
-const fast = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'correct' }, ava);
+const fast = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: RIGHT }, ava);
 note('pace floor: a right stroke right after GO is refused (429)', fast.status === 429, { status: fast.status, body: fast.json, goAt: s0.goAt, minAnswerMs: s0.rules.minAnswerMs });
-const lateTry = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'correct' }, late);
+const lateTry = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: RIGHT }, late);
 note('late joiner waits for the next race', lateTry.status === 409, { status: lateTry.status, body: lateTry.json });
 
-const wrong = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'mistake' }, bo);
-const wrongAgain = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'mistake' }, bo);
+const wrong = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: BACKWARDS }, bo);
+const wrongAgain = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: BACKWARDS }, bo);
 const boP = wrongAgain.json?.state?.progress?.[bo.playerId];
-note('Bo: one wrong stroke, retried, counts once', wrong.status === 200 && wrongAgain.status === 200 && boP?.mistakes === 1 && boP?.rightAt === null, { first: wrong.status, retry: wrongAgain.status, bo: boP });
+note('Bo: the missing stroke drawn BACKWARDS is graded wrong by the room; the retry counts once', wrong.status === 200 && wrong.json?.verdict === 'mistake' && wrongAgain.json?.duplicate === true && boP?.mistakes === 1 && boP?.rightAt === null, { first: [wrong.status, wrong.json?.verdict], retry: [wrongAgain.status, wrongAgain.json?.duplicate], bo: boP });
 
 await sleep(Math.max(0, s0.goAt + s0.rules.minAnswerMs - Date.now()) + 300);
-const right = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, result: 'correct' }, ava);
+const right = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 1, turn: 0, points: RIGHT }, ava);
 const t1 = right.json?.state?.turn;
-note('Ava: right stroke wins the character', right.status === 200 && t1?.winners?.[0] === ava.playerId && t1?.closedAt === null, {
-  status: right.status, turn: t1, ava: right.json?.state?.progress?.[ava.playerId],
+note('Ava: the missing stroke drawn along its median is graded right and wins the character', right.status === 200 && right.json?.verdict === 'correct' && t1?.winners?.[0] === ava.playerId && t1?.closedAt === null && t1?.answer != null, {
+  status: right.status, verdict: right.json?.verdict, winners: t1?.winners, ava: right.json?.state?.progress?.[ava.playerId],
 });
+const boView = await req('GET', `/api/rooms/${code}`, undefined, bo);
+note('Bo still cannot see the answer while the character is open', boView.json?.state?.turn?.answer === null, { boAnswer: boView.json?.state?.turn?.answer ?? null });
 const board1 = (right.json?.state?.standings ?? []).map((r) => r.name);
 note('late joiner not on this race board', !board1.includes('Late Leo'), { board: board1 });
 
@@ -102,14 +118,14 @@ const after = await req('GET', `/api/rooms/${code}`, undefined, teacher);
 const st = after.json.state;
 note('the room clock closed the character (grace after the first right) and ended the race by itself', st.phase === 'done' && st.turn.closedAt === closeAt && st.endedAt === endAt, {
   phase: st.phase, expectedCloseAt: closeAt, closedAt: st.turn.closedAt, expectedEndAt: endAt, endedAt: st.endedAt,
-  results: st.results, standings: st.standings.map((r) => ({ name: r.name, wins: r.wins, rights: r.rights, mistakes: r.mistakes, place: r.place })),
+  results: st.results, answerShownAfterClose: st.turn.answer != null, standings: st.standings.map((r) => ({ name: r.name, wins: r.wins, rights: r.rights, mistakes: r.mistakes, place: r.place })),
 });
-const tooLate = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 2, turn: 0, result: 'correct' }, bo);
+const tooLate = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 2, turn: 0, points: RIGHT }, bo);
 note('an answer after the race is refused', tooLate.status === 409, { status: tooLate.status, body: tooLate.json });
 
 // Race 2: an answer from race 1 is refused; the late joiner is in.
 const again = await req('POST', `/api/rooms/${code}/next`, {}, teacher);
-const stale = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 9, turn: 0, result: 'correct' }, ava);
+const stale = await req('POST', `/api/rooms/${code}/stroke`, { race: s0.round, seq: 9, turn: 0, points: RIGHT }, ava);
 note('an answer from an earlier race is refused', stale.status === 409 && stale.json?.error === 'that answer was for a different race', { status: stale.status, body: stale.json, race2: again.json?.state?.round });
 note('late joiner plays the next race', Boolean(again.json?.state?.progress?.[late.playerId]), { lateProgress: again.json?.state?.progress?.[late.playerId] ?? null });
 

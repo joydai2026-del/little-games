@@ -19,7 +19,7 @@ import manifestJson from './strokes-manifest.json';
 import countsJson from './stroke-counts.json';
 import { parseCharList } from '../shared/parse';
 import { GAME } from '../shared/config';
-import type { CharList } from '../shared/types';
+import type { CharGeom, CharList } from '../shared/types';
 import { numberVar, type Env } from './env';
 
 export const STROKE_DATA_VERSION = '2.0.1';
@@ -36,18 +36,29 @@ export function hasStrokeData(ch: string): boolean {
   return Object.prototype.hasOwnProperty.call(HASHES, ch);
 }
 
-/** Parse a paste and split it into traceable characters and ones with no stroke data. */
+/**
+ * Parse a paste and split it into playable characters, ones with no stroke
+ * data, and ones with a single stroke (skipped: with its only stroke missing
+ * there would be nothing on screen).
+ */
 export function resolveList(text: string): CharList {
   const parsed = parseCharList(text, Number.MAX_SAFE_INTEGER);
   const traceable: string[] = [];
   const missing: string[] = [];
-  for (const ch of parsed.chars) (hasStrokeData(ch) && strokeCount(ch) ? traceable : missing).push(ch);
+  const skipped: string[] = [];
+  for (const ch of parsed.chars) {
+    const n = hasStrokeData(ch) ? strokeCount(ch) : undefined;
+    if (!n) missing.push(ch);
+    else if (n < GAME.minStrokesToPlay) skipped.push(ch);
+    else traceable.push(ch);
+  }
   const chars = traceable.slice(0, GAME.maxListChars);
   const strokeCounts: Record<string, number> = {};
   for (const ch of chars) strokeCounts[ch] = strokeCount(ch)!;
   return {
     chars,
     missing,
+    skipped,
     strokeCounts,
     repeats: parsed.repeats,
     overflow: traceable.slice(GAME.maxListChars),
@@ -124,6 +135,25 @@ async function readCapped(res: Response, maxBytes: number): Promise<ArrayBuffer>
     at += c.byteLength;
   }
   return out.buffer;
+}
+
+/**
+ * The verified stroke data for one character, for the room to grade answers
+ * with: the same pinned upstream, size cap, manifest hash and shape check as
+ * the proxy. Throws when it cannot be had.
+ */
+export async function loadGeometry(ch: string, env: Env, fetchImpl: typeof fetch = fetch): Promise<CharGeom> {
+  if (!hasStrokeData(ch)) throw new Error(`no stroke data for ${ch}`);
+  const timeoutMs = numberVar(env.STROKE_FETCH_TIMEOUT_MS, 6000, 500, 30_000);
+  const maxBytes = numberVar(env.STROKE_MAX_BYTES, 65_536, 1024, 1_048_576);
+  const upstream = await fetchImpl(`${UPSTREAM}${encodeURIComponent(ch)}.json`, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!upstream.ok) throw new Error('stroke data is not reachable right now');
+  const body = await readCapped(upstream, maxBytes);
+  if ((await sha256Hex(body)) !== HASHES[ch]) throw new Error('stroke data did not match what we expected');
+  const parsed = JSON.parse(new TextDecoder().decode(body)) as unknown;
+  if (!isStrokeJson(parsed)) throw new Error('stroke data did not match what we expected');
+  const { strokes, medians } = parsed as CharGeom;
+  return { strokes, medians };
 }
 
 export interface StrokeDeps {

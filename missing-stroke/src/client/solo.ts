@@ -2,11 +2,11 @@
 // Worker runs (src/shared/race.ts) runs here on the phone, behind the same
 // Backend shape, so solo and class play can never drift apart. Nothing is
 // stored: a reload goes back home.
-import { ApiError, type Backend, type Envelope } from './api';
+import { ApiError, type Answered, type Backend, type Envelope } from './api';
 import { GAME, normalizeOptions } from '../shared/config';
 import { parseCharList } from '../shared/parse';
 import { advanceIfDue, createRoom, join, publicView, setOptions, startRace, submitStroke, touch, type Result } from '../shared/race';
-import type { CharList, RoomState } from '../shared/types';
+import type { CharGeom, CharList, RoomState } from '../shared/types';
 import { charData } from './tracer';
 
 const HOST = 'solo-host';
@@ -14,6 +14,8 @@ const KID = 'solo-kid';
 export const SOLO_CODE = 'SOLO';
 
 let room: RoomState | null = null;
+/** Stroke data for the solo list (solo grades on the phone with the same shared matcher). */
+const geom: Record<string, CharGeom> = {};
 
 function seed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
@@ -29,6 +31,7 @@ export async function soloList(text: string): Promise<CharList> {
   const parsed = parseCharList(text, Number.MAX_SAFE_INTEGER);
   const chars: string[] = [];
   const missing: string[] = [];
+  const skipped: string[] = [];
   const overflow: string[] = [];
   const strokeCounts: Record<string, number> = {};
   const limit = Math.min(parsed.chars.length, GAME.soloMaxLookups);
@@ -36,9 +39,10 @@ export async function soloList(text: string): Promise<CharList> {
   while (next < limit && chars.length < GAME.maxListChars) {
     const batch = parsed.chars.slice(next, Math.min(limit, next + GAME.soloLookupBatch));
     next += batch.length;
-    const found = await Promise.all(batch.map((c) => charData(c).then((d) => d.strokes.length, () => 0)));
+    const found = await Promise.all(batch.map((c) => charData(c).then((d) => ((geom[c] = d), d.strokes.length), () => 0)));
     batch.forEach((c, i) => {
       if (found[i] === 0) missing.push(c);
+      else if (found[i] < GAME.minStrokesToPlay) skipped.push(c);
       else if (chars.length < GAME.maxListChars) {
         chars.push(c);
         strokeCounts[c] = found[i];
@@ -46,7 +50,7 @@ export async function soloList(text: string): Promise<CharList> {
     });
   }
   overflow.push(...parsed.chars.slice(next));
-  return { chars, missing, strokeCounts, repeats: parsed.repeats, overflow };
+  return { chars, missing, skipped, strokeCounts, repeats: parsed.repeats, overflow };
 }
 
 /** Makes the solo game and starts it right away (3, 2, 1...). */
@@ -61,9 +65,10 @@ export function hasSolo(): boolean {
   return room !== null;
 }
 
-function view(): Envelope {
+function view(extra: Partial<Answered> = {}): Answered {
   const now = Date.now();
-  return { state: publicView(room!, KID, now), serverTime: now };
+  const t = room!.turn;
+  return { state: publicView(room!, KID, now, t ? geom[t.char] : null), serverTime: now, ...extra };
 }
 
 function settle(): void {
@@ -71,10 +76,10 @@ function settle(): void {
   room = advanceIfDue(touch(room!, KID, now), now);
 }
 
-function apply(result: Result): Envelope {
+function apply(result: Result & { duplicate?: boolean }): Answered {
   if (result.error) throw new ApiError(result.error, result.status ?? 409);
   room = result.state;
-  return view();
+  return view(result.duplicate ? { duplicate: true } : result.verdict ? { verdict: result.verdict } : {});
 }
 
 export function soloBackend(): Backend {
@@ -88,7 +93,9 @@ export function soloBackend(): Backend {
     },
     send: async (msg) => {
       settle();
-      return apply(submitStroke(room!, KID, msg, Date.now()));
+      const t = room!.turn;
+      const input = { race: msg.race, seq: msg.seq, turn: msg.turn, points: msg.points.map(([x, y]) => ({ x, y })) };
+      return apply(submitStroke(room!, KID, input, Date.now(), t ? geom[t.char] : null));
     },
     // In solo the kid is also the host: "Play again" starts the next characters.
     act: async () => {

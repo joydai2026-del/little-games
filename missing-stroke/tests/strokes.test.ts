@@ -110,3 +110,13 @@ describe('resolveList', () => {
     expect(r.repeats).toBe(1);
   });
 });
+
+describe('resolveList', () => {
+  it('skips one-stroke characters with a note-able list, and keeps the rest in order', () => {
+    const list = resolveList('1. 一 yī\n2. 山\n3. 乙\n4. 𠮷\n5. 人');
+    expect(list.chars).toEqual(['山', '人']);
+    expect(list.skipped).toEqual(['一', '乙']);
+    expect(list.missing).toEqual(['𠮷']);
+    expect(Object.values(list.strokeCounts).every((n) => n >= 2)).toBe(true);
+  });
+});

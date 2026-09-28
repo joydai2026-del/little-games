@@ -2,13 +2,17 @@
 // room with the agent client, an AI player joins with agent/lib.mjs and plays
 // every character to the end of the race on a fake clock.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildWorker } from './harness';
+import { buildWorker, stubUpstream } from './harness';
 import { createClient, playRace, seededRandom } from '../agent/lib.mjs';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('agent flow', () => {
   it('an agent joins over HTTP, waits for each character, answers, and the race ends', async () => {
+    stubUpstream();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
     const w = buildWorker();
@@ -42,7 +46,9 @@ describe('agent flow', () => {
     expect(result.rights).toBe(2);
     expect(result.wins).toBe(2);
     expect(result.place).toBe(1);
-    expect(lines.some((l) => /^drew stroke \d of 山$/.test(l))).toBe(true);
+    expect(lines.some((l) => /^drew stroke \d of 山: right$/.test(l))).toBe(true);
+    expect(lines.some((l) => /backwards: mistake$/.test(l))).toBe(true);
+    expect(result.mistakes).toBeGreaterThan(0);
     const board = (await teacher.state(created.code)).state;
     expect(board.standings[0]).toMatchObject({ name: 'Robo', agent: true, wins: 2, rights: 2 });
     expect(board.results.map((r: any) => r.char)).toEqual(['山', '水']);

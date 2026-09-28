@@ -31,8 +31,9 @@ export function goTo(hash: string, win: { location: { hash: string }; dispatchEv
 }
 
 /** Whether the Avery header may link home on a room screen. Plain text (false)
- *  only for a kid who is in the roster while the race runs: leaving would drop
- *  them out of the race. Late kids, teachers, the lobby and done keep the link. */
-export function headerLinkOn(s: Pick<PublicState, 'role' | 'phase' | 'you' | 'progress'>): boolean {
-  return !(s.role === 'kid' && s.phase === 'racing' && Boolean(s.progress[s.you]));
+ *  for ANY kid while a game is live (in it, or waiting for the next one: a
+ *  stray tap must not pull them out of the room). Teachers, the lobby and done
+ *  keep the link. */
+export function headerLinkOn(s: Pick<PublicState, 'role' | 'phase'>): boolean {
+  return !(s.role === 'kid' && s.phase === 'racing');
 }

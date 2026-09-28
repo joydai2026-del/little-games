@@ -16,6 +16,7 @@ import {
   createRoom,
   join,
   nextAlarmAt,
+  nextChars,
   parseStrokeInput,
   publicView,
   setList,
@@ -25,12 +26,13 @@ import {
   touch,
   type Result,
 } from '../shared/race';
-import type { RoomState } from '../shared/types';
+import type { CharGeom, RoomState } from '../shared/types';
 import type { Env } from './env';
-import { resolveList } from './strokes';
+import { loadGeometry, resolveList } from './strokes';
 
 const KEY_STATE = 'state';
 const KEY_SECRETS = 'secrets';
+const KEY_GEOM = 'geom';
 const ROOM_GONE = 'that room is not around any more';
 const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
 
@@ -53,6 +55,8 @@ async function body(request: Request): Promise<Record<string, unknown>> {
 export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
+  /** Verified stroke data for this game's characters (server only: players never get the missing stroke's number). */
+  private geom: Record<string, CharGeom> = {};
   private lastSeenWrittenAt = 0;
   /** The alarm time last set, so a poll does not rewrite an unchanged alarm. */
   private alarmAt: number | null = null;
@@ -62,12 +66,14 @@ export class RoomDO implements DurableObject {
     private readonly env: Env
   ) {
     this.ctx.blockConcurrencyWhile(async () => {
-      const [room, secrets] = await Promise.all([
+      const [room, secrets, geom] = await Promise.all([
         this.ctx.storage.get<RoomState>(KEY_STATE),
         this.ctx.storage.get<Record<string, string>>(KEY_SECRETS),
+        this.ctx.storage.get<Record<string, CharGeom>>(KEY_GEOM),
       ]);
       this.room = room ?? null;
       this.secrets = secrets ?? {};
+      this.geom = geom ?? {};
     });
   }
 
@@ -89,6 +95,7 @@ export class RoomDO implements DurableObject {
     this.alarmAt = null;
     this.room = null;
     this.secrets = {};
+    this.geom = {};
   }
 
   private async settle(now: number): Promise<void> {
@@ -121,17 +128,37 @@ export class RoomDO implements DurableObject {
 
   private envelope(viewerId: string, extra: Record<string, unknown> = {}): Response {
     const now = Date.now();
-    return json({ state: publicView(this.room!, viewerId, now), serverTime: now, ...extra });
+    const turn = this.room!.turn;
+    return json({ state: publicView(this.room!, viewerId, now, turn ? this.geom[turn.char] : null), serverTime: now, ...extra });
   }
 
   /** Applies a reducer result: an error becomes JSON, a change is saved. */
-  private async apply(result: Result, viewerId: string): Promise<Response> {
+  private async apply(result: Result, viewerId: string, extra: Record<string, unknown> = {}): Promise<Response> {
     if (result.error) return json({ error: result.error, serverTime: Date.now() }, result.status ?? 409);
     if (result.state !== this.room) {
       this.room = result.state;
       await this.save();
     }
-    return this.envelope(viewerId);
+    return this.envelope(viewerId, extra);
+  }
+
+  /** Loads (and keeps) verified stroke data for `chars`. Returns a plain error, or null when all are here. */
+  private async loadGeometryFor(chars: string[]): Promise<string | null> {
+    const need = chars.filter((c) => !this.geom[c]);
+    if (need.length === 0) return null;
+    try {
+      const loaded = await Promise.all(need.map((c) => loadGeometry(c, this.env)));
+      const next: Record<string, CharGeom> = {};
+      // Keep only what this game (and the one on screen) needs, so storage stays small.
+      const keep = new Set([...chars, ...(this.room?.roundChars ?? [])]);
+      for (const [c, g] of Object.entries(this.geom)) if (keep.has(c)) next[c] = g;
+      need.forEach((c, i) => (next[c] = loaded[i]));
+      this.geom = next;
+      await this.ctx.storage.put(KEY_GEOM, this.geom);
+      return null;
+    } catch {
+      return 'We could not load the strokes just now. Tap Start again.';
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -181,9 +208,16 @@ export class RoomDO implements DurableObject {
         break;
       }
       case 'start':
-      case 'next':
-        response = await this.apply(startRace(this.room, playerId, now, crypto.getRandomValues(new Uint32Array(1))[0]), playerId);
+      case 'next': {
+        // The room grades answers itself, so it loads the next game's stroke data first.
+        const failed = await this.loadGeometryFor(nextChars(this.room));
+        if (failed) {
+          response = json({ error: failed, serverTime: Date.now() }, 503);
+          break;
+        }
+        response = await this.apply(startRace(this.room!, playerId, Date.now(), crypto.getRandomValues(new Uint32Array(1))[0]), playerId);
         break;
+      }
       case 'list': {
         const b = await body(request);
         const text = typeof b.text === 'string' ? b.text : '';
@@ -202,11 +236,11 @@ export class RoomDO implements DurableObject {
       case 'stroke': {
         const input = parseStrokeInput(await body(request));
         if (!input) {
-          response = json({ error: 'send race, seq, turn and result ("correct" or "mistake")' }, 400);
+          response = json({ error: 'send race, seq, turn and points (the stroke you drew, as [x, y] pairs)' }, 400);
           break;
         }
-        const result = submitStroke(this.room, playerId, input, now);
-        response = await this.apply(result, playerId);
+        const result = submitStroke(this.room, playerId, input, now, this.room.turn ? this.geom[this.room.turn.char] : null);
+        response = await this.apply(result, playerId, result.duplicate ? { duplicate: true } : { verdict: result.verdict });
         break;
       }
       default:

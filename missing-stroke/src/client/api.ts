@@ -77,6 +77,11 @@ export interface Envelope {
   state: PublicState;
   serverTime: number;
 }
+/** The room's answer to one stroke: its verdict, or `duplicate` when that number was already used. */
+export interface Answered extends Envelope {
+  verdict?: 'correct' | 'mistake';
+  duplicate?: boolean;
+}
 export interface Polled {
   state?: PublicState;
   unchanged?: boolean;
@@ -107,7 +112,7 @@ export interface Backend {
   code: string;
   solo: boolean;
   poll(v?: number): Promise<Polled>;
-  send(msg: StrokeMsg): Promise<Envelope>;
+  send(msg: StrokeMsg): Promise<Answered>;
   act(action: 'start' | 'next'): Promise<Envelope>;
   setList(text: string): Promise<Envelope>;
   setOptions(options: Record<string, unknown>): Promise<Envelope>;
@@ -119,7 +124,7 @@ export function netBackend(code: string, seat: Seat): Backend {
     code,
     solo: false,
     poll: (v) => poll(code, seat, v),
-    send: (msg) => call<Envelope>('POST', `${room}/stroke`, msg, seat),
+    send: (msg) => call<Answered>('POST', `${room}/stroke`, msg, seat),
     act: (action) => call<Envelope>('POST', `${room}/${action}`, {}, seat),
     setList: (text) => call<Envelope>('POST', `${room}/list`, { text }, seat),
     setOptions: (options) => call<Envelope>('POST', `${room}/options`, options, seat),

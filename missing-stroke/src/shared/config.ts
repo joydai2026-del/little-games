@@ -52,6 +52,13 @@ export const GAME = {
    * stops a script from winning every character instantly.
    */
   minAnswerMs: 700,
+  /** Joins one room accepts per joinWindowMs (a burst of fake players is refused with a plain message). */
+  joinsPerRoomPerWindow: 40,
+  joinWindowMs: 60_000,
+  /** A character needs at least this many strokes: with one stroke there is nothing left to look at. */
+  minStrokesToPlay: 2,
+  /** Most points one drawn stroke may carry (the phone thins a long drag to this). */
+  maxStrokePoints: 256,
   /** Kids here at once in one room. */
   maxKids: 40,
   /** Everyone who ever joined one room (kids who left included), so the room stays small. */

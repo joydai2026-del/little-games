@@ -4,9 +4,9 @@ Live at: **https://missing-stroke.joyd-ai-2026.workers.dev**
 
 An Avery Studio classroom game for Mandarin immersion K-5. Momo forgot one stroke, and kids race
 to draw it in the right spot. Each character from the teacher's list shows up in ink with exactly
-one stroke missing. The kid draws the missing stroke with a finger: right, and the stroke fills in
-with ink and 墨墨 Momo cheers; wrong, and the pad wiggles (after a few wrong tries the missing
-stroke flashes as a hint). The fastest right stroke wins the character. Then everyone sees the
+one stroke missing. The kid draws the missing stroke with a finger and the room checks it: right,
+and the stroke fills in with ink and 墨墨 Momo cheers; wrong, and the pad wiggles (after a few wrong
+tries the missing stroke flashes as a hint). The fastest right stroke wins the character. Then everyone sees the
 answer in pink, and the next character opens.
 
 Two ways to play:
@@ -58,9 +58,20 @@ Who plays: a kid who joins after Start watches that game and plays the next one.
 has not checked in for 45 seconds (`rosterActiveMs`) is left out of the next game. A kid who reopens
 the teacher's link on the same phone goes straight back to their own seat.
 
-Fair play: the room checks that an answer is for the character that is open now, and a pace floor
-(no right stroke sooner than 700 ms after the character opens, `minAnswerMs`). Beyond that, answers
-are honor-based: the phone reports right or wrong, and the "AI" tag is what the joiner says it is.
+Fair play: the ROOM grades every stroke. A phone or an agent sends the points it drew, never a
+verdict; the room checks them against the missing stroke (`src/shared/matcher.ts`, the same matcher
+solo mode uses). No phone is ever told which stroke is missing: it gets the other strokes' shapes,
+unlabelled, and the missing one only after the character closes, once that kid got it right, or as
+the hint that kid earned. There is also a pace floor (no right stroke sooner than 700 ms after the
+character opens, `minAnswerMs`). The "AI" tag is what the joiner says it is.
+
+Characters with only one stroke (一 乙 丨 丶 丿 乚 乛 亅) are skipped with a note ("一 has only one
+stroke, so we skipped it"): with that stroke missing there would be nothing on screen
+(`minStrokesToPlay` in `src/shared/config.ts`; the API lists them in `state.list.skipped`).
+
+Joining is limited so a room cannot be flooded: at most 40 joins per room per minute
+(`joinsPerRoomPerWindow`), 40 kids here at once (`maxKids`), and a per-IP join limit
+(`JOIN_LIMITER` in `wrangler.jsonc`, generous because a whole class shares one school IP).
 
 ## Let an AI agent play
 
@@ -70,8 +81,12 @@ An agent plays through the same HTTP API the phones use. No npm install, Node 18
 node missing-stroke/agent/play.mjs --url https://missing-stroke.joyd-ai-2026.workers.dev --room ABCD --name Robo
 ```
 
-Flags: `--pace-ms 1500` (wait after a character opens, and after a miss, before answering),
-`--mistakes 0.1` (chance of a miss, 0 to 0.9), `--seed 7` (repeatable misses).
+The agent DRAWS: it reads the character (the full character from `/api/strokes/:char`, minus the
+strokes on screen, is the missing one) and sends that stroke's median as points; a planned miss is
+the same stroke drawn backwards. The room grades both.
+
+Flags: `--pace-ms 1500` (wait after a character opens, and after a miss, before drawing),
+`--mistakes 0.1` (chance of a backwards stroke, 0 to 0.9), `--seed 7` (repeatable misses).
 `MISSING_STROKE_URL` can replace `--url`. The agent shows on the board with an "AI" tag.
 
 ### API
@@ -84,23 +99,28 @@ from create or join). Errors are always JSON `{ "error": "..." }`.
 | `POST /api/rooms` | teacher | `{ "text": "...paste...", "options"?: { "level"?: "little" \| "middle" \| "big", "charsPerRound"?: 5 } }` | makes a room |
 | `POST /api/rooms/:code/join` | kid or agent | `{ "name": "Mia", "agent"?: true }` | joins |
 | `GET /api/rooms/:code?v=N` | anyone in the room | | state, or `{ "unchanged": true }` if still version N |
-| `POST /api/rooms/:code/stroke` | kid or agent | `{ "race": 1, "seq": 1, "turn": 0, "result": "correct" }` | one drawn stroke: right or wrong |
+| `POST /api/rooms/:code/stroke` | kid or agent | `{ "race": 1, "seq": 1, "turn": 0, "points": [[x, y], ...] }` | one drawn stroke; the room grades it and answers `verdict` |
 | `POST /api/rooms/:code/start` | teacher | | lobby to playing |
 | `POST /api/rooms/:code/next` | teacher | | play again with the next characters |
 | `POST /api/rooms/:code/list` | teacher | `{ "text": "..." }` | replace the list (not during a game) |
 | `POST /api/rooms/:code/options` | teacher | `{ "level"?: "big", "charsPerRound"?: 5 }` | settings |
 | `GET /api/strokes/:char` | anyone | | one character's stroke JSON (hash-checked proxy) |
 
-The open character is `state.turn`: `char`, `hidden` (the missing stroke, a 0-based index into the
-stroke JSON's `strokes` and `medians`), `opensAt`, `closesAt`, `closedAt` (null while open),
-`winners`. `result` is `"correct"` or `"mistake"`; `turn` is `state.turn.index`; `race` is
-`state.round` (an answer for another race or a closed character gets 409). `seq` is your own
-counter for the race: 1, 2, 3... (start from `state.progress[you].seq + 1`); a `seq` already
-applied is accepted and changes nothing, so retries are safe (a `seq` more than 1000 ahead gets
-400). Answers before GO (`state.goAt`) get 409; a right answer faster than `state.rules.minAnswerMs`
-after the character opens gets 429 (wait and resend). After a right answer, more answers for that
-character get 409. `state.rules` carries every timing number (`secondsPerChar`, `hintAfterMisses`,
-`revealMs`, `graceAfterFirstRightMs`, `minAnswerMs`), so an agent never hardcodes them.
+The open character is `state.turn`: `char`, `visible` (the other strokes as SVG path strings, in
+the stroke data's coordinates, unlabelled), `answer` (null until the character closes, you got it
+right, or you earned the hint; `hint` is true in that last case), `opensAt`, `closesAt`, `closedAt`
+(null while open), `winners`. The missing stroke's number is never sent while a character is open.
+
+`points` are 2 to 256 `[x, y]` pairs in the stroke data's coordinates (1024 wide, y up, the same
+space as the medians in `/api/strokes/:char`). A body with a verdict and no points gets 400. The
+answer carries `verdict` (`"correct"` or `"mistake"`), or `duplicate: true` when that `seq` was
+already used (a retry, or another tab): then read `state.progress[you]` for what the room has.
+`turn` is `state.turn.index`; `race` is `state.round` (an answer for another race or a closed
+character gets 409). `seq` is your own counter for the race: 1, 2, 3... (start from
+`state.progress[you].seq + 1`; a `seq` more than 1000 ahead gets 400). Answers before GO get 409;
+a right stroke sooner than `state.rules.minAnswerMs` after the character opens gets 429 (wait and
+resend). After a right answer, more answers for that character get 409. `state.rules` carries every
+timing number, so an agent never hardcodes them.
 
 ```
 U=https://missing-stroke.joyd-ai-2026.workers.dev
@@ -115,33 +135,37 @@ curl -s -X POST $U/api/rooms/ABCD/join -H 'content-type: application/json' -d '{
 # teacher starts (teacher headers)
 curl -s -X POST $U/api/rooms/ABCD/start -H "x-player-id: $TID" -H "x-player-secret: $TSECRET"
 
-# after the character opens (state.turn.opensAt), the agent answers it
+# after the character opens (state.turn.opensAt), the agent draws a stroke (points in stroke-data coordinates)
 curl -s -X POST $U/api/rooms/ABCD/stroke -H 'content-type: application/json' \
   -H "x-player-id: $PID" -H "x-player-secret: $PSECRET" \
-  -d '{"race":1,"seq":1,"turn":0,"result":"correct"}'
+  -d '{"race":1,"seq":1,"turn":0,"points":[[512,640],[515,420],[518,160]]}'
+# -> { "verdict": "correct" | "mistake", "state": {...} }
 ```
 
 ## How the missing stroke works
 
-All drawing goes through one adapter, `src/client/tracer.ts`, so the library can be swapped.
-Hanzi Writer's quiz can start at any stroke (`quizStartStrokeNum: k`): strokes before k show as
-done and the next drawn stroke is checked against stroke k only. The pad stops the quiz right after
-that one right stroke, so only the missing stroke is ever checked. The quiz hides the strokes AFTER
-k and has no option to show them, so the adapter draws those itself, from the same stroke JSON,
-lined up with the library's own `HanziWriter.getScalingTransform`. The outline stays off (it would
-give the answer away). Which stroke is missing is a pure function of the race's random seed and the
-character's place (`hiddenStrokeFor` in `src/shared/race.ts`), stored in the room so every phone agrees.
+The room picks the missing stroke (`hiddenStrokeFor` in `src/shared/race.ts`, from a random seed
+drawn at Start), loads that game's stroke data from the pinned upstream (hash-checked, the same way
+as the proxy), and keeps it to itself. Phones get only the other strokes. The phone's pad
+(`src/client/tracer.ts`) draws those strokes, records the finger, and sends the points; the room
+grades them with `src/shared/matcher.ts`, a port of Hanzi Writer 3.7.3's stroke matcher (MIT) with
+the same thresholds, plus one change: drawing over ANY stroke already on screen is a miss.
+
+History: the first build ran Hanzi Writer's quiz on the phone (`quizStartStrokeNum` + stop after the
+one right stroke, feasibility check in the plan). Review round 1 ruled that the room must grade and
+that phones must never learn which stroke is missing, so no third-party script runs on the page now.
 
 | Piece | Source | Pin | Licence |
 |---|---|---|---|
-| Stroke checking | Hanzi Writer, loaded from jsDelivr | `https://cdn.jsdelivr.net/npm/hanzi-writer@3.7.3/dist/hanzi-writer.min.js`, `integrity="sha384-xd6VpwMU5AxPFzG/nyhXrW70SSR2usiUNV8RrA0wlOjYlCrZyzZC6JiR/mT51pm2"`, `crossorigin="anonymous"` | MIT |
+| Stroke checking | `src/shared/matcher.ts`, ported from Hanzi Writer 3.7.3 (no script loaded) | thresholds unchanged | MIT (credited in the file and the footer) |
 | Character stroke data | hanzi-writer-data 2.0.1 (9,574 characters), fetched ONLY by the Worker | `https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/<char>.json` | Arphic Public License ([our copy](public/licenses/ARPHICPL.TXT), served at `/licenses/ARPHICPL.TXT`) |
 
 Character stroke data: Make Me a Hanzi / Arphic Technology, Arphic Public License.
 
 Security: the same mitigations as Trace Race (its two-round scan, 2026-09-28), copied unchanged:
-- exact version pins, never a range; Subresource Integrity on the script;
-- the library's built-in data loader is replaced, so kids' browsers never call the data CDN;
+- exact version pins, never a range; no third-party script on the page; kids' browsers never call the data CDN;
+- the room loads each game's stroke data from the same pinned upstream with the same size cap, hash
+  and shape checks, and keeps the missing stroke to itself;
 - `/api/strokes/:char` is not an open proxy: exactly one code point that is in the committed
   sha256 manifest (`src/worker/strokes-manifest.json`), else 400; upstream is hardcoded; the body
   is size-capped (`STROKE_MAX_BYTES`, 64 KB), hashed and compared to the manifest, and its JSON
@@ -160,7 +184,7 @@ game has its own rate-limit bucket, so the `namespace_id` must be unique across 
 | Trace Race | 1002 |
 | Dictation Dash | 1011, 1012 |
 | Stroke Reveal | 1041 |
-| Missing Stroke | 1051 |
+| Missing Stroke | 1051 (rooms), 1052 (joins) |
 | Tianzige Generator | 2001 |
 
 ## 墨墨 Momo

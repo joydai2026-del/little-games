@@ -4,6 +4,36 @@
 import { RoomDO } from '../src/worker/room-do';
 import worker from '../src/worker/index';
 import type { Env } from '../src/worker/env';
+import { vi } from 'vitest';
+import shan from './fixtures/山.json?raw';
+import shui from './fixtures/水.json?raw';
+import huo from './fixtures/火.json?raw';
+import ren from './fixtures/人.json?raw';
+import kou from './fixtures/口.json?raw';
+import shi from './fixtures/十.json?raw';
+import yi from './fixtures/一.json?raw';
+import wo from './fixtures/wo-6211.json?raw';
+
+// Byte-identical hanzi-writer-data 2.0.1 files (ASCII JSON, so the raw text IS the bytes).
+const FIXTURE: Record<string, string> = { 山: shan, 水: shui, 火: huo, 人: ren, 口: kou, 十: shi, 一: yi, 我: wo };
+
+/**
+ * Stands in for the pinned upstream (jsDelivr): serves the committed,
+ * byte-identical hanzi-writer-data files, so the room's hash check runs for
+ * real. Anything else is a 404. Returns the list of URLs fetched.
+ */
+export function stubUpstream(): string[] {
+  const seen: string[] = [];
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    seen.push(url);
+    const ch = decodeURIComponent(url.split('/').pop()!.replace(/\.json$/, ''));
+    const file = FIXTURE[ch];
+    if (!url.startsWith('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/') || !file) return new Response('nope', { status: 404 });
+    return new Response(new TextEncoder().encode(file));
+  });
+  return seen;
+}
 
 export class FakeStorage {
   readonly map = new Map<string, unknown>();

@@ -19,11 +19,13 @@ import {
   turnDeadline,
   touch,
 } from '../src/shared/race';
-import type { CharList, RoomState } from '../src/shared/types';
+import { gradeStroke } from '../src/shared/matcher';
+import type { CharGeom, CharList, RoomState } from '../src/shared/types';
+import { GEOM, pointsFor } from './geom';
 
 const T0 = 1_800_000_000_000;
 const SEED = 12345;
-const LIST: CharList = { chars: ['山', '水', '火'], missing: [], strokeCounts: { 山: 3, 水: 4, 火: 4 }, repeats: 0, overflow: [] };
+const LIST: CharList = { chars: ['山', '水', '火'], missing: [], strokeCounts: { 山: 3, 水: 4, 火: 4 }, repeats: 0, overflow: [], skipped: [] };
 
 function room(opts: Record<string, unknown> = {}, list = LIST): RoomState {
   return createRoom('ABCD', { id: 'T', name: 'Ms. Li' }, opts, list, T0);
@@ -38,8 +40,9 @@ function started(opts: Record<string, unknown> = { level: 'big', charsPerRound: 
   return s.state;
 }
 const goAt = () => T0 + GAME.countdownSeconds * 1000;
+/** Draws for real: 'correct' = the hidden stroke's median, 'mistake' = another stroke's median. The room grades it. */
 const send = (s: RoomState, id: string, seq: number, result: 'correct' | 'mistake', at: number, turn = s.turn!.index) =>
-  submitStroke(s, id, { race: s.round, seq, turn, result }, at);
+  submitStroke(s, id, { race: s.round, seq, turn, points: pointsFor(s.turn!.char, s.turn!.hidden, result) }, at, GEOM[s.turn!.char] as CharGeom);
 
 describe('options and list', () => {
   it('normalizes level and chars per round', () => {
@@ -60,7 +63,7 @@ describe('options and list', () => {
     expect(charsForRound(['a'], 3, 5)).toEqual(['a']);
   });
   it('changing characters per game between games never skips a character; a new list starts at its top', () => {
-    const five: CharList = { chars: ['一', '二', '三', '四', '五'], missing: [], strokeCounts: { 一: 1, 二: 2, 三: 3, 四: 5, 五: 4 }, repeats: 0, overflow: [] };
+    const five: CharList = { chars: ['一', '二', '三', '四', '五'], missing: [], strokeCounts: { 一: 1, 二: 2, 三: 3, 四: 5, 五: 4 }, repeats: 0, overflow: [], skipped: [] };
     let s = startRace(withKids(room({ charsPerRound: 2 }, five), 'A'), 'T', T0, SEED).state;
     expect(s.roundChars).toEqual(['一', '二']);
     s = advanceIfDue(s, T0 + 10 * 60_000);
@@ -81,9 +84,20 @@ describe('options and list', () => {
   });
   it('the room cap counts kids who are here, so a kid who left frees a seat', () => {
     let s = room();
-    for (let i = 0; i < GAME.maxKids; i++) s = join(s, { id: `k${i}`, name: `Kid ${i}` }, T0).state;
-    expect(join(s, { id: 'x', name: 'Extra' }, T0).status).toBe(409);
-    expect(join(s, { id: 'x', name: 'Extra' }, T0 + GAME.rosterActiveMs + 1).error).toBeUndefined();
+    // Kids arrive over a few minutes (the per-room join rate is its own test).
+    const at = (i: number) => T0 + Math.floor(i / 10) * GAME.joinWindowMs;
+    for (let i = 0; i < GAME.maxKids; i++) s = touch(join(s, { id: `k${i}`, name: `Kid ${i}` }, at(i)).state, `k${i}`, at(GAME.maxKids));
+    const full = at(GAME.maxKids) + 1;
+    expect(join(s, { id: 'x', name: 'Extra' }, full).status).toBe(409);
+    expect(join(s, { id: 'x', name: 'Extra' }, full + GAME.rosterActiveMs + 1).error).toBeUndefined();
+  });
+  it('a burst of joins into one room is refused with a plain message, and the window moves on', () => {
+    let s = room();
+    for (let i = 0; i < GAME.joinsPerRoomPerWindow; i++) s = join(s, { id: `k${i}`, name: `Kid ${i}` }, T0 + i).state;
+    const burst = join(s, { id: 'x', name: 'Extra' }, T0 + 100);
+    expect(burst.status).toBe(429);
+    expect(burst.error).toMatch(/wait a minute/);
+    expect(join(s, { id: 'x', name: 'Extra' }, T0 + GAME.joinWindowMs + 100).error).toBeUndefined();
   });
 });
 
@@ -138,7 +152,7 @@ describe('start', () => {
   it('needs the teacher, a list and a kid who is here', () => {
     expect(startRace(withKids(room(), 'A'), 'A', T0, SEED).status).toBe(403);
     expect(startRace(room(), 'T', T0, SEED).status).toBe(409);
-    const empty = room({}, { chars: [], missing: ['𠮷'], strokeCounts: {}, repeats: 0, overflow: [] });
+    const empty = room({}, { chars: [], missing: ['𠮷'], strokeCounts: {}, repeats: 0, overflow: [], skipped: [] });
     expect(startRace(withKids(empty, 'A'), 'T', T0, SEED).error).toMatch(/no characters/);
     const gone = withKids(room(), 'A');
     expect(startRace(gone, 'T', T0 + GAME.rosterActiveMs + 1, SEED).status).toBe(409);
@@ -155,13 +169,18 @@ describe('answers', () => {
   it('refuses before GO, from another race, for another character, and bad input', () => {
     const s = started();
     expect(send(s, 'A', 1, 'correct', goAt() - 1).error).toBe('wait for GO');
-    expect(submitStroke(s, 'A', { race: 9, seq: 1, turn: 0, result: 'correct' }, goAt() + 1000).error).toMatch(/different race/);
+    expect(submitStroke(s, 'A', { race: 9, seq: 1, turn: 0, points: pointsFor('山', s.turn!.hidden, 'correct') }, goAt() + 1000, GEOM['山']).error).toMatch(/different race/);
     expect(send(s, 'A', 1, 'correct', goAt() + 1000, 1).error).toBe('that character is over');
     expect(send(s, 'T', 1, 'correct', goAt() + 1000).status).toBe(403);
-    expect(parseStrokeInput({ race: 1, seq: 0, turn: 0, result: 'correct' })).toBeNull();
-    expect(parseStrokeInput({ race: 1, seq: 1, turn: -1, result: 'correct' })).toBeNull();
-    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, result: 'yes' })).toBeNull();
-    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, result: 'mistake' })).toEqual({ race: 1, seq: 1, turn: 0, result: 'mistake' });
+    const pts = [[1, 2], [30, 40]];
+    expect(parseStrokeInput({ race: 1, seq: 0, turn: 0, points: pts })).toBeNull();
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: -1, points: pts })).toBeNull();
+    // An assertion without a drawing is refused: the room grades strokes, it never takes a verdict.
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, result: 'correct' })).toBeNull();
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, result: 'correct', points: [[1, 2]] })).toBeNull();
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, points: [[1, 'x'], [2, 3]] })).toBeNull();
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, points: Array(GAME.maxStrokePoints + 1).fill([1, 2]) })).toBeNull();
+    expect(parseStrokeInput({ race: 1, seq: 1, turn: 0, points: pts })).toEqual({ race: 1, seq: 1, turn: 0, points: [{ x: 1, y: 2 }, { x: 30, y: 40 }] });
   });
 
   it('counts a wrong stroke once, even when the same send is retried', () => {
@@ -317,5 +336,65 @@ describe('scoring and the board', () => {
     expect(v).toMatchObject({ you: 'A', role: 'kid', serverNow: goAt() });
     expect(v.present).toEqual(['A', 'B']);
     expect(v.standings).toHaveLength(2);
+  });
+});
+
+describe('the room grades strokes (real stroke data)', () => {
+  it('right stroke, wrong stroke, backwards stroke, and a bare assertion', () => {
+    for (const ch of ['山', '水', '火', '人', '口', '十', '我']) {
+      const n = GEOM[ch].medians.length;
+      for (let k = 0; k < n; k++) {
+        expect(gradeStroke(pointsFor(ch, k, 'correct'), GEOM[ch].medians, k), `${ch} stroke ${k}`).toBe('correct');
+        expect(gradeStroke(pointsFor(ch, k, 'backwards'), GEOM[ch].medians, k), `${ch} backwards ${k}`).toBe('mistake');
+        expect(gradeStroke(pointsFor(ch, k, 'mistake'), GEOM[ch].medians, k), `${ch} other ${k}`).toBe('mistake');
+      }
+    }
+    expect(gradeStroke([{ x: 500, y: 400 }], GEOM['山'].medians, 0)).toBe('mistake');
+  });
+  it('a missing MIDDLE stroke crossed by later strokes can still be drawn (我 stroke 2, 十 stroke 1 is crossed by stroke 2)', () => {
+    expect(gradeStroke(pointsFor('我', 1, 'correct'), GEOM['我'].medians, 1)).toBe('correct');
+    expect(gradeStroke(pointsFor('十', 0, 'correct'), GEOM['十'].medians, 0)).toBe('correct');
+    // A human hand is not a median: a shaky, offset copy still passes; tracing the crossing stroke does not.
+    const shaky = pointsFor('我', 1, 'correct').map((p, i) => ({ x: p.x + 18 * Math.sin(i), y: p.y - 22 }));
+    expect(gradeStroke(shaky, GEOM['我'].medians, 1)).toBe('correct');
+    expect(gradeStroke(pointsFor('我', 4, 'correct'), GEOM['我'].medians, 1)).toBe('mistake');
+  });
+  it('the reducer grades: a wrong drawing is a mistake even if the phone "thinks" it is right', () => {
+    let s = started();
+    const r = submitStroke(s, 'A', { race: s.round, seq: 1, turn: 0, points: pointsFor('山', s.turn!.hidden, 'backwards') }, goAt() + 2000, GEOM['山']);
+    expect(r.verdict).toBe('mistake');
+    s = r.state;
+    expect(s.progress.A).toMatchObject({ mistakes: 1, rightAt: null });
+    expect(submitStroke(s, 'A', { race: s.round, seq: 2, turn: 0, points: pointsFor('山', s.turn!.hidden, 'correct') }, goAt() + 2500, null).status).toBe(503);
+  });
+});
+
+describe('the answer never reaches a phone', () => {
+  it('no hidden index anywhere, the visible strokes have an unlabelled gap, the answer only when earned', () => {
+    let s = started();
+    const hidden = s.turn!.hidden;
+    const g = GEOM['山'];
+    for (const at of [T0, goAt() + 10]) {
+      const v = publicView(s, 'A', at, g);
+      expect('hidden' in v).toBe(false);
+      expect('hidden' in v.turn!).toBe(false);
+      expect(v.turn!.visible).toEqual(g.strokes.filter((_, i) => i !== hidden));
+      expect(v.turn!.visible).toHaveLength(g.strokes.length - 1);
+      expect(v.turn!.answer).toBeNull();
+      const text = JSON.stringify(v);
+      expect(text).not.toContain(g.strokes[hidden]);
+      expect(text).not.toContain(JSON.stringify(g.medians[hidden]));
+      expect(text).not.toMatch(/"hidden"/);
+    }
+    // The hint, once earned by this player only.
+    for (let i = 0; i < LEVELS.big.hintAfterMisses; i++) s = send(s, 'A', i + 1, 'mistake', goAt() + 1000 + i * 100).state;
+    expect(publicView(s, 'A', goAt() + 2000, g).turn).toMatchObject({ answer: g.strokes[hidden], hint: true });
+    expect(publicView(s, 'B', goAt() + 2000, g).turn!.answer).toBeNull();
+    expect(publicView(s, 'T', goAt() + 2000, g).turn!.answer).toBeNull();
+    // Right: the player sees the stroke fill in; after the close, everyone sees it.
+    s = send(s, 'B', 1, 'correct', goAt() + 3000).state;
+    expect(publicView(s, 'B', goAt() + 3000, g).turn).toMatchObject({ answer: g.strokes[hidden], hint: false });
+    const closed = advanceIfDue(s, goAt() + 3000 + GAME.graceAfterFirstRightMs);
+    expect(publicView(closed, 'T', goAt() + 3000 + GAME.graceAfterFirstRightMs, g).turn!.answer).toBe(g.strokes[hidden]);
   });
 });

@@ -41,6 +41,8 @@ export interface CharList {
   chars: string[];
   /** Characters the teacher typed that have no stroke data. */
   missing: string[];
+  /** Characters with only one stroke (nothing would be left on screen), skipped. */
+  skipped: string[];
   /** Stroke count for every playable character. */
   strokeCounts: Record<string, number>;
   repeats: number;
@@ -113,7 +115,27 @@ export interface Standing {
   place: number;
 }
 
-export interface PublicState extends RoomState {
+/** One character's stroke data (hanzi-writer-data): SVG paths and median lines, same order. */
+export interface CharGeom {
+  strokes: string[];
+  medians: number[][][];
+}
+
+/**
+ * The open character as a player sees it. The missing stroke's NUMBER is never
+ * sent: `visible` is the other strokes' shapes in order, with no labels, and
+ * `answer` (the missing stroke's shape) appears only after the character
+ * closes, for a player who got it right, or as the earned hint.
+ */
+export interface PublicTurn extends Omit<Turn, 'hidden'> {
+  visible: string[];
+  answer: string | null;
+  /** True when `answer` is here only as this player's hint. */
+  hint: boolean;
+}
+
+export interface PublicState extends Omit<RoomState, 'hidden' | 'turn'> {
+  turn: PublicTurn | null;
   you: string;
   /** Kids who are here right now: the teacher's "Kids here" list and the next Start roster (presentKids). */
   present: string[];

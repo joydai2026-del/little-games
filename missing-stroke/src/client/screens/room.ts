@@ -1,15 +1,17 @@
 // One room (or the solo game). Polls its Backend and shows the right screen for
 // this phone: teacher (lobby, class board, winners) or kid (waiting, drawing
 // pad, answer reveal, results).
-import { ApiError, type Backend, type Envelope, clearSeat } from '../api';
+import { ApiError, type Answered, type Backend, clearSeat } from '../api';
 import { GAME, LEVELS, LEVEL_ORDER, OPTION_LIMITS } from '../../shared/config';
 import { hintMissesLeft, turnDeadline } from '../../shared/race';
-import type { PublicState, StrokeResult, Turn } from '../../shared/types';
-import { glyph, startPad, type PadHandle } from '../tracer';
+import { strokeOutcome } from '../status';
+import type { PublicState, PublicTurn } from '../../shared/types';
+import type { Point } from '../../shared/matcher';
+import { glyph, glyphFromPaths, startPad, type PadHandle } from '../tracer';
 import { brand, h, momo, setHeaderLink } from '../ui';
 import { goTo, headerLinkOn } from '../route';
 import { StrokeSender } from '../sender';
-import { HICCUP_TEXT, kidStatusText, seconds, winnerLine, type KidStage } from '../status';
+import { kidStatusText, seconds, winnerLine, type KidStage } from '../status';
 import { board } from './board';
 
 interface Ctx {
@@ -186,13 +188,20 @@ function turnPicture(s: PublicState, size: number): HTMLElement {
   const closed = t.closedAt != null;
   const names = t.winners.map((id) => nameOf(s, id));
   return h('div', { class: 'turn-pic' }, [
-    glyph(t.char, t.hidden, size, closed),
+    glyphFromPaths(t.visible, closed ? t.answer : null, size),
     closed
       ? h('p', { class: 'reveal-line', text: winnerLine(names, t.winners.includes(s.you)) })
       : h('p', { class: 'muted', text: 'Momo forgot one stroke. Who can draw it first?' }),
-    // The stroke number is part of the answer: only after the character closes.
-    closed ? h('p', { class: 'muted', text: `It was stroke ${t.hidden + 1} of ${s.list.strokeCounts[t.char] ?? '?'}.` }) : null,
+    // The stroke number is part of the answer: only after the character closes (from the finished results).
+    closed && s.results[t.index] ? h('p', { class: 'muted', text: `It was stroke ${s.results[t.index].hidden + 1} of ${s.list.strokeCounts[t.char] ?? '?'}.` }) : null,
   ]);
+}
+
+/** "一 has only one stroke, so we skipped it." */
+export function skippedNote(skipped: string[]): string {
+  return skipped.length === 1
+    ? `${skipped[0]} has only one stroke, so we skipped it.`
+    : `${skipped.join(' ')} have only one stroke each, so we skipped them.`;
 }
 
 // --- teacher ---------------------------------------------------------------
@@ -254,6 +263,7 @@ function teacherLobby(ctx: Ctx): HTMLElement {
       s.list.missing.length
         ? h('p', { class: 'notice warn', text: `We do not have strokes for ${s.list.missing.join(' ')} yet, so we left ${s.list.missing.length === 1 ? 'it' : 'them'} out.` })
         : null,
+      s.list.skipped?.length ? h('p', { class: 'notice warn', text: skippedNote(s.list.skipped) }) : null,
       s.list.overflow.length ? h('p', { class: 'notice warn', text: `Only the first ${GAME.maxListChars} are used. Left out: ${s.list.overflow.join(' ')}` }) : null,
       h('details', {}, [h('summary', { text: 'Change the list' }), paste, h('p'), replace]),
     ]),
@@ -316,7 +326,14 @@ function teacherRace(ctx: Ctx): HTMLElement {
   return h('div', {}, [
     head,
     middle,
-    s.phase === 'racing' ? h('div', { class: 'chips' }, s.roundChars.map((c, i) => h('span', { class: `chip${t && i === t.index ? ' current' : ''}`, text: c }))) : null,
+    // Only finished characters show in full; the current and upcoming ones are "?" (the full
+    // character next to the one with a stroke missing would give the answer away).
+    s.phase === 'racing'
+      ? h('div', { class: 'chips' }, s.roundChars.map((c, i) => {
+          const finished = t != null && (i < t.index || (i === t.index && t.closedAt != null));
+          return h('span', { class: `chip${t && i === t.index ? ' current' : ''}${finished ? '' : ' later'}`, text: finished ? c : '?' });
+        }))
+      : null,
     board(s),
     footer,
   ]);
@@ -390,16 +407,16 @@ function resultsStrip(s: PublicState, forClass = false): HTMLElement {
       ? r.winners.length ? r.winners.map((id) => nameOf(s, id)).join(', ') : 'nobody'
       : r.times[s.you] != null ? seconds(r.times[s.you]) : 'missed';
     const good = forClass ? r.winners.length > 0 : r.times[s.you] != null;
-    return h('div', { class: 'result' }, [glyph(r.char, r.hidden, 96, true), h('span', { class: good ? 'ok' : 'muted', text: label })]);
+    return h('div', { class: 'result' }, [glyph(r.char, r.hidden, 96), h('span', { class: good ? 'ok' : 'muted', text: label })]);
   }));
 }
 
 /**
- * The kid's screen for one race. Each character (turn) gets a fresh pad. The
- * pad moves ahead of the room (a right stroke fills in before the room says
- * so), which keeps it fast; the room is still the truth: when nothing is in
- * flight and the room disagrees (the answer never landed), the pad comes back
- * for another try while the character is still open.
+ * The kid's screen for one race. Each character (turn) gets a fresh pad that
+ * shows only the strokes the room sent. Every stroke the kid draws goes to
+ * the room as points; the ROOM says right or wrong, and the pad follows. The
+ * room is always the truth: a lost or doubled send (two tabs, a retry) is
+ * read back from the room's state, never guessed.
  */
 class KidRace {
   readonly el = h('div');
@@ -408,13 +425,10 @@ class KidRace {
   private pad: PadHandle | null = null;
   private padKey = '';
   private viewKey = '';
-  /** Turn index this phone drew right, before the room confirmed it. */
-  private localRight: { turn: number; ms: number } | null = null;
-  private missesHere = 0;
-  private hintShowing = false;
+  private hintShown = false;
+  private again = false;
   private hiccupUntil = 0;
   private errorText: string | null = null;
-  private minVersion = 0;
   private readonly head = h('div', { class: 'race-head' });
   private readonly stage = h('div');
   private readonly status = h('p', { class: 'muted status', role: 'status' });
@@ -441,41 +455,27 @@ class KidRace {
     if (s.goAt != null && serverNow(this.ctx) < s.goAt) return 'countdown';
     if (t.closedAt != null) return 'reveal';
     const mine = s.progress[s.you];
-    if (mine?.rightAt != null || this.localRight?.turn === t.index) return 'right';
+    if (mine?.turn === t.index && mine.rightAt != null) return 'right';
     return 'drawing';
   }
 
-  /** True when this phone drew it right but the room, with nothing in flight, says it never landed. */
-  private lostAnswer(): boolean {
-    const s = this.state;
-    const t = s.turn;
-    if (!t || t.closedAt != null || this.localRight?.turn !== t.index) return false;
-    if (this.sender.pending > 0 || s.version < this.minVersion) return false;
-    return s.progress[s.you]?.rightAt == null;
-  }
-
   update(): void {
-    if (this.lostAnswer()) {
-      this.localRight = null;
-      this.padKey = '';
-      this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
-      this.status.textContent = HICCUP_TEXT;
-      this.sender.reset();
-    } else if (this.sender.gaveUp && this.sender.pending === 0 && !this.ctx.forceFull) this.sender.reset();
+    if (this.sender.gaveUp && this.sender.pending === 0 && !this.ctx.forceFull) this.sender.reset();
+    // Never reuse a number the room already has (another tab, or a reload).
+    this.seq = Math.max(this.seq, this.state.progress[this.state.you]?.seq ?? 0);
     this.tick();
   }
 
   private showHead(): void {
     const s = this.state;
     const t = s.turn;
-    const total = s.roundChars.length;
     const stage = this.stageNow();
     const until = stage === 'countdown' ? s.goAt : t && t.closedAt == null ? turnDeadline(t) : null;
     const key = `${t?.index}:${stage}:${until}`;
     if (this.head.dataset.key === key) return;
     this.head.dataset.key = key;
     this.head.replaceChildren(
-      h('span', { text: t ? `Character ${t.index + 1} of ${total}` : '' }),
+      h('span', { text: t ? `Character ${t.index + 1} of ${s.roundChars.length}` : '' }),
       until != null ? h('span', { class: 'timer', 'data-until': String(until), text: fmt(secondsLeft(this.ctx, until)) }) : h('span', { class: 'timer', text: 'Answer' })
     );
   }
@@ -497,13 +497,12 @@ class KidRace {
       if (this.padKey === key) {
         this.viewKey = `pad:${key}`;
       } else if (stage === 'right') {
-        // Already right (the room says so) but no pad on this phone for it, e.g. after a reload:
-        // show the finished character, never a fresh pad that would take a second answer.
+        // Already right (the room says so) but no pad on this phone for it, e.g. after a reload.
         if (this.viewKey !== `got:${key}`) {
           this.viewKey = `got:${key}`;
           this.pad?.destroy();
           this.pad = null;
-          this.stage.replaceChildren(glyph(t.char, t.hidden, Math.min(this.size(), 320), true), momo('bounce'));
+          this.stage.replaceChildren(glyphFromPaths(t.visible, t.answer, Math.min(this.size(), 320)), momo('bounce'));
         }
       } else {
         this.mount(t);
@@ -516,11 +515,13 @@ class KidRace {
         this.pad?.destroy();
         this.pad = null;
         this.padKey = '';
+        this.hintShown = false;
+        this.again = false;
         const mine = s.progress[s.you];
         const names = t.winners.map((id) => nameOf(s, id));
         const got = mine?.rightAt != null;
         this.stage.replaceChildren(
-          glyph(t.char, t.hidden, Math.min(this.size(), 320), true),
+          glyphFromPaths(t.visible, t.answer, Math.min(this.size(), 320)),
           h('p', { class: 'reveal-line', text: winnerLine(names, t.winners.includes(s.you)) }),
           got ? h('p', { class: 'notice', text: `You got it in ${seconds(mine!.rightAt! - t.opensAt)}. 好棒!` }) : h('p', { class: 'notice', text: 'The pink stroke was the missing one. Next one is coming!' }),
           momo(got ? 'bounce' : 'tilt')
@@ -528,68 +529,87 @@ class KidRace {
       }
     }
     const mine = s.progress[s.you];
+    const missed = mine?.turn === t?.index ? mine?.turnMistakes ?? 0 : 0;
     const text = kidStatusText({
       stage,
       hiccupUntil: this.hiccupUntil,
       now: Date.now(),
       error: this.errorText,
-      missesLeftForHint: hintMissesLeft(s.rules.hintAfterMisses, this.missesHere),
-      hintShowing: this.hintShowing,
-      rightMs: mine?.rightAt != null && t ? mine.rightAt - t.opensAt : this.localRight?.turn === t?.index ? this.localRight?.ms : null,
+      missesLeftForHint: hintMissesLeft(s.rules.hintAfterMisses, missed),
+      hintShowing: this.hintShown,
+      again: this.again,
+      rightMs: mine?.rightAt != null && t ? mine.rightAt - t.opensAt : null,
     });
     if (this.status.textContent !== text) this.status.textContent = text;
   }
 
-  private mount(t: Turn): void {
+  private mount(t: PublicTurn): void {
     this.pad?.destroy();
-    const s = this.state;
-    const already = s.progress[s.you]?.turn === t.index ? s.progress[s.you]!.turnMistakes : 0;
-    this.missesHere = already;
-    this.hintShowing = already >= s.rules.hintAfterMisses;
     this.errorText = null;
+    this.hintShown = false;
+    this.again = false;
     this.padKey = `${this.round}:${t.index}`;
-    const hintAfter = hintMissesLeft(s.rules.hintAfterMisses, already);
-    const handle = startPad(t.char, { size: this.size(), hidden: t.hidden, hintAfterMisses: hintAfter, hintNow: this.hintShowing }, {
-      onRight: () => {
-        if (this.pad !== handle) return;
-        this.localRight = { turn: t.index, ms: Math.max(0, serverNow(this.ctx) - t.opensAt) };
-        this.send(t.index, 'correct');
-        this.cheer();
-        this.tick();
-      },
-      onMistake: () => {
-        if (this.pad !== handle) return;
-        this.missesHere += 1;
-        if (this.missesHere >= s.rules.hintAfterMisses) this.hintShowing = true;
-        this.send(t.index, 'mistake');
-        this.tick();
-      },
-      onError: (msg) => {
-        this.errorText = msg;
-        this.tick();
-      },
+    const handle = startPad({ size: this.size(), visible: t.visible }, (points) => {
+      if (this.pad !== handle) return;
+      this.again = false;
+      this.send(t.index, points);
     });
     this.pad = handle;
+    this.stage.dataset.char = t.char;
     this.stage.replaceChildren(handle.root);
+    // A pad rebuilt after the kid already earned the hint shows it again.
+    if (t.hint && t.answer) this.showHint(t.answer);
+    if (t.visible.length === 0) this.errorText = 'The strokes did not load. Wait a moment...';
   }
 
-  private readonly sender = new StrokeSender<Envelope>({
+  private showHint(answer: string): void {
+    this.pad?.flashHint(answer);
+    this.hintShown = true;
+  }
+
+  /** The room answered a stroke: follow what the ROOM says. */
+  private onAnswer(env: Answered, turn: number): void {
+    const s = env.state;
+    const t = s.turn;
+    if (!this.pad || !t || t.index !== turn || this.padKey !== `${this.round}:${turn}`) return;
+    const outcome = strokeOutcome(env, s.you, turn);
+    // A confirmed answer clears the old notices (hiccup, "draw it again").
+    this.hiccupUntil = 0;
+    this.again = outcome === 'again';
+    if (outcome === 'right') {
+      this.hintShown = false;
+      this.pad.showRight(t.answer);
+      this.cheer();
+    } else if (outcome === 'wrong') {
+      this.pad.wiggle();
+      if (t.hint && t.answer) this.showHint(t.answer);
+      else this.hintShown = false;
+    }
+    this.tick();
+  }
+
+  private readonly sender = new StrokeSender<Answered>({
     send: (msg) => this.ctx.backend.send(msg),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     backoffMs: GAME.strokeRetryBackoffMs,
     isRetryable: (err) => !(err instanceof ApiError) || err.status === 0 || err.status === 429 || err.status >= 500,
-    onSent: (env) => {
+    onSent: (env, msg) => {
       if (!this.ctx.state || env.state.version >= this.ctx.state.version) this.ctx.state = env.state;
-      this.minVersion = Math.max(this.minVersion, env.state.version);
+      this.seq = Math.max(this.seq, env.state.progress[env.state.you]?.seq ?? 0);
+      this.onAnswer(env, msg.turn);
     },
     onDrained: (gaveUp) => {
-      if (gaveUp) this.ctx.forceFull = true;
+      if (gaveUp) {
+        this.ctx.forceFull = true;
+        this.hiccupUntil = Date.now() + GAME.hiccupNoticeMs;
+      }
       this.ctx.refresh();
     },
   });
 
-  private send(turn: number, result: StrokeResult): void {
-    void this.sender.enqueue({ race: this.round, seq: ++this.seq, turn, result });
+  private send(turn: number, points: Point[]): void {
+    const pts = points.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10] as [number, number]);
+    void this.sender.enqueue({ race: this.round, seq: ++this.seq, turn, points: pts });
   }
 
   private cheer(): void {

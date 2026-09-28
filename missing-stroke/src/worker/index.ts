@@ -3,7 +3,7 @@
 //   POST /api/rooms                 { name?, text, options? } -> { code, playerId, playerSecret, state }
 //   POST /api/rooms/:code/join      { name, agent? }          -> { playerId, playerSecret, state }
 //   GET  /api/rooms/:code?v=N       -> { state } or { unchanged, nextPollMs }
-//   POST /api/rooms/:code/stroke    { race, seq, turn, result: "correct" | "mistake" }
+//   POST /api/rooms/:code/stroke    { race, seq, turn, points: [[x, y], ...] }  (the room grades the stroke)
 //                                   race = state.round; turn = state.turn.index;
 //                                   seq = this racer's answer counter (1, 2, 3...)
 //   POST /api/rooms/:code/start     teacher only (lobby -> racing)
@@ -81,8 +81,7 @@ function forward(env: Env, code: string, path: string, request: Request, bodyTex
   return roomStub(env, code).fetch(new Request(`https://room/${path}`, init));
 }
 
-async function limited(request: Request, env: Env): Promise<Response | null> {
-  const limiter = env.ROOM_CREATE_LIMITER;
+async function limited(request: Request, limiter: RateLimit | undefined, message: string): Promise<Response | null> {
   if (!limiter) return null;
   try {
     const { success } = await limiter.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'no-ip' });
@@ -90,11 +89,11 @@ async function limited(request: Request, env: Env): Promise<Response | null> {
   } catch {
     return null;
   }
-  return json({ error: 'too many new rooms from here at once, wait a minute and try again' }, 429, { 'Retry-After': '60' });
+  return json({ error: message }, 429, { 'Retry-After': '60' });
 }
 
 async function createRoomRoute(request: Request, env: Env): Promise<Response> {
-  const over = await limited(request, env);
+  const over = await limited(request, env.ROOM_CREATE_LIMITER, 'too many new rooms from here at once, wait a minute and try again');
   if (over) return over;
   let raw: string;
   try {
@@ -161,6 +160,10 @@ export default {
     }
     if (!ACTIONS.has(action)) return json({ error: 'not found' }, 404);
     if (request.method !== 'POST') return json({ error: 'use POST' }, 405);
+    if (action === 'join') {
+      const over = await limited(request, env.JOIN_LIMITER, 'lots of people are joining from here right now, wait a minute and try again');
+      if (over) return over;
+    }
     let text: string;
     try {
       text = await readText(request);

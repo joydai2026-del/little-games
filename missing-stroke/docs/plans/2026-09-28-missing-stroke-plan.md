@@ -76,3 +76,20 @@ happens (the missing stroke in pink on the projector).
 `src/shared/config.ts`: `LEVELS` (seconds per character, hint after N misses), `charsPerRound`,
 `revealMs`, `graceAfterFirstRightMs`, `minAnswerMs`, polling, back-off, presence window, sizes.
 `wrangler.jsonc`: create rate limit, stroke cache and upstream caps.
+
+## Review round 1 (PR #17): what changed after the feasibility check
+
+- **The room grades, not the phone.** The API takes the drawn POINTS, never a verdict; the room
+  grades them with `src/shared/matcher.ts` (Hanzi Writer's matcher, ported, same thresholds; tracing
+  any stroke already on screen is a miss). Solo mode runs the same matcher on the phone.
+- **The answer never reaches a phone.** Phones get the other strokes' shapes, unlabelled; the missing
+  stroke's shape only after the close, once that kid got it right, or as that kid's earned hint.
+  So the phone no longer loads Hanzi Writer at all: the feasibility finding above still holds, but
+  the library quiz is no longer used.
+- **One-stroke characters are skipped** (`minStrokesToPlay: 2`) with a teacher note.
+- **Joins are limited** per room (`joinsPerRoomPerWindow`) and per IP (`JOIN_LIMITER`).
+- **Header is plain text for any kid while a game is live.**
+- **Class board chips**: finished characters only; the current and upcoming ones show "?".
+
+Later, not now: a per-level option `laterStrokes: 'hide'` for grades 4-5 (show only the strokes
+BEFORE the missing one, so older kids must also know the order).

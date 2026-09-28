@@ -11,10 +11,13 @@
 // GAME.revealMs, and the next character opens.
 
 import { GAME, LEVELS, normalizeOptions, type RaceOptions } from './config';
-import type { CharList, Player, Progress, PublicState, RoomState, Standing, StrokeResult, Turn, TurnResult } from './types';
+import type { CharGeom, CharList, Player, Progress, PublicState, PublicTurn, RoomState, Standing, Turn, TurnResult } from './types';
+import { gradeStroke, parsePoints, type Point, type Verdict } from './matcher';
 
 export interface Result {
   state: RoomState;
+  /** For an answer: how the room graded it. */
+  verdict?: Verdict;
   error?: string;
   /** HTTP-ish status for the error: 400 bad input, 403 not allowed, 409 wrong moment, 429 too fast. */
   status?: number;
@@ -96,6 +99,8 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
   if (!name) return fail(state, 'please type your name', 400);
   // The cap counts kids who are HERE, so seats of kids who left are reused. The
   // player list itself is bounded by maxPlayersEver (names only, for the room's life).
+  const recent = state.players.filter((p) => p.role === 'kid' && now - p.joinedAt < GAME.joinWindowMs).length;
+  if (recent >= GAME.joinsPerRoomPerWindow) return fail(state, 'lots of people are joining right now, wait a minute and try again', 429);
   if (presentKids(state, now).length >= GAME.maxKids) return fail(state, 'this room is full', 409);
   if (state.players.length >= GAME.maxPlayersEver) return fail(state, 'this room is full, ask your teacher for a new one', 409);
   const player: Player = {
@@ -183,6 +188,12 @@ function openTurn(state: RoomState, index: number, at: number): RoomState {
   return { ...state, turn, progress };
 }
 
+/** The characters the next Start would use. */
+export function nextChars(state: RoomState): string[] {
+  const pos = Number.isInteger(state.listPos) ? state.listPos : 0;
+  return charsForRound(state.list.chars, pos, state.options.charsPerRound);
+}
+
 /** Lobby -> racing (Start) and done -> racing (Race again). `seed` picks the missing strokes. */
 export function startRace(state: RoomState, byId: string, now: number, seed: number): Result {
   if (byId !== state.hostId) return fail(state, 'only the teacher can start', 403);
@@ -226,7 +237,7 @@ function everyoneRight(state: RoomState): boolean {
 }
 
 /** When the open turn closes by the clock: its own end, or the grace after the first right stroke. */
-export function turnDeadline(turn: Turn): number {
+export function turnDeadline(turn: Pick<Turn, 'closesAt' | 'firstRightAt'>): number {
   if (turn.firstRightAt != null && GAME.graceAfterFirstRightMs > 0) {
     return Math.min(turn.closesAt, turn.firstRightAt + GAME.graceAfterFirstRightMs);
   }
@@ -284,25 +295,35 @@ export interface StrokeInput {
   seq: number;
   /** The character (state.turn.index) this answer is for. */
   turn: number;
-  result: StrokeResult;
+  /** The stroke as drawn, in stroke-data coordinates. The room grades it; a bare "correct" is refused. */
+  points: Point[];
 }
 
 const nonNegInt = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
 
 export function parseStrokeInput(body: Record<string, unknown>): StrokeInput | null {
-  const { race, seq, turn, result } = body;
+  const { race, seq, turn } = body;
   if (!nonNegInt(race) || !nonNegInt(seq) || seq < 1 || !nonNegInt(turn)) return null;
-  if (result !== 'correct' && result !== 'mistake') return null;
-  return { race, seq, turn, result };
+  const points = parsePoints(body.points);
+  if (!points) return null;
+  return { race, seq, turn, points };
 }
 
 /**
- * One drawn stroke from a kid (or an agent): right or wrong. Every answer
- * names its race and carries a per-racer sequence number, so a retried
- * request, a replay from an earlier race, or a double-sent mistake can never
- * count twice. A right stroke must respect the pace floor (GAME.minAnswerMs).
+ * One drawn stroke from a kid (or an agent). The room grades the points
+ * against the missing stroke (`geom` is the open character's stroke data).
+ * Every answer names its race and carries a per-racer sequence number, so a
+ * retried request, a replay from an earlier race, or a double-sent mistake
+ * can never count twice. A right stroke must respect the pace floor
+ * (GAME.minAnswerMs).
  */
-export function submitStroke(state: RoomState, playerId: string, input: StrokeInput, now: number): Result & { duplicate?: boolean } {
+export function submitStroke(
+  state: RoomState,
+  playerId: string,
+  input: StrokeInput,
+  now: number,
+  geom: CharGeom | null | undefined
+): Result & { duplicate?: boolean } {
   if (state.phase !== 'racing' || !state.turn) return fail(state, 'the race is not on right now', 409);
   if (input.race !== state.round) return fail(state, 'that answer was for a different race', 409);
   if (state.goAt != null && now < state.goAt) return fail(state, 'wait for GO', 409);
@@ -316,13 +337,15 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
   const turn = state.turn;
   if (input.turn !== turn.index || turn.closedAt != null) return fail(state, 'that character is over', 409);
   if (prog.rightAt != null) return fail(state, 'you already got this one', 409);
+  if (!geom || !geom.medians[turn.hidden]) return fail(state, 'the strokes are still loading, try again', 503);
 
+  const verdict = gradeStroke(input.points, geom.medians, turn.hidden);
+  if (verdict === 'correct' && now < turn.opensAt + GAME.minAnswerMs) return fail(state, 'too fast, slow down a little', 429);
   let next: Progress;
   let nextTurn = turn;
-  if (input.result === 'mistake') {
+  if (verdict === 'mistake') {
     next = { ...prog, mistakes: prog.mistakes + 1, turnMistakes: prog.turnMistakes + 1, seq: input.seq };
   } else {
-    if (now < turn.opensAt + GAME.minAnswerMs) return fail(state, 'too fast, slow down a little', 429);
     const ms = now - turn.opensAt;
     next = { ...prog, rights: prog.rights + 1, totalMs: prog.totalMs + ms, rightAt: now, seq: input.seq };
     if (turn.firstRightAt == null || now === turn.firstRightAt) {
@@ -332,7 +355,7 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
     }
   }
   const updated = bump({ ...state, turn: nextTurn, progress: { ...state.progress, [playerId]: next } });
-  return { state: advanceIfDue(updated, now) };
+  return { state: advanceIfDue(updated, now), verdict };
 }
 
 /**
@@ -379,10 +402,29 @@ export function touch(state: RoomState, playerId: string, now: number): RoomStat
   return { ...state, players };
 }
 
-export function publicView(state: RoomState, viewerId: string, now: number): PublicState {
+/**
+ * The open character as `viewerId` may see it: never the missing stroke's
+ * number; its shape only after the character closes, once this player got it
+ * right, or as this player's earned hint.
+ */
+export function publicTurn(state: RoomState, viewerId: string, geom: CharGeom | null | undefined): PublicTurn | null {
+  const t = state.turn;
+  if (!t) return null;
+  const { hidden, ...rest } = t;
+  const visible = geom ? geom.strokes.filter((_, i) => i !== hidden) : [];
+  const mine = state.progress[viewerId];
+  const right = mine?.turn === t.index && mine.rightAt != null;
+  const hinted = mine?.turn === t.index && mine.turnMistakes >= hintAfterMisses(state.options);
+  const show = t.closedAt != null || right || hinted;
+  return { ...rest, visible, answer: show && geom ? geom.strokes[hidden] ?? null : null, hint: show && !right && t.closedAt == null };
+}
+
+export function publicView(state: RoomState, viewerId: string, now: number, geom?: CharGeom | null): PublicState {
   const me = state.players.find((p) => p.id === viewerId);
+  const { hidden, turn, ...rest } = state;
   return {
-    ...state,
+    ...rest,
+    turn: publicTurn(state, viewerId, geom),
     you: viewerId,
     role: me?.role ?? 'kid',
     standings: standings(state),

@@ -23,18 +23,27 @@ SILENT = """
 """
 LIST = "1. 山 shān mountain\n2. 水 shuǐ water\n3. 火 huǒ fire\n4. 𠮷 (rare, no data)\n5. 山 again"
 
-# Screen points along one stroke's median, through the writer's own transform.
+# The script "reads the character" like the agent does: the pad only shows the
+# strokes the room sent (no label says which is missing), so it loads the full
+# character from the public proxy, finds the stroke that is not on the pad, and
+# returns that stroke's median in screen points (through the pad's own transform).
 MEDIAN_JS = """
-async ([char, strokeNum]) => {
+async () => {
+  const pad = document.querySelector('.pad-wrap');
+  const layer = pad.querySelector('svg.strokes');
+  const shown = new Set([...layer.querySelectorAll('path')].map((p) => p.getAttribute('d')));
+  const char = pad.closest('[data-char]')?.dataset.char || document.querySelector('[data-char]')?.dataset.char;
   const data = await (await fetch('/api/strokes/' + encodeURIComponent(char))).json();
-  const svg = document.querySelector('.writer svg');
-  const g = svg.querySelector('g');
+  const gaps = data.strokes.map((d, i) => (shown.has(d) ? -1 : i)).filter((i) => i >= 0);
+  const k = gaps[0];
+  const g = layer.querySelector('g');
   const m = g.getScreenCTM();
-  return data.medians[strokeNum].map(([x, y]) => {
-    const p = svg.createSVGPoint(); p.x = x; p.y = y;
+  const pts = data.medians[k].map(([x, y]) => {
+    const p = layer.createSVGPoint(); p.x = x; p.y = y;
     const q = p.matrixTransform(m);
     return [q.x, q.y];
   });
+  return { char, stroke: k, points: pts };
 }
 """
 
@@ -46,6 +55,8 @@ async (c) => {
   return { phase: st.phase, turn: st.turn, me: st.progress[st.you] || null, standings: st.standings, results: st.results, round: st.round };
 }
 """
+
+RIGHT_JS = "() => !!document.querySelector('.pad-wrap.right') || document.body.innerText.includes('You got it')"
 
 def drag(page, pts):
     page.mouse.move(*pts[0])
@@ -97,19 +108,20 @@ def solo_run(base, level):
         while time.time() < deadline:
             if k.query_selector("text=/You found [0-9]+ of/"):
                 break
-            el = k.query_selector(".writer[data-hidden]")
-            if not el or not k.query_selector(".writer[data-hidden] svg g") or k.query_selector(".pad-wrap.right"):
+            el = k.query_selector("[data-char] .pad-wrap svg.strokes g")
+            if not el or k.query_selector(".pad-wrap.right") or k.query_selector(".cheer"):
                 k.wait_for_timeout(200)
                 continue
-            key = (el.get_attribute("data-char"), el.get_attribute("data-hidden"))
+            key = k.get_attribute("[data-char]", "data-char") + k.inner_text(".race-head")[:14]
             if key in seen:
                 k.wait_for_timeout(200)
                 continue
             seen.add(key)
             k.wait_for_timeout(500)
-            drag(k, k.evaluate(MEDIAN_JS, [key[0], int(key[1])]))
-            k.wait_for_timeout(300)
-            log["moves"].append({"char": key[0], "hidden": int(key[1]), "pad_turned_right": k.query_selector(".pad-wrap.right") is not None})
+            m = k.evaluate(MEDIAN_JS)
+            drag(k, m["points"])
+            k.wait_for_function(RIGHT_JS, timeout=5000)
+            log["moves"].append({"char": m["char"], "stroke_read": m["stroke"], "pad_turned_right": True})
         k.wait_for_selector("text=/You found [0-9]+ of/", timeout=60000)
         k.wait_for_timeout(1200)
         k.screenshot(path=str(OUT / "missing-stroke-solo-done.png"))
@@ -176,7 +188,9 @@ def main():
             if st["phase"] == "done":
                 break
             turn = st["turn"]
-            w = k.query_selector(".writer[data-hidden] svg g")
+            if turn and "hidden" in turn:
+                log["LEAK"] = "turn.hidden reached a phone"
+            w = k.query_selector("[data-char] .pad-wrap svg.strokes g")
             if not turn or turn["closedAt"] is not None or turn["index"] in done_turns or not w:
                 if turn and turn["closedAt"] is not None and "reveal" not in shots and turn["index"] == 0:
                     t.wait_for_timeout(600)
@@ -185,21 +199,28 @@ def main():
                     t.screenshot(path=str(OUT / "missing-stroke-board-reveal.png"))
                 k.wait_for_timeout(200)
                 continue
-            ch = k.get_attribute(".writer[data-hidden]", "data-char")
-            hidden = int(k.get_attribute(".writer[data-hidden]", "data-hidden"))
             k.wait_for_timeout(700)  # a kid looks before drawing
             if turn["index"] == 0 and "pad" not in shots:
                 shots.add("pad")
                 k.screenshot(path=str(OUT / "missing-stroke-kid-pad.png"))
-            pts = k.evaluate(MEDIAN_JS, [ch, hidden])
+            m = k.evaluate(MEDIAN_JS)
+            ch, pts = m["char"], m["points"]
             if turn["index"] == 0:
-                drag(k, list(reversed(pts)))  # backwards: a real wrong stroke
-                k.wait_for_timeout(700)
-                log["kid_moves"].append({"char": ch, "hidden": hidden, "move": "backwards (wrong)", "pad_wiggled": k.query_selector(".pad-wrap.wiggle") is not None})
+                drag(k, list(reversed(pts)))  # backwards: a real wrong stroke, graded by the room
+                try:
+                    k.wait_for_selector(".pad-wrap.wiggle", timeout=4000)
+                    wiggled = True
+                except Exception:
+                    wiggled = False
+                k.wait_for_timeout(500)
+                log["kid_moves"].append({"char": ch, "stroke_read": m["stroke"], "move": "backwards (wrong)", "pad_wiggled": wiggled})
             drag(k, pts)
-            k.wait_for_timeout(300)
-            right_class = k.query_selector(".pad-wrap.right") is not None
-            log["kid_moves"].append({"char": ch, "hidden": hidden, "move": "right", "pad_turned_right": right_class})
+            try:
+                k.wait_for_function(RIGHT_JS, timeout=4000)
+                right_class = True
+            except Exception:
+                right_class = False
+            log["kid_moves"].append({"char": ch, "stroke_read": m["stroke"], "move": "right", "pad_turned_right": right_class})
             done_turns.add(turn["index"])
             if "board" not in shots:
                 t.wait_for_timeout(900)

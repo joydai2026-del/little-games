@@ -1,8 +1,13 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { buildRoom, buildWorker } from './harness';
+import { buildRoom, buildWorker, stubUpstream } from './harness';
+import { pointsFor } from './geom';
 import { GAME } from '../src/shared/config';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+const pts = (char: string, hidden: number, kind: 'correct' | 'mistake' | 'backwards') => pointsFor(char, hidden, kind).map((p) => [p.x, p.y]);
 
 function post(path: string, body: unknown, auth?: { playerId: string; playerSecret: string }): Request {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -28,6 +33,32 @@ describe('RoomDO', () => {
     expect((await room.fetch(post('create', { code: 'ABCD', text: '' }))).status).toBe(409);
   });
 
+  it('two tabs on one seat with the same number: the stroke counts once, and the losing tab is told to draw again', async () => {
+    stubUpstream();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const { room, storage } = await buildRoom();
+    const host = (await (await room.fetch(post('create', { code: 'ABCD', text: '山', options: { level: 'big' } }))).json()) as any;
+    const kid = (await (await room.fetch(post('join', { name: 'Mia' }))).json()) as any;
+    const auth = { playerId: kid.playerId, playerSecret: kid.playerSecret };
+    const started = (await (await room.fetch(post('start', {}, { playerId: host.playerId, playerSecret: host.playerSecret }))).json()) as any;
+    const hidden = ((await storage.get('state')) as any).turn.hidden;
+    vi.setSystemTime(started.state.goAt + 1500);
+    // Tab A: a wrong stroke with seq 1. Tab B, same seat, a RIGHT stroke also with seq 1.
+    const a = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('山', hidden, 'mistake') }, auth))).json()) as any;
+    const b = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('山', hidden, 'correct') }, auth))).json()) as any;
+    expect(a.verdict).toBe('mistake');
+    expect(b.duplicate).toBe(true);
+    expect(b.state.progress[kid.playerId]).toMatchObject({ mistakes: 1, rightAt: null, seq: 1 });
+    // Tab B resyncs its number from the room and draws again: now it is graded.
+    const b2 = (await (await room.fetch(post('stroke', { race: 1, seq: b.state.progress[kid.playerId].seq + 1, turn: 0, points: pts('山', hidden, 'correct') }, auth))).json()) as any;
+    expect(b2.verdict).toBe('correct');
+    // Lost response: the room applied seq 2, the phone never heard; its retry of seq 2 reads back "right".
+    const lost = (await (await room.fetch(post('stroke', { race: 1, seq: 2, turn: 0, points: pts('山', hidden, 'correct') }, auth))).json()) as any;
+    expect(lost.duplicate).toBe(true);
+    expect(lost.state.progress[kid.playerId].rightAt).not.toBeNull();
+  });
+
   it('rejects callers without the right secret', async () => {
     const { room } = await buildRoom();
     const host = (await (await room.fetch(post('create', { code: 'ABCD', text: '人' }))).json()) as any;
@@ -36,6 +67,7 @@ describe('RoomDO', () => {
   });
 
   it('runs a race: start, answers, alarm closes the character, reveal, next, done', async () => {
+    const upstream = stubUpstream();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
     const { room, storage } = await buildRoom();
@@ -47,20 +79,29 @@ describe('RoomDO', () => {
     const started = (await (await room.fetch(post('start', {}, hostAuth))).json()) as any;
     const s0 = started.state;
     expect(s0.phase).toBe('racing');
-    expect(s0.turn).toMatchObject({ index: 0, char: '人', closedAt: null });
-    expect(s0.turn.hidden).toBeGreaterThanOrEqual(0);
-    expect(s0.turn.hidden).toBeLessThan(2);
+    expect(s0.turn).toMatchObject({ index: 0, char: '人', closedAt: null, answer: null });
+    // The phone gets the other stroke only, never which one is missing.
+    expect(s0.turn.hidden).toBeUndefined();
+    expect(s0.hidden).toBeUndefined();
+    expect(s0.turn.visible).toHaveLength(1);
+    expect(upstream).toHaveLength(2); // the room loaded 人 and 口 from the pinned upstream, hash-checked
+    const hidden0 = ((await storage.get('state')) as any).turn.hidden;
     expect(s0.rules).toMatchObject({ secondsPerChar: 12, revealMs: GAME.revealMs });
     expect(storage.alarms.at(-1)).toBe(s0.turn.closesAt);
 
-    const early = await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, result: 'correct' }, kidAuth));
+    const early = await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('人', hidden0, 'correct') }, kidAuth));
     expect(early.status).toBe(409);
+    // A bare verdict, without a drawing, is refused.
+    const bare = await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, result: 'correct' }, kidAuth));
+    expect(bare.status).toBe(400);
 
     vi.setSystemTime(s0.goAt + 1000);
-    const miss = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, result: 'mistake' }, kidAuth))).json()) as any;
+    const miss = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('人', hidden0, 'backwards') }, kidAuth))).json()) as any;
+    expect(miss.verdict).toBe('mistake');
     expect(miss.state.progress[kid.playerId]).toMatchObject({ mistakes: 1, turnMistakes: 1 });
-    // The same request again (a retry) is accepted and changes nothing.
-    const retry = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, result: 'mistake' }, kidAuth))).json()) as any;
+    // The same request again (a retry after a lost answer) changes nothing and says so.
+    const retry = (await (await room.fetch(post('stroke', { race: 1, seq: 1, turn: 0, points: pts('人', hidden0, 'backwards') }, kidAuth))).json()) as any;
+    expect(retry.duplicate).toBe(true);
     expect(retry.state.version).toBe(miss.state.version);
     const bad = await room.fetch(post('stroke', { race: 1, seq: 2, charIndex: 0, result: 'correct' }, kidAuth));
     expect(bad.status).toBe(400);
@@ -88,7 +129,8 @@ describe('RoomDO', () => {
 
     // A right answer on the last character (everyone right) closes it; the reveal ends the race.
     vi.setSystemTime(saved.turn.opensAt + 2000);
-    const right = (await (await room.fetch(post('stroke', { race: 1, seq: 2, turn: 1, result: 'correct' }, kidAuth))).json()) as any;
+    const right = (await (await room.fetch(post('stroke', { race: 1, seq: 2, turn: 1, points: pts('口', saved.turn.hidden, 'correct') }, kidAuth))).json()) as any;
+    expect(right.verdict).toBe('correct');
     expect(right.state.turn).toMatchObject({ closedAt: saved.turn.opensAt + 2000, winners: [kid.playerId] });
     vi.setSystemTime(saved.turn.opensAt + 2000 + GAME.revealMs);
     await room.alarm();

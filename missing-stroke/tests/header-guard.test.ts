@@ -15,8 +15,8 @@ describe('headerLinkOn', () => {
   it('a kid in the roster during racing gets a plain header', () => {
     expect(headerLinkOn(kidState('racing', true) as never)).toBe(false);
   });
-  it('a late kid (joined after Start, not in the roster) keeps the link', () => {
-    expect(headerLinkOn(kidState('racing', false) as never)).toBe(true);
+  it('a late kid (joined after Start, waiting for the next game) also gets a plain header', () => {
+    expect(headerLinkOn(kidState('racing', false) as never)).toBe(false);
   });
   it('the teacher keeps the link, even while racing', () => {
     expect(headerLinkOn({ role: 'teacher', phase: 'racing', you: 't', progress: { t: {} } } as never)).toBe(true);

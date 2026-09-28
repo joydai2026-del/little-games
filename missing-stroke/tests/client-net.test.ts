@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StrokeSender, type StrokeMsg } from '../src/client/sender';
 import { timeoutSignal } from '../src/client/timeout';
 
-const msg = (seq: number): StrokeMsg => ({ race: 1, seq, turn: 0, result: seq % 2 ? 'mistake' : 'correct' });
+const msg = (seq: number): StrokeMsg => ({ race: 1, seq, turn: 0, points: [[seq, 0], [seq, 100]] });
 
 function harness(behaviour: (m: StrokeMsg, attempt: number) => 'ok' | 'fail' | 'refuse') {
   const sent: number[] = [];

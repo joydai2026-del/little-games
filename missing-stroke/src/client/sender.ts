@@ -13,7 +13,8 @@ export interface StrokeMsg {
   race: number;
   seq: number;
   turn: number;
-  result: 'correct' | 'mistake';
+  /** The drawn stroke, [x, y] pairs in stroke-data coordinates. The room grades it. */
+  points: [number, number][];
 }
 
 export interface SenderDeps<T> {
@@ -21,7 +22,7 @@ export interface SenderDeps<T> {
   sleep(ms: number): Promise<void>;
   backoffMs: readonly number[];
   isRetryable(err: unknown): boolean;
-  onSent(answer: T): void;
+  onSent(answer: T, msg: StrokeMsg): void;
   /** Called when the outbox empties. `gaveUp` = at least one stroke did not land. */
   onDrained(gaveUp: boolean): void;
 }
@@ -41,7 +42,7 @@ export class StrokeSender<T> {
         const waits = this.deps.backoffMs;
         for (let attempt = 0; attempt <= waits.length; attempt++) {
           try {
-            this.deps.onSent(await this.deps.send(msg));
+            this.deps.onSent(await this.deps.send(msg), msg);
             return;
           } catch (err) {
             if (!this.deps.isRetryable(err) || attempt === waits.length) {
