@@ -8,6 +8,19 @@ README, tests, and build docs.
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+| Dictation Dash 听写赛跑 | Grades 3 to 5: Momo says a word, kids write it from memory stroke by stroke; Easy shows a faint outline, Hard is a blank box. Live: https://dictation-dash.joyd-ai-2026.workers.dev | `dictation-dash/` |
+
+## Dictation Dash 听写赛跑
+
+Live at: **https://dictation-dash.joyd-ai-2026.workers.dev** · A listening game for grades 3 to 5:
+Momo says a word, kids write it from memory, the fastest correct writer wins. Two levels on two big
+buttons: Easy (faint outline) and Hard (blank box). Details in [`dictation-dash/README.md`](dictation-dash/README.md).
+
+![Dictation Dash demo: a kid writes words from memory on a phone while the class board updates](dictation-dash/docs/demo/dictation-dash-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [dictation-dash-demo.mp4](dictation-dash/docs/demo/dictation-dash-demo.mp4) · [dictation-dash-demo.gif](dictation-dash/docs/demo/dictation-dash-demo.gif)
 
 ## Trace Race 笔顺比赛
 

@@ -101,7 +101,7 @@ def write_round(k, t, code, log, tag, expected_round, fail_word=None, shots=None
                 k.screenshot(path=str(OUT / shots["problem"]))
             k.evaluate("window.__ddSilentSpeak = undefined")
             k.wait_for_timeout(900)
-            k.click("text=Try again")
+            k.click(".problem .btn-primary")  # the button (a text= match would hit the sentence "try again")
             failed_once = True
             log[f"{tag}_try_again_clicked"] = True
             continue
