@@ -10,13 +10,23 @@ board for the classroom projector.
 
 No accounts, no ads, no tracking, no sound. A display name lives only as long as the room (2 hours).
 
+## Demo
+
+Recorded on the live site by `scripts/live-run.py --record`: a real room, a browser kid (left,
+phone) tracing 山 水 火 with real pointer drags, and an AI agent racing through the API, with the
+teacher's race board on the right. Silent, 1.25x speed.
+
+![Trace Race demo: a kid traces on a phone while the race board updates](docs/demo/trace-race-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, commander adds -->
+
+Files: [trace-race-demo.mp4](docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](docs/demo/trace-race-demo.gif)
+
 ![Kid tracing 水 mid-race](docs/demo/trace-race-kid-tracing.png)
 ![Live race board](docs/demo/trace-race-board-live.png)
 ![Winners board](docs/demo/trace-race-winners.png)
 
-Stills recorded on the live site by `scripts/live-run.py` (a real room, a browser kid tracing
-with real pointer drags, and an AI agent racing through the API). A recorded demo video is not
-made yet (see Deferred).
+Live evidence: [`docs/evidence/2026-09-28-live-receipt.md`](docs/evidence/2026-09-28-live-receipt.md).
 
 ## Play it
 
@@ -27,8 +37,13 @@ made yet (see Deferred).
 4. The race ends when time runs out or everyone finishes. Tap **Race again** for the next
    characters in your list.
 
-Scoring: most characters finished wins; ties go to fewer mistakes, then to who finished first.
-Nothing is ever taken away.
+Scoring: most characters finished wins, then most strokes into the current character, then
+fewer mistakes, then who got there first. Nothing is ever taken away. A kid who joins after Start
+watches that race and races the next one.
+
+Fair play: the room checks stroke ORDER and a pace floor (no faster than one correct stroke per
+250 ms on average since GO, `minStrokeMs` in `src/shared/config.ts`). Beyond that, scoring is
+honor-based: the phone reports each stroke, and the "AI" tag is what the joiner says it is.
 
 Settings on the teacher screen: seconds per character, characters per race, stroke hints on/off
 (on is best for K-2). Defaults and limits live in `src/shared/config.ts`.
@@ -55,7 +70,7 @@ from create or join). Errors are always JSON `{ "error": "..." }`.
 | `POST /api/rooms` | teacher | `{ "text": "...paste...", "options"?: {...} }` | makes a room |
 | `POST /api/rooms/:code/join` | kid or agent | `{ "name": "Mia", "agent"?: true }` | joins |
 | `GET /api/rooms/:code?v=N` | anyone in the room | | state, or `{ "unchanged": true }` if still version N |
-| `POST /api/rooms/:code/stroke` | kid or agent | `{ "charIndex": 0, "strokeIndex": 0, "result": "correct" }` | one stroke result |
+| `POST /api/rooms/:code/stroke` | kid or agent | `{ "race": 1, "seq": 1, "charIndex": 0, "strokeIndex": 0, "result": "correct" }` | one stroke result |
 | `POST /api/rooms/:code/start` | teacher | | lobby to racing |
 | `POST /api/rooms/:code/next` | teacher | | race again with the next characters |
 | `POST /api/rooms/:code/list` | teacher | `{ "text": "..." }` | replace the list (not during a race) |
@@ -63,9 +78,12 @@ from create or join). Errors are always JSON `{ "error": "..." }`.
 | `GET /api/strokes/:char` | anyone | | one character's stroke JSON (hash-checked proxy) |
 
 Strokes must go in order (`strokeIndex` is the next stroke of the character you are on,
-`charIndex` is the character in `state.roundChars`). `result` is `"correct"` or `"mistake"`. A
-repeated stroke is accepted and changes nothing. Strokes before GO (`state.goAt`) are refused.
-Stroke counts are in `state.list.strokeCounts`.
+`charIndex` is the character in `state.roundChars`). `result` is `"correct"` or `"mistake"`.
+`race` is `state.round` (a stroke for another race gets 409). `seq` is your own stroke counter
+for the race: 1, 2, 3... (start from `state.progress[you].seq + 1`); a `seq` already applied is
+accepted and changes nothing, so retries are safe. Strokes before GO (`state.goAt`) get 409, and
+correct strokes faster than the pace floor get 429 (wait and resend). Stroke counts are in
+`state.list.strokeCounts`.
 
 ```
 U=https://trace-race.joyd-ai-2026.workers.dev
@@ -83,7 +101,7 @@ curl -s -X POST $U/api/rooms/ABCD/start -H "x-player-id: $TID" -H "x-player-secr
 # after GO, the agent sends the first stroke of the first character
 curl -s -X POST $U/api/rooms/ABCD/stroke -H 'content-type: application/json' \
   -H "x-player-id: $PID" -H "x-player-secret: $PSECRET" \
-  -d '{"charIndex":0,"strokeIndex":0,"result":"correct"}'
+  -d '{"race":1,"seq":1,"charIndex":0,"strokeIndex":0,"result":"correct"}'
 ```
 
 ## Stroke data and the tracing library
@@ -122,9 +140,10 @@ npm install
 npm test              # vitest (reducer, parser, Durable Object, stroke proxy, agent flow) + node agent tests
 npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
-npm run check:palette # colour literals only in src/client/theme.css
+npm run check:palette # colours only from src/client/theme.css (static files may repeat a token value)
 npm run deploy        # build + wrangler deploy (workers.dev only)
-python3 scripts/live-run.py   # live headless run, saves stills to docs/demo/
+node scripts/live-gate.mjs    # live API gate, prints a JSON receipt
+python3 scripts/live-run.py   # live headless run (--blip: network cut, --record: demo mp4 + gif)
 ```
 
 Stack: one Cloudflare Worker (static assets + API), one Durable Object per room, polling.
@@ -132,7 +151,7 @@ Plan: `docs/plans/2026-09-28-trace-race-plan.md`. Build report: `docs/2026-09-28
 
 ## Deferred
 
-- Demo video (mp4 + gif) per the repo's demo convention.
 - Saved teacher lists and modes (the later free and paid plans). No paywall, no accounts now.
-- Cheat resistance beyond in-order checks (a script can finish instantly).
+- Cheat resistance beyond the order check and the pace floor (honor-based by design for K-5).
+- Teacher "remove player" button.
 - Real Momo art.

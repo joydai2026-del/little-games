@@ -6,33 +6,36 @@ repo on branch `feat/trace-race`. Teacher pastes a list, kids trace on phones, l
 Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 
 ## Key takeaways
-1. **The core loop works live.** A real room, a browser kid tracing 山 水 火 with real pointer
-   drags (graded by Hanzi Writer), and an AI agent racing through the HTTP API, finished on the
-   deployed site with the right winner on the board. Run twice, same result.
-2. **Library cleared, mitigations applied.** Two-round scan: both WARN. Every required
-   mitigation is in (list below).
-3. **Tests green.** 35 vitest + 3 node tests, typecheck clean, `check:xss` and `check:palette` pass.
-4. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
+1. **The core loop works live, with a receipt.** Every A below is backed by
+   [`evidence/2026-09-28-live-receipt.md`](evidence/2026-09-28-live-receipt.md) (deployed
+   version `79ed1713`, room codes, timestamps, exact responses).
+2. **Review round 1 fixes are in** (both reviewers said FIX-FIRST): the phone resyncs with the
+   room after a lost send, one ranking key, race id + stroke sequence (retries and replays are
+   no-ops), roster frozen at Start, a server pace floor, input hardening, 64 px taps.
+3. **Demo recorded live**: `docs/demo/trace-race-demo.mp4` and `.gif` (1.8 MB), embedded in both
+   READMEs. The playable mp4 link (GitHub attachment upload) is pending, done by the coordinator.
+4. **Tests green**: 40 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
+5. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
 
 ## Recommended action
-1. Look at the stills in `docs/demo/` and play one room on a real phone.
+1. Watch the demo gif and play one room on a real phone.
 2. Decide on real Momo art (swap `public/momo.svg`).
-3. Record the demo video per the repo convention (not done).
+3. Upload the mp4 to a GitHub attachment and replace the pending comment in both READMEs.
 
-## Verified live vs assumed
-| Claim | Grade | Evidence |
+## Verified live vs assumed (after the fixes, deployed version 79ed1713)
+| Claim | Grade | Evidence (all in the receipt) |
 |---|---|---|
-| Site and API up on workers.dev | A | deploy version 7feb98eb; home 200 |
-| `/api/strokes/我` returns the exact upstream bytes | A | live sha256 `08616462...6ac8` equals manifest; headers json, nosniff, `public, max-age=2592000, immutable` |
-| Proxy rejects traversal and multi-char | A | live `..%2Fx` and `我们` both 400 |
-| Missing-data character noted, no crash | A | live lobby: "No stroke data for 𠮷, skipped." |
-| Browser kid can trace with a pointer and hanzi-writer grades it | A | `scripts/live-run.py`, rooms UWGZ and LDK5: Mia finished 3 of 3 |
-| Agent joins and races over HTTP | A | `agent/play.mjs` in the same rooms: 11 strokes, 2 mistakes, 3 of 3, place 2 |
-| Race ends when everyone finishes; scoring order | A | live board: Mia 1st (0 mistakes), Robo 2nd (2 oops) |
-| Race ends on the clock via the alarm | B | `tests/room-do.test.ts` (fake storage); not waited out live |
-| Real touch on a real phone | C | only headless Chromium with mouse events; hanzi-writer also listens to touch events (source) |
-| Size cap and schema check on the proxy | B | unit tests; the live upstream never trips them |
-| Race again / change list / settings steppers | B | reducer tests; not clicked live |
+| Site, closed stroke proxy, licence served | A | live gate: 我 hash = manifest, bad paths 400, licence 200 |
+| Malformed code 400, oversized body 413, long paste 400 | A | live gate |
+| Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP | A | `live-run.py`, rooms 69Y7 and 875M |
+| Phone and room agree after a 6 s network cut | A | `live-run.py --blip`, room 69Y7: `phone_and_room_agree: true`, 11 strokes |
+| Race ends on the clock via the alarm, nobody polling | A | room DSEY: endedAt - endsAt = 3 ms (reviewer also saw it in BHSR) |
+| Retried stroke / mistake count once; race-1 stroke refused in race 2 | A | room DSEY |
+| Late joiner waits for the next race | A | room DSEY (409, off the board, races race 2) |
+| Pace floor refuses an instant stroke | A | room DSEY race 2: 429 on the first stroke past GO |
+| Ranking order (chars, strokes into current, mistakes, time) | B | `tests/race.test.ts` scoring tests |
+| Room expiry pushed past Start and race end | A/B | live: expiresAt = endedAt + 2 h; Start push unit-tested |
+| Real touch on a real phone; 25 phones at once | C | not tested |
 
 ## Library verdict and version
 - hanzi-writer **3.7.3** (MIT), classic script from jsDelivr with SRI
@@ -60,18 +63,19 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 | File | Covers |
 |---|---|
 | `tests/parse.test.ts` | 7 messy-paste fixtures (numbered pinyin list, mixed commas, spreadsheet tabs, traditional + punctuation + emoji, slide bullets, no Chinese, cap) |
-| `tests/race.test.ts` | lobby, start rules, countdown, in-order strokes, duplicates, finish, clock end, race again, late join, scoring |
-| `tests/room-do.test.ts` | Durable Object create/auth/race/alarm/expiry, Worker routes |
-| `tests/strokes.test.ts` | proxy reject paths, hash mismatch, size cap, schema, headers |
+| `tests/race.test.ts` | lobby, full room, start rules, countdown, order, seq no-ops, race id, pace floor, finish, clock end + expiry, race again, frozen roster, ranking key |
+| `tests/room-do.test.ts` | Durable Object create/auth/race/retry/alarm/expiry, Worker routes, %E0, oversized body, long paste |
+| `tests/strokes.test.ts` | proxy reject paths, hash mismatch, size cap, schema (lengths, finite points), headers with a committed real fixture |
 | `tests/agent-flow.test.ts` | agent client through the real router and DO to a finished race |
 | `tests/agent-lib.test.mjs` | agent stroke planning |
 
 ## Deferred
-Demo video; saved teacher lists and modes (future free/paid split, no paywall now); cheat
-resistance beyond order checks; real Momo art; Codex review of this branch (not run by this builder).
+Saved teacher lists and modes (future free/paid split, no paywall now); cheat resistance beyond
+the order check and pace floor (honor-based by design, said in the README); teacher "remove
+player"; real Momo art; the playable mp4 attachment link (coordinator step).
 
 ## North star check
 Ideal: a teacher pastes a list and 25 kids race on phones, visibly writing Chinese fast and right,
 with the board on the projector. Now: that loop works end to end live with 1 browser kid and 1 AI
-racer. Gap: real-phone touch test, a crowded-room test (25 phones polling), demo video, real Momo.
+racer, and survives a network cut. Gap: real-phone touch test, a crowded-room test (25 phones polling), real Momo.
 Drift check: every piece here is on the classroom path; nothing is pre-customer scaffolding.

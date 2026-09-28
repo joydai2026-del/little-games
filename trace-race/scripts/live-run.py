@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Live run on the REAL site, headless and silent.
+"""Live run on the REAL site, headless and silent (audio stubbed, Chromium muted).
 
 A teacher makes a room with a real list, one browser kid joins and traces every
 character with real pointer drags along the stroke medians, and one AI agent
 joins through agent/play.mjs. Saves stills to docs/demo/.
 
-  python3 scripts/live-run.py [--url https://trace-race.joyd-ai-2026.workers.dev]
+  python3 scripts/live-run.py                 # plain run, stills
+  python3 scripts/live-run.py --blip          # also cut the kid's stroke sends for
+                                              # 6 s mid-race and check the phone and
+                                              # the room agree at the end
+  python3 scripts/live-run.py --record        # also record the demo: mp4 + gif
 """
-import argparse, json, subprocess, sys, time
+import argparse, json, shutil, subprocess, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -42,18 +46,54 @@ def drag(page, pts):
             page.wait_for_timeout(8)
     page.mouse.up()
 
+PROGRESS_JS = """
+async (c) => {
+  const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c));
+  const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}});
+  const st = (await r.json()).state;
+  return { phase: st.phase, me: st.progress[st.you] || null, roundChars: st.roundChars };
+}
+"""
+
+MAX_GIF_BYTES = 8 * 1024 * 1024
+
+
+def encode_demo(kid_webm, board_webm, log):
+    """Side-by-side (phone left, board right) mp4 + gif under 8 MB."""
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        log["demo"] = "ffmpeg missing, no video"
+        return
+    mp4 = OUT / "trace-race-demo.mp4"
+    gif = OUT / "trace-race-demo.gif"
+    stack = "[0:v]scale=-2:844,setsar=1[a];[1:v]scale=-2:844,setsar=1[b];[a][b]hstack=inputs=2,setpts=PTS/1.25"
+    subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(kid_webm), "-i", str(board_webm), "-filter_complex", stack,
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "26", "-an", "-movflags", "+faststart", str(mp4)], check=True)
+    for width, fps in ((820, 8), (680, 7), (560, 6), (460, 5)):
+        vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer"
+        subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(mp4), "-vf", vf, str(gif)], check=True)
+        if gif.stat().st_size <= MAX_GIF_BYTES:
+            break
+    log["demo"] = {"mp4": mp4.name, "mp4_bytes": mp4.stat().st_size, "gif": gif.name, "gif_bytes": gif.stat().st_size, "gif_width": width, "gif_fps": fps}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="https://trace-race.joyd-ai-2026.workers.dev")
+    ap.add_argument("--blip", action="store_true")
+    ap.add_argument("--record", action="store_true")
     args = ap.parse_args()
+    raw = OUT / "_raw"
     base = args.url.rstrip("/")
     OUT.mkdir(parents=True, exist_ok=True)
     log = {}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=["--mute-audio"])
-        teacher = browser.new_context(viewport={"width": 1100, "height": 900})
+        rec_t = {"record_video_dir": str(raw / "board"), "record_video_size": {"width": 1100, "height": 900}} if args.record else {}
+        rec_k = {"record_video_dir": str(raw / "kid"), "record_video_size": {"width": 390, "height": 844}} if args.record else {}
+        teacher = browser.new_context(viewport={"width": 1100, "height": 900}, **rec_t)
         teacher.add_init_script(SILENT)
-        kidctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2)
+        kidctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, **rec_k)
         kidctx.add_init_script(SILENT)
         t = teacher.new_page()
         t.goto(f"{base}/?silent=1#/")
@@ -79,22 +119,50 @@ def main():
         t.click("text=Start the race")
 
         k.wait_for_selector(".writer svg g", timeout=20000)
-        state = k.evaluate("async (c) => { const s = JSON.parse(localStorage.getItem('trace-race:seat:' + c)); const r = await fetch('/api/rooms/' + c, {headers: {'x-player-id': s.playerId, 'x-player-secret': s.playerSecret}}); return (await r.json()).state; }", code)
-        chars = state["roundChars"]
-        counts = state["list"]["strokeCounts"]
+        chars = k.evaluate(PROGRESS_JS, code)["roundChars"]
         log["roundChars"] = chars
-        for ci, ch in enumerate(chars):
-            k.wait_for_selector(f".writer[data-char='{ch}'] svg g", timeout=15000)
-            k.wait_for_timeout(600)
-            for s in range(counts[ch]):
-                drag(k, k.evaluate(TRACE_JS, [ch, s]))
-                k.wait_for_timeout(350)
-                if ci == 1 and s == 1:
-                    k.screenshot(path=str(OUT / "trace-race-kid-tracing.png"))
-                    t.screenshot(path=str(OUT / "trace-race-board-live.png"))
-            if ci == 0:
-                k.wait_for_selector(".cheer", timeout=5000)
-                k.screenshot(path=str(OUT / "trace-race-kid-cheer.png"))
+        # Trace whatever the pad shows next (character from data-char, stroke =
+        # filled dots), so the loop follows the pad if it resyncs with the room.
+        blip_started = None
+        shots = set()
+        deadline = time.time() + 150
+        while time.time() < deadline:
+            prog = k.evaluate(PROGRESS_JS, code)
+            if prog["phase"] != "racing" or (prog["me"] and prog["me"]["finishedAt"]):
+                if not k.query_selector(".cheer"):
+                    break
+            if k.query_selector(".cheer"):
+                if "cheer" not in shots:
+                    shots.add("cheer")
+                    k.screenshot(path=str(OUT / "trace-race-kid-cheer.png"))
+                k.wait_for_timeout(250)
+                continue
+            w = k.query_selector(".writer[data-char] svg g")
+            if not w:
+                k.wait_for_timeout(250)
+                continue
+            ch = k.get_attribute(".writer[data-char]", "data-char")
+            stroke = len(k.query_selector_all(".dot.done"))
+            total = len(k.query_selector_all(".dot"))
+            if stroke >= total:
+                k.wait_for_timeout(250)
+                continue
+            if args.blip and blip_started is None and ch == chars[1]:
+                blip_started = time.time()
+                k.route("**/stroke", lambda route: route.abort())
+                log["blip"] = {"char": ch, "cut_at_stroke": stroke}
+            if blip_started and time.time() - blip_started > 6 and "unrouted" not in log.get("blip", {}):
+                k.unroute("**/stroke")
+                log["blip"]["unrouted"] = True
+                log["blip"]["server_at_unroute"] = k.evaluate(PROGRESS_JS, code)["me"]
+            drag(k, k.evaluate(TRACE_JS, [ch, stroke]))
+            k.wait_for_timeout(450)
+            if ch == chars[1] and stroke == 1 and "tracing" not in shots:
+                shots.add("tracing")
+                k.screenshot(path=str(OUT / "trace-race-kid-tracing.png"))
+                t.screenshot(path=str(OUT / "trace-race-board-live.png"))
+            if args.blip and log.get("blip", {}).get("unrouted") and k.query_selector("text=internet hiccuped") and "resynced" not in log["blip"]:
+                log["blip"]["resynced"] = True
         t.wait_for_selector("text=Winners!", timeout=120000)
         t.wait_for_timeout(1200)
         t.screenshot(path=str(OUT / "trace-race-winners.png"))
@@ -105,7 +173,17 @@ def main():
             out, _ = agent.communicate()
         log["agent_output"] = out.strip().splitlines()[-6:]
         log["board"] = t.inner_text(".board")
+        k.wait_for_timeout(1500)
+        log["kid_screen"] = k.inner_text("#app")[:200]
+        log["server_final"] = k.evaluate(PROGRESS_JS, code)["me"]
+        log["phone_and_room_agree"] = ("You are number" in log["kid_screen"] or "finished" in log["kid_screen"].lower()) and bool(log["server_final"] and log["server_final"]["finishedAt"])
+        kid_video = k.video.path() if args.record else None
+        board_video = t.video.path() if args.record else None
+        teacher.close()
+        kidctx.close()
         browser.close()
+        if args.record:
+            encode_demo(kid_video, board_video, log)
     print(json.dumps(log, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":

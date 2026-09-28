@@ -1,0 +1,218 @@
+{
+  "url": "https://trace-race.joyd-ai-2026.workers.dev",
+  "startedAt": "2026-09-28T15:12:09.362Z",
+  "checks": [
+    {
+      "name": "home page",
+      "pass": true,
+      "at": "2026-09-28T15:12:09.623Z",
+      "status": 200
+    },
+    {
+      "name": "stroke proxy returns manifest bytes for 我",
+      "pass": true,
+      "at": "2026-09-28T15:12:09.722Z",
+      "status": 200,
+      "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
+      "contentType": "application/json; charset=utf-8",
+      "nosniff": "nosniff",
+      "cacheControl": "public, max-age=2592000, immutable"
+    },
+    {
+      "name": "stroke proxy rejects ..%2Fx",
+      "pass": true,
+      "at": "2026-09-28T15:12:09.756Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
+      "pass": true,
+      "at": "2026-09-28T15:12:09.836Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "stroke proxy rejects %F0%A0%AE%B7",
+      "pass": true,
+      "at": "2026-09-28T15:12:09.976Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "licence served",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.010Z",
+      "status": 200,
+      "firstLine": "ARPHIC PUBLIC LICENSE"
+    },
+    {
+      "name": "malformed room code is 400",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.029Z",
+      "status": 400,
+      "body": {
+        "error": "that is not a room code"
+      }
+    },
+    {
+      "name": "oversized body is 413 with a plain message",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.105Z",
+      "status": 413,
+      "body": {
+        "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
+      }
+    },
+    {
+      "name": "over-long paste is 400 with a plain message",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.327Z",
+      "status": 400,
+      "body": {
+        "error": "That paste is too long. Paste a shorter list (up to 4000 characters)."
+      }
+    },
+    {
+      "name": "room made, missing character noted",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.640Z",
+      "status": 200,
+      "code": "DSEY",
+      "list": {
+        "chars": [
+          "山",
+          "水"
+        ],
+        "missing": [
+          "𠮷"
+        ],
+        "strokeCounts": {
+          "山": 3,
+          "水": 4
+        },
+        "repeats": 0,
+        "overflow": []
+      }
+    },
+    {
+      "name": "race started",
+      "pass": true,
+      "at": "2026-09-28T15:12:10.746Z",
+      "status": 200,
+      "round": 1,
+      "goAt": 1790608333709,
+      "endsAt": 1790608353709,
+      "expiresAt": 1790615553709
+    },
+    {
+      "name": "late joiner waits for the next race",
+      "pass": true,
+      "at": "2026-09-28T15:12:14.167Z",
+      "status": 409,
+      "body": {
+        "error": "this race started before you joined, you are in the next one"
+      }
+    },
+    {
+      "name": "retried stroke is a no-op",
+      "pass": true,
+      "at": "2026-09-28T15:12:14.455Z",
+      "first": {
+        "charIndex": 0,
+        "strokeIndex": 1,
+        "charsDone": 0,
+        "mistakes": 0,
+        "finishedAt": null,
+        "lastProgressAt": 1790608334196,
+        "strokesDone": 1,
+        "seq": 1
+      },
+      "retryVersion": 5,
+      "firstVersion": 5
+    },
+    {
+      "name": "retried mistake counts once",
+      "pass": true,
+      "at": "2026-09-28T15:12:14.554Z",
+      "first": [
+        200,
+        null
+      ],
+      "retry": [
+        200,
+        null
+      ],
+      "mistakes": 1
+    },
+    {
+      "name": "late joiner not on this race board",
+      "pass": true,
+      "at": "2026-09-28T15:12:14.554Z",
+      "board": [
+        "Mia"
+      ]
+    },
+    {
+      "name": "race ended on the clock by the alarm",
+      "pass": true,
+      "at": "2026-09-28T15:12:36.885Z",
+      "phase": "done",
+      "endsAt": 1790608353709,
+      "endedAt": 1790608353712,
+      "endedMinusEndsMs": 3,
+      "expiresAt": 1790615553712,
+      "expiresAfterEndMs": 7200000
+    },
+    {
+      "name": "stroke from an earlier race is refused",
+      "pass": true,
+      "at": "2026-09-28T15:12:37.025Z",
+      "status": 409,
+      "body": {
+        "error": "that stroke was for a different race"
+      },
+      "race2": 2,
+      "race2Chars": [
+        "山",
+        "水"
+      ]
+    },
+    {
+      "name": "pace floor probe (first stroke right after GO)",
+      "pass": true,
+      "at": "2026-09-28T15:12:39.954Z",
+      "goAt": 1790608359927,
+      "attempts": 41,
+      "firstPastGo": {
+        "status": 429,
+        "error": "too fast, slow down a little",
+        "serverTime": null
+      }
+    },
+    {
+      "name": "late joiner races the next one",
+      "pass": true,
+      "at": "2026-09-28T15:12:39.954Z",
+      "lateProgress": {
+        "charIndex": 0,
+        "strokeIndex": 0,
+        "charsDone": 0,
+        "mistakes": 0,
+        "finishedAt": null,
+        "lastProgressAt": null,
+        "strokesDone": 0,
+        "seq": 0
+      }
+    }
+  ],
+  "clockRoom": "DSEY",
+  "finishedAt": "2026-09-28T15:12:39.954Z",
+  "allPass": true
+}
