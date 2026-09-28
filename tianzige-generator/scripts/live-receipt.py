@@ -124,7 +124,9 @@ def main() -> None:
         ("colon line, no Chinese after", "学校：\nschool"),
         ("vocabulary that looks like headings", "学校 练习 日期 姓名"),
         ("lesson marker leading a line", "第三课 生字：校"),
-        ("list numbering", "一、生字 大\n（二）小\n㊀山 ㈡水"),
+        ("list numbering", "一、生字 大\n（二）小\n㊀山\n㈡水"),
+        ("list items that look like headings", "1. 第五课\n一、第六课\n• 第七课"),
+        ("enclosed ideographs mid-line", "我爱㊀ ㊊ ㊥"),
     ):
         s, h, b = req("POST", "/api/sheet", json.dumps({"chars": chars}).encode(), j)
         record(f"parse: {label} `{chars!r}`", "POST", "/api/sheet", s, h, b, "")

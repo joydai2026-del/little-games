@@ -5,9 +5,8 @@
 //  1. NFKC-normalize. Text copied out of a PDF often carries look-alike code
 //     points (Kangxi radicals like ⼈ U+2F08, CJK compatibility ideographs);
 //     NFKC maps them to the standard character (人), which has stroke data.
-//  2. Strip list numbering: enclosed forms (㈠ ㊀, removed BEFORE NFKC turns
-//     them into "(一)" / "一") and Chinese list markers at line start
-//     (一、 （一） (二) 三.).
+//  2. Strip list markers at line start (1. 一、 （一） • and an enclosed number ㈠ ㊀ before
+//     content). A line that had one is a list item: never classified as a heading.
 //  3. Skip headings by SHAPE only, never by keyword (练习, 日期, 姓名 are also
 //     ordinary vocabulary): a lesson marker 第N课 / 第N单元 (alone on a line, or
 //     leading a line), and a line ending in a colon that has more Chinese lines
@@ -46,10 +45,15 @@ export interface ParseResult {
 const HAN_RUN = /\p{Script=Han}+/gu;
 /** Han-script marks that are not characters to write: iteration marks. */
 const NOT_CHARACTERS = /[々〻]/gu;
-/** Enclosed ideograph forms (㈠ ㈡ ... ㊀ ㊁ ...): list numbering, never characters. */
-const ENCLOSED = /[\u3220-\u3247\u3280-\u32B0]/gu;
-/** A Chinese list marker at the start of a line: 一、 （一） (二) 三. 十一、 */
-const LIST_MARKER = /^\s*(?:[（(]\s*[一二三四五六七八九十]+\s*[)）]|[一二三四五六七八九十]+\s*[、．.])\s*/u;
+/** An enclosed NUMBER (㈠-㈩ U+3220-3229, ㊀-㊉ U+3280-3289) at the start of a line, before
+ *  content, is list numbering. It becomes a bullet before NFKC (which would turn it into
+ *  "(一)" or "一"). Anywhere else, and for other enclosed ideographs (㊊ ㊥ ㊤), the text
+ *  simply normalizes: 我爱㊀ -> 我爱一, ㊊ -> 月. */
+const ENCLOSED_NUMBER_AT_START = /^(\s*)[\u3220-\u3229\u3280-\u3289](?=\s*\S)/gmu;
+const BULLET = '\u2022';
+/** A list marker at the start of a line: 1. 2、 3) (4) 一、 （一） (二) 三. • · - * */
+const LIST_MARKER =
+  /^\s*(?:[（(]\s*(?:[一二三四五六七八九十]+|\d+)\s*[)）]|(?:[一二三四五六七八九十]+|\d+)\s*[、．.)）]|[•·●○◦▪■*\-–—])\s*/u;
 const LESSON = '第[一二三四五六七八九十百零〇两兩0-9]+(?:课|課|单元|單元)';
 /** 第三课 / 第二单元, alone or leading a line (a shape, not a word list). */
 const LESSON_ALONE = new RegExp(`^${LESSON}$`, 'u');
@@ -64,12 +68,17 @@ export function isHeading(text: string): boolean {
 
 function stripHeadings(text: string): { text: string; skipped: string[] } {
   const skipped: string[] = [];
-  const lines = text.split(/\r?\n/).map((line) => line.replace(LIST_MARKER, '').trim());
-  const out = lines.map((line, i) => {
+  // A line that carried a list marker is a list ITEM: vocabulary, never a heading
+  // ("1. 第五课" is the fifth-lesson word, not a heading).
+  const lines = text.split(/\r?\n/).map((raw) => {
+    const marker = raw.match(LIST_MARKER);
+    return { line: (marker ? raw.slice(marker[0].length) : raw).trim(), item: Boolean(marker) };
+  });
+  const out = lines.map(({ line, item }, i) => {
     const han = (line.match(/\p{Script=Han}+/gu) ?? []).join(' ');
-    if (!han) return line;
+    if (!han || item) return line;
     // "我的家人：" with more Chinese lines after it is a label for those lines.
-    if (/[:：]$/.test(line) && lines.slice(i + 1).some((l) => HAN.test(l))) {
+    if (/[:：]$/.test(line) && lines.slice(i + 1).some((l) => HAN.test(l.line))) {
       skipped.push(han);
       return '';
     }
@@ -88,7 +97,7 @@ function stripHeadings(text: string): { text: string; skipped: string[] } {
 }
 
 export function parseChars(input: string, limits = LIMITS): ParseResult {
-  const all = Array.from(String(input ?? '').replace(ENCLOSED, ' ').normalize('NFKC'));
+  const all = Array.from(String(input ?? '').replace(ENCLOSED_NUMBER_AT_START, `$1${BULLET} `).normalize('NFKC'));
   const inputCut = Math.max(0, all.length - limits.maxInput);
   const stripped = stripHeadings(all.slice(0, limits.maxInput).join(''));
   const text = stripped.text.replace(NOT_CHARACTERS, ' ');

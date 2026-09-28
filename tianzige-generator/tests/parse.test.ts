@@ -71,12 +71,28 @@ describe('parseChars edges', () => {
     expect(isHeading('生字')).toBe(false);
   });
 
-  it('strips Chinese list numbering instead of practising it', () => {
+  it('strips list numbering at line start instead of practising it', () => {
     expect(parseChars('一、生字 大 小\n二、词语 学校').chars.join('')).toBe('生字大小词语学校');
     expect(parseChars('（一）大\n(二) 小').chars.join('')).toBe('大小');
-    expect(parseChars('㈠ 大 ㈡ 小').chars.join('')).toBe('大小');
-    expect(parseChars('㊀大 ㊁小').words.map((w) => w.text)).toEqual(['大', '小']);
+    expect(parseChars('㈠ 大\n㈡ 小').chars.join('')).toBe('大小');
+    expect(parseChars('㊀大\n㊁小').words.map((w) => w.text)).toEqual(['大', '小']);
     expect(parseChars('一 二 三').chars.join('')).toBe('一二三');
+  });
+
+  it('a list item that looks like a heading is vocabulary, not a heading', () => {
+    for (const paste of ['1. 第五课', '一、第五课', '• 第五课', '㊄ 第五课', '(3) 第五课']) {
+      const out = parseChars(paste);
+      expect(out.words.map((w) => w.text), paste).toEqual(['第五课']);
+      expect(out.skipped, paste).toEqual([]);
+    }
+    // Without a marker it is still a heading shape.
+    expect(parseChars('第五课\n大').skipped).toEqual(['第五课']);
+  });
+
+  it('enclosed ideographs are only numbering at line start; elsewhere they normalize', () => {
+    expect(parseChars('我爱㊀').chars.join('')).toBe('我爱一');
+    expect(parseChars('㊊ ㊋ ㊥ ㊤ ㊦').chars.join('')).toBe('月火中上下');
+    expect(parseChars('㊀').chars.join('')).toBe('一'); // alone, no content after: it is the character
   });
 
   it('keeps a list that ends in a colon on the last line', () => {

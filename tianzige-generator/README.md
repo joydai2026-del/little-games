@@ -47,7 +47,9 @@ one word; a longer run (一二三四五六七) is treated as single characters.
   lesson marker 第N课 / 第N单元 alone on a line or leading one, and a line ending in a colon that
   has more Chinese lines after it (`我的家人：` over a list). Whatever is skipped is always shown:
   Momo names it, and the API returns it in `X-Sheet-Skipped` (and in a `skipped` array on a 400).
-- **List numbering is stripped:** 一、 （一） (二) at line start, and enclosed forms ㈠ ㊀.
+- **List markers are stripped at line start** (1. 2、 (3) 一、 （一） • and an enclosed number ㈠ ㊀
+  before content). A line that had one is a list item, so `1. 第五课` is vocabulary, never a
+  heading. Enclosed ideographs anywhere else just normalize (我爱㊀ gives 我爱一, ㊊ gives 月).
 - **Duplicates, one rule:** a whole word that already appeared is dropped (first one wins).
   Characters inside different words are kept, so 学校 学生 gives 学 twice. A repeat inside one
   word (妈妈) gets one grid.
