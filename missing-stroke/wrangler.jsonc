@@ -1,0 +1,38 @@
+{
+  // JSONC config on purpose (the repo .gitignore ignores wrangler.toml, not this).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "missing-stroke",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-07",
+  // workers.dev ONLY. No custom domain, no routes.
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RoomDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }],
+  "observability": { "enabled": true },
+  // The only unauthenticated route that creates anything is POST /api/rooms.
+  // Policy lives here, not in source. `period` may only be 10 or 60.
+  "ratelimits": [
+    { "name": "ROOM_CREATE_LIMITER", "namespace_id": "1051", "simple": { "limit": 20, "period": 60 } },
+    // Joins per IP, at or below the per-room limit (GAME.joinsPerRoomPerWindow = 40/min).
+    // A whole class shares one school IP, so it still fits a class.
+    { "name": "JOIN_LIMITER", "namespace_id": "1052", "simple": { "limit": 40, "period": 60 } }
+  ],
+  "vars": {
+    // The stroke-data SOURCE is not a var on purpose: it is pinned in
+    // src/worker/strokes.ts next to the sha256 manifest it must match
+    // (security scan 2026-09-28: the proxy may only ever fetch that exact
+    // version). Only how long the answers are cached is policy.
+    // How long browsers and the edge may keep one character's stroke JSON.
+    "STROKE_CACHE_SECONDS": "2592000",
+    "STROKE_FETCH_TIMEOUT_MS": "6000",
+    // Upstream body cap. The largest file in hanzi-writer-data 2.0.1 is 8,621 bytes.
+    "STROKE_MAX_BYTES": "65536"
+  }
+}

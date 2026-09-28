@@ -9,6 +9,23 @@ README, tests, and build docs.
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
 | 猜猜我是谁 Stroke Reveal | Momo draws a Chinese character one stroke at a time on the big screen; kids race to tap the right word on their phones. | `stroke-reveal/` |
+| 补一笔 Missing Stroke | Momo forgot one stroke: kids race to draw it in the right spot, solo or as a class. Live: https://missing-stroke.joyd-ai-2026.workers.dev | `missing-stroke/` |
+
+## 田字格 Writing Sheets
+
+Live at: **https://tianzige-generator.joyd-ai-2026.workers.dev**. Paste Chinese characters (messy is
+fine), print a stroke-order practice sheet. AI agents get the same sheet from `POST /api/sheet`.
+Details in [`tianzige-generator/README.md`](tianzige-generator/README.md).
+
+Demo, recorded on the live site with `tianzige-generator/scripts/record-demo.py` (2026-09-28):
+
+![Tianzige Generator demo: paste a messy list, get a practice sheet](tianzige-generator/docs/demo/tianzige-generator-demo.gif)
+
+**Demo video (27 sec):**
+
+https://github.com/user-attachments/assets/fc43b356-a96b-4179-b52d-b3ad4891b9ae
+
+Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [gif](tianzige-generator/docs/demo/tianzige-generator-demo.gif).
 
 ## Trace Race 笔顺比赛
 
@@ -23,6 +40,7 @@ stroke by stroke, in the right order, on their phones. Details in [`trace-race/R
 
 Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 
+
 ## 猜猜我是谁 Stroke Reveal
 
 Live at: **https://stroke-reveal.joyd-ai-2026.workers.dev** · Momo draws a character one stroke at a
@@ -34,6 +52,19 @@ time, and the first kid to tap the right word wins the most points. Details in
 <!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Files: [stroke-reveal-demo.mp4](stroke-reveal/docs/demo/stroke-reveal-demo.mp4) · [stroke-reveal-demo.gif](stroke-reveal/docs/demo/stroke-reveal-demo.gif)
+
+## 补一笔 Missing Stroke
+
+Live at: **https://missing-stroke.joyd-ai-2026.workers.dev** · Momo forgot one stroke: kids race to
+draw it in the right spot, solo on one phone or as a class. Details in [`missing-stroke/README.md`](missing-stroke/README.md).
+
+![Missing Stroke demo: a kid draws the missing stroke on a phone while the class board updates](missing-stroke/docs/demo/missing-stroke-demo.gif)
+
+**Demo video (recorded on the live site 2026-09-28):**
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [missing-stroke-demo.mp4](missing-stroke/docs/demo/missing-stroke-demo.mp4) · [missing-stroke-demo.gif](missing-stroke/docs/demo/missing-stroke-demo.gif)
 
 ## Caption Wars
 
@@ -92,19 +123,3 @@ One Cloudflare Worker (static assets + API) per game, a Durable Object per room,
 the AI players (Cloudflare Workers AI as the fallback), vitest for the game logic.
 
 Agent rules: `CLAUDE.md` (also `AGENTS.md`).
-
-## 田字格 Writing Sheets
-
-Live at: **https://tianzige-generator.joyd-ai-2026.workers.dev**. Paste Chinese characters (messy is
-fine), print a stroke-order practice sheet. AI agents get the same sheet from `POST /api/sheet`.
-Details in [`tianzige-generator/README.md`](tianzige-generator/README.md).
-
-Demo, recorded on the live site with `tianzige-generator/scripts/record-demo.py` (2026-09-28):
-
-![Tianzige Generator demo: paste a messy list, get a practice sheet](tianzige-generator/docs/demo/tianzige-generator-demo.gif)
-
-**Demo video (27 sec):**
-
-https://github.com/user-attachments/assets/fc43b356-a96b-4179-b52d-b3ad4891b9ae
-
-Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [gif](tianzige-generator/docs/demo/tianzige-generator-demo.gif).
