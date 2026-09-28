@@ -8,13 +8,13 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 ## Key takeaways
 1. **The core loop works live, with a receipt.** Every A below is backed by
    [`evidence/2026-09-28-live-receipt.md`](evidence/2026-09-28-live-receipt.md) (deployed
-   version `79ed1713`, room codes, timestamps, exact responses).
+   commit `307491a`, version `6e1f420e`, room codes, timestamps, raw JSON).
 2. **Review round 1 fixes are in** (both reviewers said FIX-FIRST): the phone resyncs with the
    room after a lost send, one ranking key, race id + stroke sequence (retries and replays are
    no-ops), roster frozen at Start, a server pace floor, input hardening, 64 px taps.
 3. **Demo recorded live**: `docs/demo/trace-race-demo.mp4` and `.gif` (1.8 MB), embedded in both
    READMEs. The playable mp4 link (GitHub attachment upload) is pending, done by the coordinator.
-4. **Tests green**: 40 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
+4. **Tests green**: 45 vitest + 3 node tests, typecheck, `check:xss`, `check:palette`.
 5. **Momo is a placeholder** SVG in one file (`public/momo.svg`).
 
 ## Recommended action
@@ -22,18 +22,19 @@ Live (workers.dev only): https://trace-race.joyd-ai-2026.workers.dev
 2. Decide on real Momo art (swap `public/momo.svg`).
 3. Upload the mp4 to a GitHub attachment and replace the pending comment in both READMEs.
 
-## Verified live vs assumed (after the fixes, deployed version 79ed1713)
+## Verified live vs assumed (after round 2, deployed version 6e1f420e, commit 307491a)
 | Claim | Grade | Evidence (all in the receipt) |
 |---|---|---|
 | Site, closed stroke proxy, licence served | A | live gate: 我 hash = manifest, bad paths 400, licence 200 |
 | Malformed code 400, oversized body 413, long paste 400 | A | live gate |
 | Browser kid traces with a pointer, hanzi-writer grades it, agent races via HTTP | A | `live-run.py`, rooms 69Y7 and 875M |
-| Phone and room agree after a 6 s network cut | A | `live-run.py --blip`, room 69Y7: `phone_and_room_agree: true`, 11 strokes |
-| Race ends on the clock via the alarm, nobody polling | A | room DSEY: endedAt - endsAt = 3 ms (reviewer also saw it in BHSR) |
-| Retried stroke / mistake count once; race-1 stroke refused in race 2 | A | room DSEY |
-| Late joiner waits for the next race | A | room DSEY (409, off the board, races race 2) |
-| Pace floor refuses an instant stroke | A | room DSEY race 2: 429 on the first stroke past GO |
-| Ranking order (chars, strokes into current, mistakes, time) | B | `tests/race.test.ts` scoring tests |
+| Phone and room agree after a 14 s HUNG network (requests never answered) | A | `live-run.py --blip --cut hang`, room U37B, raw JSON |
+| Race ends on the clock via the alarm, nobody polling | A | room UYQR: endedAt - endsAt = 1 ms |
+| Retried stroke / mistake count once; race-1 stroke refused in race 2 | A | room UYQR |
+| Late joiner waits for the next race | A | room UYQR |
+| Reopening the join link resumes the saved seat; a gone kid is left out of the next race | B | `tests/route.test.ts`, `tests/race.test.ts` |
+| Pace floor (GO + n x 250 ms) | A | room UYQR: stroke 2 refused at GO+451, accepted at GO+575 (server clock) |
+| Ranking order (chars, strokes into current, mistakes once progressed, time) | B | `tests/race.test.ts` scoring tests |
 | Room expiry pushed past Start and race end | A/B | live: expiresAt = endedAt + 2 h; Start push unit-tested |
 | Real touch on a real phone; 25 phones at once | C | not tested |
 

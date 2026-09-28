@@ -1,0 +1,49 @@
+{
+  "code": "U37B",
+  "missing_note": "We cannot trace 𠮷 yet, so we left it out.",
+  "roundChars": [
+    "山",
+    "水",
+    "火"
+  ],
+  "blip": {
+    "mode": "hang",
+    "seconds": 14.0,
+    "char": "水",
+    "cut_at_stroke": 0,
+    "cut_at": 1790609742.438431,
+    "unrouted": true,
+    "unrouted_after_s": 14.0,
+    "requests_left_hanging": 2,
+    "server_at_unroute": {
+      "charIndex": 1,
+      "strokeIndex": 1,
+      "charsDone": 1,
+      "mistakes": 0,
+      "finishedAt": null,
+      "lastProgressAt": 1790609756492,
+      "strokesDone": 4,
+      "seq": 4
+    }
+  },
+  "agent_output": [
+    "joined U37B as Robo",
+    "finished 山",
+    "finished 水",
+    "finished 火",
+    "{\"strokes\":11,\"mistakes\":2,\"charsDone\":3,\"place\":2,\"phase\":\"done\"}"
+  ],
+  "board": "1\nMia\n3 of 3 done\nDone!\n2\nRoboAI\n3 of 3 done, 2 oops\nDone!",
+  "kid_screen": "You are number 1!\n\nYou wrote 3 characters. 好棒!\n\n1\nMiayou\n3 of 3 done\nDone!\n2\nRoboAI\n3 of 3 done, 2 oops\nDone!",
+  "server_final": {
+    "charIndex": 3,
+    "strokeIndex": 0,
+    "charsDone": 3,
+    "mistakes": 0,
+    "finishedAt": 1790609756917,
+    "lastProgressAt": 1790609756917,
+    "strokesDone": 11,
+    "seq": 11
+  },
+  "phone_and_room_agree": true
+}
