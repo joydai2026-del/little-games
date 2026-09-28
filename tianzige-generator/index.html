@@ -3,14 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" />
+    <meta name="theme-color" content="#FFF7E8" />
     <meta name="description" content="Paste Chinese characters, print a 田字格 writing practice sheet with stroke order." />
-    <title>田字格 Writing Sheets</title>
+    <title>田字格 Writing Sheets · Avery Studio</title>
     <link rel="icon" href="/momo.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+SC:wght@400;700&display=swap" />
     <link rel="stylesheet" href="/theme.css" />
     <link rel="stylesheet" href="/sheet.css" />
   </head>
   <body>
+    <header class="avery-header">
+      <a href="/" aria-label="Avery Studio home">
+        <img src="/momo.svg" alt="" width="40" height="40" />
+        <span class="avery-wordmark">Avery Studio</span>
+        <span class="avery-sub">· 墨墨 Momo</span>
+      </a>
+    </header>
     <div class="app-chrome">
       <header class="top">
         <img class="momo" src="/momo.svg" alt="Momo the ink drop" width="64" height="64" />
@@ -61,16 +71,17 @@
       </section>
 
       <div class="print-bar">
-        <button id="print" type="button" disabled>Print</button>
+        <button id="print" class="btn-primary" type="button" disabled>Print</button>
         <p class="hint">To save a PDF, pick <b>Save as PDF</b> in the print window.</p>
       </div>
     </div>
 
     <main id="preview" class="sheet" aria-label="Sheet preview"></main>
 
-    <footer class="app-chrome credits">
-      Avery Studio · Character stroke data:
-      <a href="/licenses/ARPHICPL.TXT">Make Me a Hanzi / Arphic Technology, Arphic Public License</a>
+    <footer class="avery-footer">
+      <p class="avery-line">Avery Studio · 墨墨 Momo · averystudio.org</p>
+      <p class="avery-credits">Character stroke data:
+        <a href="/licenses/ARPHICPL.TXT">Make Me a Hanzi / Arphic Technology, Arphic Public License</a></p>
     </footer>
 
     <style id="page-css"></style>

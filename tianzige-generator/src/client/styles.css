@@ -1,12 +1,12 @@
-/* App chrome. Colors only through theme.css variables. */
+/* App chrome. Colours only through theme.css (brand kit) and sheet.css (game tokens). */
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
   background: var(--cream);
   color: var(--ink);
-  font: 17px/1.45 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "PingFang SC", sans-serif;
+  font: 17px/1.45 var(--font-ui);
 }
-.app-chrome { max-width: 760px; margin: 0 auto; padding: 16px; }
+.app-chrome { max-width: 760px; margin: 0 auto; padding: 0 16px 16px; }
 .top { display: flex; gap: 12px; align-items: flex-start; }
 .momo { flex: none; width: 64px; height: 64px; animation: bob 3s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
@@ -51,19 +51,14 @@ legend { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
 }
 .print-bar .hint { margin: 0; flex: 1; min-width: 180px; }
-#print {
-  min-height: 64px; min-width: 160px; padding: 14px 34px; border: 0; border-radius: 999px; cursor: pointer;
-  background: var(--mint-deep); color: var(--white); font: inherit; font-weight: 800; font-size: 1.15rem;
-  box-shadow: 0 4px 0 var(--ink);
-}
+/* Print is the kit's .btn-primary; only its size and press feel are local. */
+#print { min-width: 160px; padding: 0 34px; box-shadow: 0 4px 0 var(--ink); }
 #print:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
-#print:disabled { background: var(--mint); color: var(--ink-soft); box-shadow: none; cursor: default; }
+#print:disabled { box-shadow: none; }
 .sheet { max-width: 760px; margin: 8px auto 0; padding: 0 16px 16px; display: grid; gap: 16px; }
 .sheet .sheet-page {
   padding: 3%; border-radius: 6px; box-shadow: 0 2px 0 var(--mint), 0 10px 30px var(--shadow);
 }
-.credits { font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
-.credits a { color: inherit; display: inline-flex; align-items: center; min-height: 64px; padding: 0 8px; }
 .sheet.loading { opacity: 0.45; transition: opacity 0.15s; }
 
 @media print {

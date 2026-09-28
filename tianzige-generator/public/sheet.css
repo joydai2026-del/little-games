@@ -1,5 +1,18 @@
 /* The printed worksheet. Shared by the app preview and the /api/sheet page.
-   Colors come from theme.css; page size comes from pageCss() at runtime. */
+   Brand colours come from theme.css (the Avery Studio kit, never edited here);
+   the game-only tokens below derive from it. Page size comes from pageCss(). */
+:root {
+  --white: var(--card);
+  --paper: var(--card);
+  --ink-soft: var(--muted);
+  --grid-border: var(--mint-deep);
+  --grid-guide: #8FD0B8;
+  --grid-diag: #CDEBDF;
+  --stroke-build: #B9C1C7;
+  --stroke-trace: #DCE1E4;
+  --rule: #B9C1C7;
+  --shadow: rgba(45, 52, 54, 0.12);
+}
 .sheet-page {
   display: block;
   width: 100%;
