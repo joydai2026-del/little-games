@@ -146,7 +146,8 @@ npm install
 npm test              # vitest (reducer, parser, Durable Object, stroke proxy, agent flow) + node agent tests
 npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
-npm run check:palette # colours only from src/client/theme.css (static files may repeat a token value)
+npm run check:palette # colours only from public/theme.css (Avery kit) and src/client/game.css (static files may repeat a token value)
+npm run check:brand   # public/momo.svg + public/theme.css identical to avery-brand/, title/favicon/header/footer present
 npm run deploy        # build + wrangler deploy (workers.dev only)
 node scripts/live-gate.mjs    # live API gate, prints a JSON receipt
 python3 scripts/live-run.py   # live headless run (--blip: network cut, --record: demo mp4 + gif)

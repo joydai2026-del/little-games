@@ -1,5 +1,18 @@
 {
-  "code": "875M",
+  "url": "https://trace-race.joyd-ai-2026.workers.dev",
+  "deployed_version": "2999e4ed-4adb-42ab-8587-2a02aabb0df2",
+  "deployed_commit": "eeb23aa",
+  "args": {
+    "url": "https://trace-race.joyd-ai-2026.workers.dev",
+    "blip": false,
+    "cut": "abort",
+    "cut_seconds": 6.0,
+    "cut_scope": "strokes",
+    "record": true,
+    "no_agent": false
+  },
+  "started_at": "2026-09-28T17:30:41.034113+00:00",
+  "code": "SAQG",
   "missing_note": "We cannot trace 𠮷 yet, so we left it out.",
   "roundChars": [
     "山",
@@ -7,7 +20,7 @@
     "火"
   ],
   "agent_output": [
-    "joined 875M as Robo",
+    "joined SAQG as Robo",
     "finished 山",
     "finished 水",
     "finished 火",
@@ -20,18 +33,20 @@
     "strokeIndex": 0,
     "charsDone": 3,
     "mistakes": 0,
-    "finishedAt": 1790608513597,
-    "lastProgressAt": 1790608513597,
+    "finishedAt": 1790616666577,
+    "lastProgressAt": 1790616666577,
     "strokesDone": 11,
     "seq": 11
   },
   "phone_and_room_agree": true,
   "demo": {
     "mp4": "trace-race-demo.mp4",
-    "mp4_bytes": 461909,
+    "mp4_bytes": 503546,
     "gif": "trace-race-demo.gif",
-    "gif_bytes": 1816665,
+    "gif_bytes": 1642392,
     "gif_width": 820,
     "gif_fps": 8
-  }
+  },
+  "finished_at": "2026-09-28T17:31:36.352669+00:00",
+  "note": "deployed_version/commit filled from the wrangler deploy output of this run (the script left them null)"
 }
