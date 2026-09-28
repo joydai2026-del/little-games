@@ -46,6 +46,8 @@ export interface Attempt {
   correctAt: number | null;
   /** Points won on this question. */
   points: number;
+  /** The card this kid tapped when right (only ever shown to that kid). */
+  rightCard: number | null;
 }
 
 /** One kid's round so far. The roster is frozen at Start: late joiners wait for the next round. */

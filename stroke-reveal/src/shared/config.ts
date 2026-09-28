@@ -82,8 +82,8 @@ export const GAME = {
   lastSeenWriteMs: 15_000,
   /** Speed of one stroke's animation on the big screen (hanzi-writer strokeAnimationSpeed; 1 = library default). */
   strokeAnimationSpeed: 1.6,
-  /** Faster speed used to catch up after a reload mid-drawing. */
-  catchUpAnimationSpeed: 6,
+  /** How long the kid's "好棒!" cheer shows after a right guess (ms). */
+  cheerMs: 1400,
 } as const;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

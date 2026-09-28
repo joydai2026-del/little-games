@@ -254,7 +254,7 @@ export function parseGuessInput(body: Record<string, unknown>): GuessInput | nul
   return { race, question, seq, card };
 }
 
-const freshAttempt = (): Attempt => ({ tried: [], locked: false, coolUntil: null, correctAt: null, points: 0 });
+const freshAttempt = (): Attempt => ({ tried: [], locked: false, coolUntil: null, correctAt: null, points: 0, rightCard: null });
 
 /**
  * One tap on a card. Every guess names its round and question and carries a
@@ -284,7 +284,7 @@ export function submitGuess(state: RoomState, playerId: string, input: GuessInpu
   let nextScore: Score;
   if (input.card === q.answer) {
     const points = pointsAt(state, now);
-    attempt = { ...a, correctAt: now, points, coolUntil: null };
+    attempt = { ...a, correctAt: now, points, coolUntil: null, rightCard: input.card };
     nextScore = { ...score, points: score.points + points, correct: score.correct + 1, seq: input.seq };
   } else {
     const rules = LEVELS[state.options.level];
