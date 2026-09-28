@@ -5,8 +5,8 @@ Grades: **A** = verified on the live site AND recorded in the committed receipt
 **B** = proven in source or unit tests; **C** = not verified.
 
 Live URL: https://tianzige-generator.joyd-ai-2026.workers.dev (workers.dev only; no custom domain).
-Deployed version in the receipt: `a4c9319e-0ad5-4b22-b74d-8613c7c507d5`, the same before and after
-the run, built from HEAD `2aef3a9` (clean); every live asset's sha256 matches the local build.
+Deployed version in the receipt: `0634d90e-c958-44e9-a634-8219866a0d4b`, the same before and after
+the run, built from HEAD `fc74732` (clean); every live asset's sha256 matches the local build.
 
 ## What shipped
 
@@ -22,7 +22,7 @@ the run, built from HEAD `2aef3a9` (clean); every live asset's sha256 matches th
 | Spare rows go to the characters with the most strokes | Unit test; A4 still (校 gets the extra row) | B |
 | Letter and A4 print, no black lines, no English on the page but the brand | R: 612x792 and 595x842 pt, `check_pdf_ink` 0 black line paths, only Latin words Avery, Studio | A |
 | Headings skipped by shape only and always reported; vocabulary never dropped | R: `学校：\nschool` gives 学校; `学校 练习 日期 姓名` keeps all 4; `第三课 生字：校` gives 生字 校, skipped ["第三课"]; Momo names skipped headings | A |
-| List numbering stripped (一、 （二） ㊀ ㈡) | R: gives 生字 大 小 山 水 | A |
+| List markers stripped at line start; a list item is never a heading; enclosed ideographs elsewhere normalize | R: 生字 大 小 山 水; `1. 第五课` / `一、第六课` / `• 第七课` all kept, skipped []; `我爱㊀ ㊊ ㊥` gives 我爱一 月 中 | A |
 | PDF look-alikes normalized, one duplicate rule, input cut reported | R: ⼈ becomes 人; unit tests | A / B |
 | Agent path `POST /api/sheet` | R: messy paste 200 with X-Sheet headers; 40+ characters 200; text/plain 415; 120 KB body 413 | A |
 | Body cap enforced while streaming, 5,000,001-character body refused | Unit test (413) | B |
@@ -33,7 +33,7 @@ the run, built from HEAD `2aef3a9` (clean); every live asset's sha256 matches th
 | Traditional characters, never converted | R: 龍 館 學 served and verified | A |
 | Demo video recorded on the live site | `docs/demo/tianzige-generator-demo.mp4` (21 s, 666 KB), `.gif` (7.6 MB, 6 fps); frames checked | A |
 
-Tests: 73 passing (`npm test`), typecheck clean (client + worker), `check:xss` clean.
+Tests: 75 passing (`npm test`), typecheck clean (client + worker), `check:xss` clean.
 
 ## What changed after the review panel (both FIX-FIRST)
 
