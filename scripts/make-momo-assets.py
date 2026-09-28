@@ -2,9 +2,9 @@
 # matte the flat cream paper to transparent (flood fill from the border), trim,
 # downscale, quantize. Run from the repo root:
 #   python3 scripts/make-momo-assets.py avery-brand
-# Writes momo.png (256 px, from momo-brush-official.png), momo-icon.png (64 px)
-# and momo-icon-128.png (128 px, for the offline spikes), both from
-# momo-brush-tpt-icon.png. Needs Pillow.
+# Writes momo.png (256 px) + momo@2x.png (512 px), from momo-brush-official.png,
+# and momo-icon.png (64 px) + momo-icon@2x.png (128 px), from
+# momo-brush-tpt-icon.png. The @2x files are for retina screens (srcset). Needs Pillow.
 import sys, os
 from collections import deque
 from PIL import Image
@@ -44,6 +44,7 @@ hero, bg1 = matte(f"{SRC}/momo-brush-official.png")
 icon, bg2 = matte(f"{SRC}/momo-brush-tpt-icon.png")
 print("bg", bg1, bg2, "trim", hero.size, icon.size)
 square(hero, 256).save(f"{out}/momo.png", optimize=True)
+square(hero, 512).save(f"{out}/momo@2x.png", optimize=True)
 square(icon, 64, pad=0.02).save(f"{out}/momo-icon.png", optimize=True)
-square(icon, 128, pad=0.02).save(f"{out}/momo-icon-128.png", optimize=True)
-for n in ("momo.png", "momo-icon.png", "momo-icon-128.png"): print(n, os.path.getsize(f"{out}/{n}"))
+square(icon, 128, pad=0.02).save(f"{out}/momo-icon@2x.png", optimize=True)
+for n in ("momo.png", "momo@2x.png", "momo-icon.png", "momo-icon@2x.png"): print(n, os.path.getsize(f"{out}/{n}"))

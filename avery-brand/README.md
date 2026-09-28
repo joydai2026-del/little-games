@@ -13,9 +13,11 @@ The old ink-drop `momo.svg` is retired: `check-brand.sh` fails if any game still
 | File | From (locked) | Size | Use |
 |---|---|---|---|
 | `momo.png` | `momo-brush-official.png` | 256 px, transparent | In-game Momo: speech line, cheers, hints, winners |
+| `momo@2x.png` | `momo-brush-official.png` | 512 px, transparent | The same, for retina screens (`srcset` 2x) |
 | `momo-icon.png` | `momo-brush-tpt-icon.png` | 64 px, transparent | Header lockup (shown at 44 px) and favicon |
+| `momo-icon@2x.png` | `momo-brush-tpt-icon.png` | 128 px, transparent | The same, for retina screens (`srcset` 2x) |
 | `theme.css` | guide sections 3 and 4 | | Tokens, fonts, header, footer, buttons |
-| `../scripts/make-momo-assets.py` | | | Rebuilds both PNGs byte-for-byte from the locked files (needs Pillow) |
+| `../scripts/make-momo-assets.py` | | | Rebuilds all four PNGs byte-for-byte from the locked files (needs Pillow) |
 | `../scripts/check-brand.sh` | | | The check (see below) |
 
 **Face-only Momo is for in-game stickers only.** The store logo is always the L4 lockup
@@ -24,7 +26,7 @@ and `L4-official-square-tpt.png`.
 
 ## What every Avery tool must carry
 
-1. **Three kit files, unedited**: copy `theme.css`, `momo.png` and `momo-icon.png` into the game's `public/`.
+1. **Five kit files, unedited**: copy `theme.css`, `momo.png`, `momo@2x.png`, `momo-icon.png` and `momo-icon@2x.png` into the game's `public/`.
    Game-only colours and rules go in a separate file loaded after `theme.css`.
 2. **Page title**: `<title>Tool name · Avery Studio</title>`.
 3. **Browser bar colour**: `<meta name="theme-color" content="#FDF6EC">` (paper).
@@ -43,7 +45,7 @@ and `L4-official-square-tpt.png`.
    ```html
    <header class="avery-header">
      <a href="/" aria-label="Avery Studio home">
-       <img src="/momo-icon.png" alt="" width="44" height="44">
+       <img src="/momo-icon.png" srcset="/momo-icon.png 1x, /momo-icon@2x.png 2x" alt="" width="44" height="44">
        <span class="avery-lockup">
          <span class="avery-wordmark">Avery Studio</span>
          <span class="avery-tagline">with 墨墨 Momo</span>
@@ -51,6 +53,8 @@ and `L4-official-square-tpt.png`.
      </a>
    </header>
    ```
+   Every in-game Momo `<img>` carries the 2x source too: `srcset="/momo.png 1x, /momo@2x.png 2x"`
+   (retina phones and iPads would otherwise show a soft puppy).
    **Header link rule**: the header is disabled on screens where leaving loses progress (a kid mid-race):
    render it as plain text there (drop the `href`), never a live link.
 7. **Footer on every screen**, the brand line first, the tool's own credits under it:
@@ -111,7 +115,7 @@ the check fails if any of them appears in a game.
 
 From the repo root: `bash scripts/check-brand.sh`. From a game folder: `npm run check:brand`.
 It looks at every game folder that ships `public/theme.css`, `public/momo.png` or the retired `public/momo.svg`, and fails when:
-`theme.css` differs from this folder; `momo.png` or `momo-icon.png` differ by sha256; `momo.svg` still exists or is still
+`theme.css` differs from this folder; any of the four Momo PNGs differs by sha256; `momo.svg` still exists or is still
 referenced; a retired colour appears in `index.html`, `public/`, `src/`, `scripts/`, `tests/` or `README.md`; or the page
 lacks the title suffix, paper theme-color, PNG favicon, fonts link, `/theme.css`, the header lockup, or the footer.
 

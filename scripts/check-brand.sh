@@ -4,7 +4,8 @@
 # For every game folder that ships public/theme.css, public/momo.png or the
 # retired public/momo.svg:
 #   1. theme.css must be byte-identical to avery-brand/theme.css, and
-#      momo.png + momo-icon.png must match avery-brand/ by sha256;
+#      momo.png, momo@2x.png, momo-icon.png, momo-icon@2x.png must match
+#      avery-brand/ by sha256;
 #   2. the retired ink-drop momo.svg must be gone (file AND every reference);
 #   3. no retired colour (the old cream/mint/coral/ink kit) may appear in the
 #      game's shipped surface (index.html, public/, src/, scripts/, tests/, README.md);
@@ -32,7 +33,7 @@ for dir in "$root"/*/; do
   gamefail=0
   if [ ! -f "$dir/public/theme.css" ]; then bad "$game: public/theme.css is missing (copy avery-brand/theme.css)"
   elif ! diff -q "$kit/theme.css" "$dir/public/theme.css" >/dev/null; then bad "$game: public/theme.css differs from avery-brand/theme.css"; fi
-  for f in momo.png momo-icon.png; do
+  for f in momo.png momo@2x.png momo-icon.png momo-icon@2x.png; do
     if [ ! -f "$dir/public/$f" ]; then bad "$game: public/$f is missing (copy avery-brand/$f)"
     elif [ "$(sha "$kit/$f")" != "$(sha "$dir/public/$f")" ]; then bad "$game: public/$f differs from avery-brand/$f (sha256)"; fi
   done
@@ -53,7 +54,7 @@ for dir in "$root"/*/; do
   grep -q 'family=Quicksand' "$html" || bad "$game: Google Fonts link must include Quicksand"
   grep -q 'Noto+Sans+SC' "$html" || bad "$game: Google Fonts link must include Noto Sans SC"
   grep -q 'class="avery-header"' "$html" || bad "$game: .avery-header is missing from index.html"
-  grep -q 'src="/momo-icon.png"' "$html" || bad "$game: the header must show /momo-icon.png"
+  grep -q 'src="/momo-icon.png" srcset="/momo-icon.png 1x, /momo-icon@2x.png 2x"' "$html" || bad "$game: the header must show /momo-icon.png with the @2x srcset"
   grep -q 'class="avery-wordmark">Avery Studio<' "$html" || bad "$game: the header must carry the Avery Studio wordmark"
   grep -q 'class="avery-footer"' "$html" || bad "$game: .avery-footer is missing from index.html"
   [ "$gamefail" = 0 ] && echo "brand ok    $game"
