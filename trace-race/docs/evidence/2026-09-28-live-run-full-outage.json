@@ -1,0 +1,61 @@
+{
+  "url": "https://trace-race.joyd-ai-2026.workers.dev",
+  "deployed_version": "25d11942-85d8-4362-a890-5d6d6394f49e",
+  "deployed_commit": "5d45fb6e8e53b2a5a3f44aedaa5c726a9af9faed",
+  "args": {
+    "url": "https://trace-race.joyd-ai-2026.workers.dev",
+    "blip": true,
+    "cut": "hang",
+    "cut_seconds": 45.0,
+    "cut_scope": "all",
+    "record": false,
+    "no_agent": true
+  },
+  "started_at": "2026-09-28T15:54:59.339009+00:00",
+  "code": "RKP5",
+  "missing_note": "We cannot trace 𠮷 yet, so we left it out.",
+  "roundChars": [
+    "山",
+    "水",
+    "火"
+  ],
+  "cut_pattern": "**/api/rooms/**",
+  "room_version_at_cut": 6,
+  "blip": {
+    "mode": "hang",
+    "seconds": 45.0,
+    "char": "水",
+    "cut_at_stroke": 0,
+    "cut_at": 1790610911.7500212,
+    "unrouted": true,
+    "unrouted_after_s": 45.0,
+    "requests_left_hanging": 11,
+    "server_at_unroute": {
+      "charIndex": 1,
+      "strokeIndex": 0,
+      "charsDone": 1,
+      "mistakes": 0,
+      "finishedAt": null,
+      "lastProgressAt": 1790610910579,
+      "strokesDone": 3,
+      "seq": 3
+    },
+    "phone_screen_at_unroute": "Character 2 of 3\n0:41\n\nOops, the internet hiccuped. Keep going from here!",
+    "room_version_at_unroute": 6,
+    "resynced": true
+  },
+  "board": "1\nMia\n3 of 3 done\nDone!",
+  "kid_screen": "You are number 1!\n\nYou wrote 3 characters. 好棒!\n\n1\nMiayou\n3 of 3 done\nDone!",
+  "server_final": {
+    "charIndex": 3,
+    "strokeIndex": 0,
+    "charsDone": 3,
+    "mistakes": 0,
+    "finishedAt": 1790610966089,
+    "lastProgressAt": 1790610966089,
+    "strokesDone": 11,
+    "seq": 11
+  },
+  "phone_and_room_agree": true,
+  "finished_at": "2026-09-28T15:56:09.329026+00:00"
+}

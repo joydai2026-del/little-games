@@ -15,7 +15,8 @@
   --line: #B2BEC3;      /* dividers, rules */
   --card: #FFFFFF;      /* cards, paper */
 
-  --font-ui: "DM Sans", "Noto Sans SC", system-ui, sans-serif;
+  /* Local CJK faces cover Chinese when Google Fonts is blocked. */
+  --font-ui: "DM Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
   --tap: 64px;          /* minimum tap target */
 }
 
@@ -40,8 +41,11 @@
   text-align: center; font-family: var(--font-ui); font-size: 0.85rem; color: var(--muted);
 }
 .avery-footer .avery-line { margin: 0 0 4px; font-weight: 500; }
-/* Inline links stay in the sentence; vertical padding grows the tap area to ~64px. */
-.avery-footer a { color: inherit; padding: 21px 2px; }
+/* Footer links are real 64px targets, even when the link text wraps. */
+.avery-footer a {
+  color: inherit; display: inline-flex; align-items: center; min-height: var(--tap);
+  padding: 0 6px; vertical-align: middle;
+}
 .avery-footer .avery-credits { margin: 0; line-height: 1.6; }
 
 /* Buttons. White on mint-deep fails contrast (2.9:1), so primary uses INK text

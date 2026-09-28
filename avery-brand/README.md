@@ -17,7 +17,7 @@ This folder is the single source. Games copy the two asset files; they never edi
 2. **Page title**: `<title>Tool name · Avery Studio</title>`.
 3. **Browser bar colour**: `<meta name="theme-color" content="#FFF7E8">` (cream).
 4. **Favicon**: `<link rel="icon" href="/momo.svg" type="image/svg+xml">`.
-5. **Fonts**: DM Sans (the Avery design system's UI font) and Noto Sans SC (Chinese UI text):
+5. **Fonts**: DM Sans (the Avery design system's UI font) and Noto Sans SC (Chinese UI text). `--font-ui` falls back to local CJK faces (PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC) when Google Fonts is blocked:
    ```html
    <link rel="preconnect" href="https://fonts.googleapis.com">
    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,7 +43,7 @@ This folder is the single source. Games copy the two asset files; they never edi
      <p class="avery-credits">(licences and credits for this tool)</p>
    </footer>
    ```
-   The header and footer hide themselves when printing. A printed worksheet keeps its own small print footer.
+   Footer links are 64 px tap targets (inline-flex, min-height 64 px), even when they wrap. The header and footer hide themselves when printing. A printed worksheet keeps its own small print footer.
 8. **Buttons**: `.btn-primary` (mint-deep fill, INK text) and `.btn-secondary` (cream, mint border). Both are at least 64 px tall. White text on mint-deep fails contrast (2.9:1); ink on mint-deep is 4.3:1, which passes only as large text, so labels stay 19 px or bigger and bold.
 9. **Contrast pairs**: mint-deep is a FILL colour, never small text on white or cream (about 2.9:1). Status words like "Done!" and cheer text use ink, or ink on a mint chip. Links in body text use ink.
 

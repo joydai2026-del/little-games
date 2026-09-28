@@ -6,7 +6,19 @@ README, tests, and build docs.
 | Game | What it is | Folder |
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
+| Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+
+## Trace Race 笔顺比赛
+
+Live at: **https://trace-race.joyd-ai-2026.workers.dev** · Kids race to trace Chinese characters
+stroke by stroke, in the right order, on their phones. Details in [`trace-race/README.md`](trace-race/README.md).
+
+![Trace Race demo: a kid traces on a phone while the race board updates](trace-race/docs/demo/trace-race-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, commander adds -->
+
+Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace-race-demo.gif](trace-race/docs/demo/trace-race-demo.gif)
 
 ## Caption Wars
 
