@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SIGNATURE_TOLERANCE_SECONDS,
+  WebhookClockError,
   parseStripeSignatureHeader,
   verifyStripeSignature,
 } from '../../src/stripe/webhook-verify';
@@ -119,5 +120,22 @@ describe('hub additions', () => {
     expect(
       await verifyStripeSignature({ rawBody: payload.replace('evt_test_1', 'evt_test_2'), header: h, secret: TEST_SECRET, nowMs: NOW_MS }),
     ).toBe(false);
+  });
+});
+
+describe('nowMs unit guard and whole-second window', () => {
+  it('throws a clear error when seconds are passed as nowMs', async () => {
+    await expect(verify(await sign(payload), { nowMs: NOW_S })).rejects.toBeInstanceOf(WebhookClockError);
+    await expect(verify(await sign(payload), { nowMs: Number.NaN })).rejects.toBeInstanceOf(WebhookClockError);
+  });
+
+  it('exactly 300 s old or ahead passes, 301 s fails, with sub-second now', async () => {
+    const nowMs = NOW_MS + 999; // still second NOW_S
+    for (const skew of [300, -300]) {
+      expect(await verify(await sign(payload, TEST_SECRET, NOW_S - skew), { nowMs }), `skew ${skew}`).toBe(true);
+    }
+    for (const skew of [301, -301]) {
+      expect(await verify(await sign(payload, TEST_SECRET, NOW_S - skew), { nowMs }), `skew ${skew}`).toBe(false);
+    }
   });
 });

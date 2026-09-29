@@ -3,6 +3,9 @@
 // adapter, webhooks, refunds, links'). Changes for the hub, and only these:
 //   - the 300-second window is a parameter, `toleranceSeconds`, fed from the
 //     config var STRIPE_SIGNATURE_TOLERANCE_SECONDS (default 300);
+//   - `nowMs` below 1e11 (Unix SECONDS passed by mistake) throws
+//     `WebhookClockError` instead of rejecting every real event;
+//   - the window compares whole seconds (Math.floor), like Stripe's own SDK;
 //   - quotes and formatting follow this repo's style.
 // Everything else (parse rules, 64-hex check, constant-time compare, several v1
 // values accepted while a secret is rolled) is unchanged. Keep in sync by hand.
@@ -12,6 +15,14 @@
 // and Node tests identically.
 
 export const DEFAULT_SIGNATURE_TOLERANCE_SECONDS = 300;
+
+/** Programming error: the caller passed seconds where milliseconds are required. */
+export class WebhookClockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WebhookClockError';
+  }
+}
 /** v1 signatures are HMAC-SHA256 hex: exactly 64 lowercase hex chars. */
 const V1_HEX_RE = /^[0-9a-f]{64}$/;
 
@@ -80,16 +91,20 @@ export async function verifyStripeSignature(args: {
   rawBody: string;
   header: string | undefined;
   secret: string;
+  /** Current time in MILLISECONDS (Date.now()). Unlike accessFor, which takes seconds. */
   nowMs: number;
   /** Allowed clock skew in seconds; config STRIPE_SIGNATURE_TOLERANCE_SECONDS. */
   toleranceSeconds?: number;
 }): Promise<boolean> {
+  if (!Number.isFinite(args.nowMs) || args.nowMs < 1e11) {
+    throw new WebhookClockError('verifyStripeSignature: nowMs must be milliseconds (Date.now()), not seconds');
+  }
   if (!args.header || !args.secret) return false;
   const tolerance = args.toleranceSeconds ?? DEFAULT_SIGNATURE_TOLERANCE_SECONDS;
   if (!Number.isFinite(tolerance) || tolerance <= 0) return false;
   const parsed = parseStripeSignatureHeader(args.header);
   if (!parsed) return false;
-  if (Math.abs(args.nowMs / 1000 - parsed.timestamp) > tolerance) return false;
+  if (Math.abs(Math.floor(args.nowMs / 1000) - parsed.timestamp) > tolerance) return false;
   for (const sig of parsed.signatures) {
     if (!V1_HEX_RE.test(sig)) return false;
   }
