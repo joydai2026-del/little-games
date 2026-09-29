@@ -97,7 +97,8 @@ export interface Hub {
   gameKeys: Record<string, string>;
   /** What the fake Google token endpoint returns for a given code. */
   codes: Map<string, { user: GoogleUser; nonceOverride?: string; aud?: string; iss?: string; expOffset?: number }>;
-  fetch(path: string, init?: RequestInit & { cookies?: Record<string, string> }): Promise<Response>;
+  /** `edge: false` = a request without `request.cf` (a same-zone Worker subrequest or local dev). */
+  fetch(path: string, init?: RequestInit & { cookies?: Record<string, string>; edge?: boolean }): Promise<Response>;
   tokenStorage: Map<string, MapStorage>;
   core: typeof hub;
   limiters: Record<string, CountingLimiter>;
@@ -207,7 +208,11 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
     async fetch(path, init = {}) {
       const headers = new Headers(init.headers);
       if (init.cookies) headers.set('Cookie', Object.entries(init.cookies).map(([k, v]) => `${k}=${v}`).join('; '));
+      const edge = init.edge !== false;
+      if (edge && !headers.has('CF-Connecting-IP')) headers.set('CF-Connecting-IP', '192.0.2.10');
       const req = new Request(new URL(path, HUB).toString(), { ...init, headers, redirect: 'manual' });
+      // Cloudflare sets request.cf on requests that arrived at its edge.
+      if (edge) Object.defineProperty(req, 'cf', { value: { colo: 'TEST' } });
       const res = await worker.fetch(req as never, env);
       // Capture the nonce Google would receive, keyed by the code the test will use.
       const loc = res.headers.get('Location');

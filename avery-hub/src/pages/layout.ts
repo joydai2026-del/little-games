@@ -73,7 +73,7 @@ export function cantSignIn(supportEmail: string, status = 503, headers?: Headers
   return page(
     "Can't sign in right now",
     `<h1>Can't sign in right now</h1>
-<div class="card"><p>Something went wrong on our side. You can still play your free game without signing in.</p>
+<div class="card"><p>Something went wrong on our side. You can still play one free round of each game without signing in.</p>
 <p class="muted">Please try again in a few minutes.</p></div>`,
     { status, supportEmail, headers },
   );

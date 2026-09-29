@@ -49,10 +49,19 @@ function readTarget(url: URL, p: Policy): Target | 'bad' {
   return { gameId: game, bindHash: bind, returnUrl };
 }
 
-async function addressKey(env: Env, req: Request): Promise<string | null> {
+/**
+ * The abuse-bucket key for a request that arrived at Cloudflare's edge
+ * (`request.cf` present), where CF-Connecting-IP is set by Cloudflare and a
+ * client-set value is refused. A request without `request.cf` is a same-zone
+ * subrequest from our own Workers (or local dev): it gets no address bucket
+ * (null) and relies on the per-bind bucket. Edge request with no address or no
+ * RATE_KEY: 'unavailable' (fail closed).
+ */
+async function addressKey(env: Env, req: Request): Promise<string | null | 'unavailable'> {
+  if (!(req as unknown as { cf?: unknown }).cf) return null;
+  const ip = req.headers.get('CF-Connecting-IP');
   const k = env.RATE_KEY;
-  if (typeof k !== 'string' || k.length < 16) return null;
-  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (!ip || typeof k !== 'string' || k.length < 16) return 'unavailable';
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(k), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return `addr:${hex(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(ip)))}`;
 }
@@ -81,19 +90,20 @@ export async function authStart(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const t = readTarget(url, p);
   if (t === 'bad') return badLink(p);
-  // Two buckets: per game + binding (the plan's key), and a stable abuse
-  // bucket per connecting address, keyed by HMAC(RATE_KEY, address) so the raw
-  // address is never used as a key, stored or logged. Threshold: the
-  // AUTH_ADDRESS_LIMITER block in wrangler.jsonc.
-  const addr = await addressKey(env, req);
-  if (!addr) return cantSignIn(p.supportEmail);
-  if (env.AUTH_ADDRESS_LIMITER && !(await env.AUTH_ADDRESS_LIMITER.limit({ key: addr })).success) return cantSignIn(p.supportEmail, 429);
   if (t.gameId && env.AUTH_START_LIMITER && !(await env.AUTH_START_LIMITER.limit({ key: `${t.gameId}:${t.bindHash}` })).success) {
     return cantSignIn(p.supportEmail, 429);
   }
   if (!hashKeyReady(env, p)) return cantSignIn(p.supportEmail);
+  // A teacher already signed in to the hub goes straight on: the address
+  // bucket below never blocks her, however much junk shares her school address.
   const hub = await currentHubSession(req, env, p, now());
   if (hub) return finish(env, p, t, hub, hub.setCookie ? [hub.setCookie] : []);
+  // Only a NEW sign-in (which creates OAuth state in a TokenDO) passes the
+  // abuse bucket per connecting address, keyed by HMAC(RATE_KEY, address) so
+  // the raw address is never a key, stored or logged.
+  const addr = await addressKey(env, req);
+  if (addr === 'unavailable') return cantSignIn(p.supportEmail);
+  if (addr && env.AUTH_ADDRESS_LIMITER && !(await env.AUTH_ADDRESS_LIMITER.limit({ key: addr })).success) return cantSignIn(p.supportEmail, 429);
   if (!googleReady(env, p)) return cantSignIn(p.supportEmail);
 
   // "v<N>.<random>": the key version travels with the value, so a key
@@ -199,7 +209,17 @@ async function signedInPost(req: Request, env: Env) {
   const hub = await currentHubSession(req, env, p, now());
   if (!hub) return { error: redirect('/me') } as const;
   const form = await req.formData().catch(() => null);
-  if (!(await csrfOk(env, hub, form?.get('csrf')))) return { error: new Response('Forbidden', { status: 403 }) } as const;
+  if (!(await csrfOk(env, hub, form?.get('csrf')))) {
+    // Usually a page opened before the session id rotated in another tab.
+    return {
+      error: page(
+        'Please try again',
+        `<h1>Please try again</h1><div class="card"><p>This page was open for a while, so we could not be sure it was you. Please go back to your account page and tap the button again.</p></div>
+<a class="btn-primary" href="/me">Go to my account</a>`,
+        { status: 403, supportEmail: p.supportEmail },
+      ),
+    } as const;
+  }
   return { p, hub, form } as const;
 }
 

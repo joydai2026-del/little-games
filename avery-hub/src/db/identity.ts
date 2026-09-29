@@ -90,29 +90,34 @@ export async function rotateHubSession(db: Db, oldHash: string, newHash: string,
   return r.meta.changes === 1;
 }
 
-/** End one hub session and (by cascade) every game session made from it. */
+/** End one hub session (by its current or its previous id) and, by cascade, every game session made from it. */
 export async function endHubSession(db: Db, hash: string): Promise<void> {
-  await db.prepare(`DELETE FROM sessions WHERE id_hash = ?1`).bind(hash).run();
+  await db.prepare(`DELETE FROM sessions WHERE id_hash = ?1 OR previous_id_hash = ?1`).bind(hash).run();
 }
 
 /**
- * Mint a game session. One live game session per game per hub session: the
- * previous one for this game is ended in the same batch. If the hub session
- * ended meanwhile, the composite FK fails and the whole batch rolls back.
+ * Mint a game session. `hubHash` comes from a hand-off token minted up to 60 s
+ * earlier; if the hub session id rotated meanwhile it is now the row's
+ * `previous_id_hash`, so both statements resolve it to the row's CURRENT id
+ * inside this one batch. One live game session per game per hub session: the
+ * previous one for this game is ended in the same batch. False when the hub
+ * session no longer exists (nothing is written).
  */
 export async function createGameSession(
   db: Db,
   g: { hash: string; version: number; teacherId: string; hubHash: string; gameId: string; now: number; maxMs: number },
-): Promise<void> {
-  await db.batch([
-    db.prepare(`DELETE FROM game_sessions WHERE teacher_id = ?1 AND hub_session_id_hash = ?2 AND game_id = ?3`).bind(g.teacherId, g.hubHash, g.gameId),
+): Promise<boolean> {
+  const current = `(SELECT id_hash FROM sessions WHERE teacher_id = ?1 AND (id_hash = ?2 OR previous_id_hash = ?2) AND revoked_at IS NULL LIMIT 1)`;
+  const [, ins] = await db.batch([
+    db.prepare(`DELETE FROM game_sessions WHERE teacher_id = ?1 AND hub_session_id_hash = ${current} AND game_id = ?3`).bind(g.teacherId, g.hubHash, g.gameId),
     db
       .prepare(
         `INSERT INTO game_sessions (id_hash, teacher_id, hub_session_id_hash, game_id, key_version, created_at, last_used_at, absolute_expiry)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)`,
+         SELECT ?4, ?1, ${current}, ?3, ?5, ?6, ?6, ?7 WHERE ${current} IS NOT NULL`,
       )
-      .bind(g.hash, g.teacherId, g.hubHash, g.gameId, g.version, g.now, g.now + g.maxMs),
+      .bind(g.teacherId, g.hubHash, g.gameId, g.hash, g.version, g.now, g.now + g.maxMs),
   ]);
+  return ins.meta.changes === 1;
 }
 
 export interface GameSessionRow {

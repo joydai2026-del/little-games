@@ -43,12 +43,14 @@ export interface DeviceRow {
 // "Does she have paid access right now?" as one SQL expression over ?1
 // (teacher) and ?2 (now). Every paid-only read and write carries it INSIDE its
 // own statement, so a revoke or expiry between a check and a write cannot slip
-// through. Subscriptions fill `access_until` from S2b on.
+// through. A deleted teacher (tombstone) is never paid, even though her
+// subscription rows are kept for tax. Subscriptions fill `access_until` from S2b on.
 export const PAID_SQL = `(
+  EXISTS (SELECT 1 FROM teachers WHERE id = ?1 AND deleted_at IS NULL) AND (
   COALESCE((SELECT manual_access_until FROM teachers WHERE id = ?1), 0) > ?2
   OR EXISTS (SELECT 1 FROM seat_grants WHERE attached_teacher_id = ?1 AND access_until > ?2)
   OR EXISTS (SELECT 1 FROM subscriptions WHERE teacher_id = ?1 AND access_until > ?2)
-)`;
+))`;
 
 // Lists she may see and change: all when paid; otherwise her oldest ?3 lists
 // (?3 = FREE_LIST_LIMIT when the free tier is on, 0 when it is off). After paid
@@ -103,7 +105,8 @@ export function forTeacher(db: Db, teacherId: string) {
       return r.results;
     },
     async endDevice(idHash: string): Promise<boolean> {
-      const r = await db.prepare(`DELETE FROM sessions WHERE teacher_id = ?1 AND id_hash = ?2`).bind(T, idHash).run();
+      // By current OR previous id: a revoke racing a rotation still ends the session.
+      const r = await db.prepare(`DELETE FROM sessions WHERE teacher_id = ?1 AND (id_hash = ?2 OR previous_id_hash = ?2)`).bind(T, idHash).run();
       return r.meta.changes === 1;
     },
     async endAllDevices(): Promise<void> {

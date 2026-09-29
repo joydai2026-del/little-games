@@ -106,10 +106,9 @@ export const hub = {
     const db = openDb(env);
     const profile = await forTeacher(db, teacherId).profile();
     if (!profile) return fail('refused');
-    try {
-      await createGameSession(db, { hash: gs.hash, version: gs.version, teacherId, hubHash, gameId: g.gameId, now: now(), maxMs: g.p.gameSessionMaxMs });
-    } catch {
-      return fail('signed_out'); // the hub session ended between hand-off and redemption
+    // False when the hub session ended between hand-off and redemption.
+    if (!(await createGameSession(db, { hash: gs.hash, version: gs.version, teacherId, hubHash, gameId: g.gameId, now: now(), maxMs: g.p.gameSessionMaxMs }))) {
+      return fail('signed_out');
     }
     return { ok: true, gameSessionId: gs.value, email: profile.email, displayName: profile.display_name };
   },

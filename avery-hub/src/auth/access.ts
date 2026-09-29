@@ -8,7 +8,7 @@ import { verifyRs256 } from './jwt';
 export async function accessActor(req: Request, p: Policy, nowMs: number): Promise<string | null> {
   if (!p.accessJwksUrl || !p.accessIssuer || !p.accessAud) return null;
   const token = req.headers.get('Cf-Access-Jwt-Assertion');
-  const payload = await verifyRs256(token, { jwksUrl: p.accessJwksUrl, issuers: [p.accessIssuer], audience: p.accessAud, nowMs });
+  const payload = await verifyRs256(token, { jwksUrl: p.accessJwksUrl, issuers: [p.accessIssuer], audience: p.accessAud, nowMs, jwks: p.jwks });
   if (!payload) return null;
   const who = payload.email ?? payload.common_name ?? payload.sub;
   return typeof who === 'string' && who ? who : null;

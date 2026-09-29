@@ -39,7 +39,7 @@ export async function exchangeAndVerify(env: Env, p: Policy, code: string, nonce
   });
   if (!res.ok) return null;
   const body = (await res.json().catch(() => null)) as { id_token?: string } | null;
-  const claims = await verifyRs256(body?.id_token, { jwksUrl: p.googleJwksUrl, issuers: p.googleIssuers, audience: p.googleClientId, nowMs });
+  const claims = await verifyRs256(body?.id_token, { jwksUrl: p.googleJwksUrl, issuers: p.googleIssuers, audience: p.googleClientId, nowMs, jwks: p.jwks });
   if (!claims) return null;
   if (claims.nonce !== nonce) return null;
   if (claims.email_verified !== true && claims.email_verified !== 'true') return null;
