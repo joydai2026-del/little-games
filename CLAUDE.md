@@ -14,7 +14,7 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 ## House rules for this repo
 - Plain English UI. Grandma test: no jargon, no setup steps on screen, phone-first.
 - Every game must be playable two ways: a human opens the link, and an AI agent joins through the same HTTP API (agent-native).
-- No accounts, no ads, no tracking, no personal data stored beyond a display name for the life of a room.
+- No kid accounts, no ads, no tracking of kids. Teachers may sign in with Google (no passwords) to save lists, classes and a subscription, and teacher screens only may send product analytics. Kids never sign in and never load analytics; a kid's data is a nickname and a room-only id for the life of a room.
 - Real photos and real model output only. No mock data in anything JJ sees.
 - Anything that could change (round length, bot count, photo tags, model ids, vote rules) is config, never a literal in game logic.
 - Stack, unless a game needs otherwise: one Cloudflare Worker (static assets + API), Durable Object per room, Workers AI for the bots, vitest for logic. Same shape as the author's Bilingual Vocab Game.
