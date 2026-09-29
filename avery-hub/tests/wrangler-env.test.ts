@@ -15,7 +15,7 @@ function readConfig(): Record<string, any> {
   return JSON.parse(text) as Record<string, any>;
 }
 
-const ALLOWED_VAR_DIFFS = ['HUB_ORIGIN', 'GAME_REGISTRY', 'GOOGLE_CLIENT_ID', 'ACCESS_JWKS_URL', 'ACCESS_ISSUER', 'ACCESS_AUD'];
+const ALLOWED_VAR_DIFFS = ['DB_READY', 'HUB_ORIGIN', 'GAME_REGISTRY', 'GOOGLE_CLIENT_ID', 'ACCESS_JWKS_URL', 'ACCESS_ISSUER', 'ACCESS_AUD'];
 
 describe('wrangler config', () => {
   const top = readConfig();
@@ -38,11 +38,27 @@ describe('wrangler config', () => {
     expect(staging.d1_databases[0].database_id).not.toBe(top.d1_databases[0].database_id);
   });
 
-  for (const key of ['durable_objects', 'migrations', 'ratelimits', 'observability', 'assets']) {
+  for (const key of ['durable_objects', 'migrations', 'observability', 'assets']) {
     it(`staging repeats the top-level ${key} exactly`, () => {
       expect(staging[key]).toEqual(top[key]);
     });
   }
+
+  it('staging repeats every rate limiter with the same limits but its OWN namespace ids', () => {
+    const shape = (r: any[]) => r.map((x) => ({ name: x.name, simple: x.simple }));
+    expect(shape(staging.ratelimits)).toEqual(shape(top.ratelimits));
+    const prodIds = new Set(top.ratelimits.map((x: any) => x.namespace_id));
+    for (const x of staging.ratelimits) expect(prodIds.has(x.namespace_id), x.name).toBe(false);
+    expect(new Set(staging.ratelimits.map((x: any) => x.namespace_id)).size).toBe(staging.ratelimits.length);
+  });
+
+  it('production refuses to serve until its D1 id is real (DB_READY false with the placeholder)', () => {
+    expect(top.d1_databases[0].database_id).toBe('REPLACE_WITH_PRODUCTION_D1_ID');
+    expect(top.vars.DB_READY).toBe('false');
+    expect(staging.vars.DB_READY).toBe('true');
+    expect(top.vars.FREE_TIER_ENABLED).toBe('false');
+    expect(staging.vars.FREE_TIER_ENABLED).toBe('false');
+  });
 
   it('staging repeats the D1 binding (name and migrations dir)', () => {
     const strip = (d: any) => ({ binding: d.binding, migrations_dir: d.migrations_dir });

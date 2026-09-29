@@ -59,6 +59,8 @@ export class TokenDO extends DurableObject {
   }
 
   async alarm(): Promise<void> {
-    await this.ctx.storage.deleteAll();
+    return this.serial(async () => {
+      await this.ctx.storage.deleteAll();
+    });
   }
 }

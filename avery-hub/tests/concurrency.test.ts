@@ -1,8 +1,11 @@
 // Plan "Atomic writes": 10 concurrent calls, exactly the allowed number win.
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { buildHub, signIn, caller } from './support/harness';
+import { setDefaultVars, buildHub, signIn, caller } from './support/harness';
 import { randomToken, sha256Hex } from '../src/crypto';
 
+// These tests cover the free-tier rules, which JJ switched off on 2026-09-29
+// (FREE_TIER_ENABLED=false). They still guard the code for the day it is on.
+setDefaultVars({ FREE_TIER_ENABLED: 'true' });
 afterEach(() => vi.unstubAllGlobals());
 
 const wins = (rs: { ok: boolean }[]) => rs.filter((r) => r.ok).length;

@@ -90,10 +90,14 @@ describe('migrations', () => {
     expect(db.raw.prepare(`SELECT * FROM teachers WHERE id = 'a'`).get()).toMatchObject({
       id: 'a', stripe_customer_id: 'cus_a', google_sub: null, email: null, display_name: null, analytics_id: null, free_game: null, deleted_at: NOW,
     });
-    for (const t of ['sessions', 'game_sessions', 'lists', 'classes', 'round_history', 'checkout_codes', 'room_passes']) {
+    for (const t of ['sessions', 'game_sessions', 'lists', 'classes', 'round_history', 'checkout_codes']) {
       expect(count(db, t, `teacher_id = 'a'`), t).toBe(0);
       expect(count(db, t, `teacher_id = 'b'`), `${t} of b`).toBe(1);
     }
+    // Kept so checkRoomPass answers "revoked" (the version bump), not "unknown".
+    expect(count(db, 'room_passes', `teacher_id = 'a'`)).toBe(1);
     expect(count(db, 'subscriptions', `teacher_id = 'a'`)).toBe(1);
+    // No personal timestamps left on the tombstone.
+    expect(db.raw.prepare(`SELECT created_at, last_seen_at FROM teachers WHERE id = 'a'`).get()).toEqual({ created_at: NOW, last_seen_at: NOW });
   });
 });

@@ -24,19 +24,29 @@ export async function currentHubSession(req: Request, env: Env, p: Policy, nowMs
   const s: HubSession = { teacherId: row.teacher_id, hash: row.id_hash, keyVersion: row.key_version };
   if (nowMs - row.rotated_at >= p.sessionRotateMs || row.key_version !== p.hashKeyCurrent) {
     const fresh = await mintSecret(env, p.hashKeyCurrent);
-    if (await rotateHubSession(db, row.id_hash, fresh.hash, fresh.version, nowMs)) {
+    if (await rotateHubSession(db, row.id_hash, fresh.hash, fresh.version, nowMs, p.sessionRotateOverlapMs)) {
       s.hash = fresh.hash;
       s.keyVersion = fresh.version;
       s.setCookie = setCookie(HUB_COOKIE, fresh.value, (row.absolute_expiry - nowMs) / 1000);
+    } else {
+      // Another request rotated it first. Our old id still resolves for the
+      // overlap window; carry on with the session's CURRENT id.
+      const again = await resolveHubSession(db, presented.hash, nowMs, p.sessionIdleMs);
+      if (!again) return null;
+      s.hash = again.id_hash;
+      s.keyVersion = again.key_version;
     }
   }
   return s;
 }
 
-export async function startHubSession(env: Env, p: Policy, teacherId: string, label: string, nowMs: number): Promise<{ hash: string; cookie: string }> {
+/** A new hub session, or null when she is already at MAX_TEACHER_DEVICES. */
+export async function startHubSession(env: Env, p: Policy, teacherId: string, label: string, nowMs: number): Promise<{ hash: string; cookie: string } | null> {
   const fresh = await mintSecret(env, p.hashKeyCurrent);
-  await createHubSession(openDb(env), { teacherId, hash: fresh.hash, version: fresh.version, label, now: nowMs, maxMs: p.sessionMaxMs });
-  return { hash: fresh.hash, cookie: setCookie(HUB_COOKIE, fresh.value, p.sessionMaxMs / 1000) };
+  const ok = await createHubSession(openDb(env), {
+    teacherId, hash: fresh.hash, version: fresh.version, label, now: nowMs, maxMs: p.sessionMaxMs, maxDevices: p.maxDevices, idleMs: p.sessionIdleMs,
+  });
+  return ok ? { hash: fresh.hash, cookie: setCookie(HUB_COOKIE, fresh.value, p.sessionMaxMs / 1000) } : null;
 }
 
 export function csrfToken(env: Env, s: HubSession): Promise<string> {

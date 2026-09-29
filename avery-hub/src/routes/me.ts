@@ -1,7 +1,7 @@
 // The teacher's profile page: who she is, her free game, lists, devices,
 // download, delete, sign out.
 import type { Env } from '../env';
-import { policy } from '../config';
+import { freeListAllowance, policy } from '../config';
 import { forTeacher, openDb } from '../db';
 import { now } from '../clock';
 import { esc, page } from '../pages/layout';
@@ -23,14 +23,16 @@ export async function mePage(req: Request, env: Env): Promise<Response> {
   if (!hub) {
     return page(
       'My account',
-      `<h1>My account</h1><div class="card"><p>Sign in to see your saved lists and your free game.</p></div>
+      `<h1>My account</h1><div class="card"><p>Sign in to see your saved lists and your subscription.</p></div>
 <a class="btn-primary" href="/auth/start">Sign in with Google</a>`,
       { supportEmail: p.supportEmail },
     );
   }
   if (hub.setCookie) headers.append('Set-Cookie', hub.setCookie);
   const scope = forTeacher(openDb(env), hub.teacherId);
-  const [profile, lists, devices, paid] = await Promise.all([scope.profile(), scope.countLists(), scope.devices(now(), p.sessionIdleMs), scope.isPaid(now())]);
+  const [profile, lists, devices, paid, accessUntil] = await Promise.all([
+    scope.profile(), scope.countLists(now(), freeListAllowance(p)), scope.devices(now(), p.sessionIdleMs), scope.isPaid(now()), scope.accessUntil(),
+  ]);
   if (!profile) return page('My account', `<h1>My account</h1><div class="card"><p>Please sign in again.</p></div>`, { supportEmail: p.supportEmail });
   const csrf = await csrfToken(env, hub);
   const locked = profile.free_game_locked_until && profile.free_game_locked_until > now() ? new Date(profile.free_game_locked_until).toDateString() : null;
@@ -43,10 +45,10 @@ export async function mePage(req: Request, env: Env): Promise<Response> {
     `<h1>My account</h1>
 <div class="card">
   <div class="row"><span>Signed in as</span><b>${esc(profile.email)}</b></div>
-  <div class="row"><span>Plan</span><span>${paid ? 'Full access' : 'Free'}</span></div>
-  ${paid ? '' : `<div class="row"><span>Your free game</span><span>${esc(gameName(profile.free_game))}</span></div>
-  <div class="row"><span>You can change it</span><span>${locked ? `after ${esc(locked)}` : 'any time'}</span></div>`}
-  <div class="row"><span>Saved lists</span><span>${lists}${paid ? '' : ` of ${p.freeListLimit}`}</span></div>
+  <div class="row"><span>Plan</span><span>${paid ? `Subscribed${accessUntil ? ` until ${esc(new Date(accessUntil).toDateString())}` : ''}` : 'Not subscribed yet'}</span></div>
+  ${!paid && p.freeTierEnabled ? `<div class="row"><span>Your free game</span><span>${esc(gameName(profile.free_game))}</span></div>
+  <div class="row"><span>You can change it</span><span>${locked ? `after ${esc(locked)}` : 'any time'}</span></div>` : ''}
+  <div class="row"><span>Saved lists</span><span>${lists}${!paid && p.freeTierEnabled ? ` of ${p.freeListLimit}` : ''}</span></div>
 </div>
 <div class="card"><b>Signed in on</b>${deviceRows}</div>
 <a class="btn-secondary" href="/me/export">Download my data</a>

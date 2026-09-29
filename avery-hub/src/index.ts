@@ -23,7 +23,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   const path = url.pathname;
   const method = request.method;
 
-  if (path === '/healthz') return Response.json({ ok: true, version: policy(env).version });
+  const p = policy(env);
+  // Production ships with a placeholder D1 id and DB_READY "false": refuse to
+  // serve anything until the real database is bound and DB_READY is "true".
+  if (!p.dbReady) {
+    return Response.json({ ok: false, error: 'database_not_configured', version: p.version }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
+  if (path === '/healthz') return Response.json({ ok: true, version: p.version }, { headers: { 'Cache-Control': 'no-store' } });
   if (path === '/' ) return Response.redirect(new URL('/me', url).toString(), 302);
   if (path === '/auth/start' && method === 'GET') return authStart(request, env);
   if (path === '/auth/callback' && method === 'GET') return authCallback(request, env);

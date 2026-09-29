@@ -9,5 +9,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Generous: RSA key generation per test is slow on a loaded machine; logic is deterministic.
+    testTimeout: 30_000,
   },
 });

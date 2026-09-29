@@ -178,7 +178,9 @@ describe('hub session lifetimes and rotation', () => {
     const rotated = cookiesFrom(res)['__Host-avery_hub'];
     expect(rotated).toBeTruthy();
     expect(rotated).not.toBe(s.jar['__Host-avery_hub']);
-    // Old cookie is dead, new one works.
+    // The old cookie keeps working only for SESSION_ROTATE_OVERLAP_SECONDS (30), then it is dead.
+    expect(await (await h.fetch('/me', { cookies: s.jar })).text()).toContain('a@s.org');
+    h.clock.t += 31_000;
     expect(await (await h.fetch('/me', { cookies: s.jar })).text()).toContain('Sign in with Google');
     expect(await (await h.fetch('/me', { cookies: { '__Host-avery_hub': rotated } })).text()).toContain('a@s.org');
   });

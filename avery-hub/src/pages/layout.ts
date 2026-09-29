@@ -60,7 +60,9 @@ ${body}
   headers.set('Content-Type', 'text/html; charset=utf-8');
   headers.set('Cache-Control', 'no-store');
   headers.set('X-Frame-Options', 'DENY');
-  headers.set('Referrer-Policy', 'no-referrer');
+  // same-origin, not no-referrer: under no-referrer Chrome sends `Origin: null` on
+  // form posts, and the Origin check would refuse every hub form.
+  headers.set('Referrer-Policy', 'same-origin');
   const formAction = ["'self'", ...(o.formRedirectOrigins ?? [])].join(' ');
   headers.set('Content-Security-Policy', `default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`);
   return new Response(html, { status: o.status ?? 200, headers });

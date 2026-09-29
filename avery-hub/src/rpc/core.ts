@@ -1,7 +1,7 @@
 // HubService logic as plain functions over env, so tests can call it without
 // the Workers runtime. src/rpc/hub-service.ts is the thin RPC shell.
 import type { Env } from '../env';
-import { freeGameKeys, policy, type Policy } from '../config';
+import { freeGameKeys, freeListAllowance, policy, type Policy } from '../config';
 import { hashPresented, mintSecret, safeEqual, sha256Hex } from '../crypto';
 import { checkRoomPassRow, createGameSession, forTeacher, openDb, resolveGameSession, teacherExists, type TeacherScope } from '../db';
 import { now } from '../clock';
@@ -20,6 +20,7 @@ const fail = (error: string): Fail => ({ ok: false, error });
 /** The caller must be a registered game, with its own key, calling a method listed for it. */
 async function gate(env: Env, caller: unknown, method: string): Promise<{ p: Policy; gameId: string } | Fail> {
   const p = policy(env);
+  if (!p.dbReady) return fail('unavailable');
   const c = caller as Partial<Caller> | null;
   if (!c || typeof c.gameId !== 'string' || typeof c.gameKey !== 'string') return fail('refused');
   const entry = p.registry[c.gameId];
@@ -45,12 +46,17 @@ function utcDay(ms: number): string {
 
 async function entitlementFor(p: Policy, gameId: string, scope: TeacherScope) {
   const t = now();
-  const [profile, paid, lists] = await Promise.all([scope.profile(), scope.isPaid(t), scope.countLists()]);
+  const [profile, paid, accessUntil, lists] = await Promise.all([scope.profile(), scope.isPaid(t), scope.accessUntil(), scope.countLists(t, freeListAllowance(p))]);
   if (!profile) return null;
+  const plan = paid ? ('paid' as const) : ('free' as const);
+  const until = paid ? accessUntil : null;
+  // No free tier (JJ 2026-09-29): the game only needs "paid or not, and until when".
+  if (!p.freeTierEnabled) return { plan, accessUntil: until };
   const today = utcDay(t);
   const used = profile.taste_day === today ? profile.taste_used : 0;
   return {
-    plan: paid ? ('paid' as const) : ('free' as const),
+    plan,
+    accessUntil: until,
     freeGame: profile.free_game,
     freeGameLockedUntil: profile.free_game_locked_until && profile.free_game_locked_until > t ? profile.free_game_locked_until : null,
     freeGameChoices: freeGameKeys(p),
@@ -91,6 +97,8 @@ export const hub = {
     }
     const presented = await hashPresented(env, token);
     if (!presented) return fail('refused');
+    // Mint first: if the current hash key is missing this throws BEFORE the token is burnt.
+    const gs = await mintSecret(env, g.p.hashKeyCurrent);
     const taken = await takeToken(env, presented.hash, 'handoff', { gameId: g.gameId, bindHash });
     if (!taken.ok) return fail(taken.error === 'expired' ? 'expired' : 'refused');
     const teacherId = String(taken.record.data.teacherId);
@@ -98,7 +106,6 @@ export const hub = {
     const db = openDb(env);
     const profile = await forTeacher(db, teacherId).profile();
     if (!profile) return fail('refused');
-    const gs = await mintSecret(env, g.p.hashKeyCurrent);
     try {
       await createGameSession(db, { hash: gs.hash, version: gs.version, teacherId, hubHash, gameId: g.gameId, now: now(), maxMs: g.p.gameSessionMaxMs });
     } catch {
@@ -130,6 +137,7 @@ export const hub = {
   async useTaste(env: Env, caller: unknown, gameSessionId: unknown, mode: unknown): Promise<Result<{ grantId: string; tasteRoundsLeft: number }>> {
     const s = await withSession(env, caller, 'useTaste', gameSessionId);
     if ('ok' in s) return s;
+    if (!s.p.freeTierEnabled) return fail('disabled');
     if (typeof mode !== 'string' || !s.p.registry[s.gameId].modes.includes(mode)) return fail('unknown_mode');
     const t = now();
     const profile = await s.scope.profile();
@@ -145,6 +153,7 @@ export const hub = {
   async switchFreeMode(env: Env, caller: unknown, gameSessionId: unknown, mode: unknown): Promise<Result<{ freeGame: string; lockedUntil: number }>> {
     const s = await withSession(env, caller, 'switchFreeMode', gameSessionId);
     if ('ok' in s) return s;
+    if (!s.p.freeTierEnabled) return fail('disabled');
     if (typeof mode !== 'string' || !s.p.registry[s.gameId].modes.includes(mode)) return fail('unknown_mode');
     const key = `${s.gameId}:${mode}`;
     if (!freeGameKeys(s.p).includes(key)) return fail('not_allowed');
@@ -159,14 +168,14 @@ export const hub = {
   async listLists(env: Env, caller: unknown, gameSessionId: unknown) {
     const s = await withSession(env, caller, 'listLists', gameSessionId);
     if ('ok' in s) return s;
-    return { ok: true as const, lists: await s.scope.listLists() };
+    return { ok: true as const, lists: await s.scope.listLists(now(), freeListAllowance(s.p)) };
   },
 
   async getList(env: Env, caller: unknown, gameSessionId: unknown, listId: unknown) {
     const s = await withSession(env, caller, 'getList', gameSessionId);
     if ('ok' in s) return s;
     if (typeof listId !== 'string' || !ID_RE.test(listId)) return fail('not_found');
-    const list = await s.scope.getList(listId);
+    const list = await s.scope.getList(listId, now(), freeListAllowance(s.p));
     return list ? { ok: true as const, list } : fail('not_found');
   },
 
@@ -177,29 +186,37 @@ export const hub = {
     const title = cleanText(i.title, 120);
     const level = i.level === undefined || i.level === null ? null : cleanText(i.level, 40);
     if (!title || (i.level != null && !level) || !Array.isArray(i.items) || i.items.length === 0 || i.items.length > s.p.listMaxItems) return fail('bad_list');
-    const itemsJson = JSON.stringify(i.items);
-    if (new TextEncoder().encode(itemsJson).length > s.p.listMaxBytes) return fail('bad_list');
+    let itemsJson: string;
+    try {
+      itemsJson = JSON.stringify(i.items); // throws on BigInt, cycles: not JSON-safe
+    } catch {
+      return fail('bad_list');
+    }
+    if (typeof itemsJson !== 'string' || new TextEncoder().encode(itemsJson).length > s.p.listMaxBytes) return fail('bad_list');
     const t = now();
+    const allow = freeListAllowance(s.p);
     if (i.id !== undefined) {
       if (typeof i.id !== 'string' || !ID_RE.test(i.id)) return fail('not_found');
-      return (await s.scope.updateList({ id: i.id, title, level, itemsJson }, t)) ? { ok: true, id: i.id } : fail('not_found');
+      if (await s.scope.updateList({ id: i.id, title, level, itemsJson }, t, allow)) return { ok: true, id: i.id };
+      return (await s.scope.isPaid(t)) || allow > 0 ? fail('not_found') : fail('paid_only');
     }
-    const limit = (await s.scope.isPaid(t)) ? s.p.paidListLimit : s.p.freeListLimit;
     const id = crypto.randomUUID();
-    return (await s.scope.insertList({ id, title, level, itemsJson }, t, limit)) ? { ok: true, id } : fail('list_limit');
+    if (await s.scope.insertList({ id, title, level, itemsJson }, t, allow, s.p.paidListLimit)) return { ok: true, id };
+    // The decision was made inside the insert; this read only picks the message.
+    return (await s.scope.isPaid(t)) || allow > 0 ? fail('list_limit') : fail('paid_only');
   },
 
   async deleteList(env: Env, caller: unknown, gameSessionId: unknown, listId: unknown): Promise<Result<object>> {
     const s = await withSession(env, caller, 'deleteList', gameSessionId);
     if ('ok' in s) return s;
     if (typeof listId !== 'string' || !ID_RE.test(listId)) return fail('not_found');
-    return (await s.scope.deleteList(listId)) ? { ok: true } : fail('not_found');
+    return (await s.scope.deleteList(listId, now(), freeListAllowance(s.p))) ? { ok: true } : fail('not_found');
   },
 
   async listClasses(env: Env, caller: unknown, gameSessionId: unknown) {
     const s = await withSession(env, caller, 'listClasses', gameSessionId);
     if ('ok' in s) return s;
-    return { ok: true as const, classes: await s.scope.listClasses() };
+    return { ok: true as const, classes: await s.scope.listClasses(now()) };
   },
 
   async saveClass(env: Env, caller: unknown, gameSessionId: unknown, input: unknown): Promise<Result<{ id: string; classCode?: string }>> {
@@ -251,11 +268,17 @@ export const hub = {
     if (!profile) return fail('signed_out');
     const modes = s.p.registry[s.gameId].modes;
     const paid = await s.scope.isPaid(t);
-    const free = profile.free_game?.startsWith(`${s.gameId}:`) ? [profile.free_game.slice(s.gameId.length + 1)] : [];
+    const free = s.p.freeTierEnabled && profile.free_game?.startsWith(`${s.gameId}:`) ? [profile.free_game.slice(s.gameId.length + 1)] : [];
     const allowed = paid ? modes : free.filter((m) => modes.includes(m));
-    if (allowed.length === 0) return fail('no_modes');
+    if (allowed.length === 0) return fail(paid || s.p.freeTierEnabled ? 'no_modes' : 'paid_only');
     const pass = await mintSecret(env, s.p.hashKeyCurrent);
-    if (!(await s.scope.insertRoomPass({ hash: pass.hash, gameId: s.gameId, roomCode, modes: allowed, now: t, ttlMs: s.p.roomPassMs }))) return fail('signed_out');
+    // One conditional INSERT re-checks paid status, the entitlement version read
+    // above and the calling session; a revoke in between leaves no pass.
+    const ok = await s.scope.insertRoomPass({
+      hash: pass.hash, gameId: s.gameId, roomCode, modes: allowed, now: t, ttlMs: s.p.roomPassMs,
+      expectedVersion: profile.entitlement_version, requirePaid: paid, gameSessionHash: s.row.id_hash,
+    });
+    if (!ok) return fail('revoked');
     return { ok: true, passId: pass.value, allowedModes: allowed, expiresAt: t + s.p.roomPassMs };
   },
 

@@ -1,8 +1,11 @@
 // The free and paid rules the hub owns in S1: free game (site-wide), cooldown,
 // taste, list limit, classes paid-only, room passes, entitlement.
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { buildHub, signIn, caller, type Hub } from './support/harness';
+import { setDefaultVars, buildHub, signIn, caller, type Hub } from './support/harness';
 
+// These tests cover the free-tier rules, which JJ switched off on 2026-09-29
+// (FREE_TIER_ENABLED=false). They still guard the code for the day it is on.
+setDefaultVars({ FREE_TIER_ENABLED: 'true' });
 afterEach(() => vi.unstubAllGlobals());
 const DAY = 86_400_000;
 const tid = (h: Hub, email: string) => String(h.db.raw.prepare('SELECT id FROM teachers WHERE email = ?').get(email)!.id);

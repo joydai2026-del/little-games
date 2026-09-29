@@ -26,12 +26,15 @@ export interface Policy {
   sessionIdleMs: number;
   sessionMaxMs: number;
   sessionRotateMs: number;
+  sessionRotateOverlapMs: number;
   gameSessionMaxMs: number;
   gameSessionIdleMs: number;
   handoffMs: number;
   oauthStateMs: number;
   maxDevices: number;
   roomPassMs: number;
+  freeTierEnabled: boolean;
+  dbReady: boolean;
   freeListLimit: number;
   paidListLimit: number;
   tasteRoundsPerDay: number;
@@ -100,12 +103,17 @@ export function policy(env: Env): Policy {
     sessionIdleMs: num(env, 'SESSION_IDLE_DAYS', 30) * DAY,
     sessionMaxMs: num(env, 'SESSION_MAX_DAYS', 90) * DAY,
     sessionRotateMs: num(env, 'SESSION_ROTATE_DAYS', 7) * DAY,
+    sessionRotateOverlapMs: num(env, 'SESSION_ROTATE_OVERLAP_SECONDS', 30) * 1000,
     gameSessionMaxMs: num(env, 'GAME_SESSION_HOURS', 12) * HOUR,
     gameSessionIdleMs: num(env, 'GAME_SESSION_IDLE_HOURS', 4) * HOUR,
     handoffMs: num(env, 'HANDOFF_TOKEN_SECONDS', 60) * 1000,
     oauthStateMs: num(env, 'OAUTH_STATE_SECONDS', 600) * 1000,
     maxDevices: num(env, 'MAX_TEACHER_DEVICES', 3),
     roomPassMs: num(env, 'ROOM_PASS_HOURS', 4) * HOUR,
+    // JJ 2026-09-29: no free tier (one free round per game lives in each game).
+    freeTierEnabled: str(env, 'FREE_TIER_ENABLED', 'false') === 'true',
+    // Production ships with a placeholder D1 id and DB_READY "false"; the Worker refuses to serve until both are set.
+    dbReady: str(env, 'DB_READY', 'false') === 'true',
     freeListLimit: num(env, 'FREE_LIST_LIMIT', 1),
     paidListLimit: num(env, 'PAID_LIST_LIMIT', 500),
     tasteRoundsPerDay: num(env, 'FREE_TASTE_ROUNDS_PER_DAY', 1),
@@ -126,4 +134,9 @@ export function freeGameKeys(p: Policy): string[] {
   if (p.freeGameChoices === 'all') return all;
   const allowed = new Set(p.freeGameChoices);
   return all.filter((k) => allowed.has(k));
+}
+
+/** Lists an unpaid teacher may keep visible: FREE_LIST_LIMIT with the free tier on, else none. */
+export function freeListAllowance(p: Policy): number {
+  return p.freeTierEnabled ? p.freeListLimit : 0;
 }

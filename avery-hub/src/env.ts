@@ -14,11 +14,13 @@ export interface Env {
   ASSETS?: Fetcher;
   AUTH_START_LIMITER?: RateLimiter;
   REDEEM_LIMITER?: RateLimiter;
+  AUTH_ADDRESS_LIMITER?: RateLimiter;
 
   // Secrets (never in config).
   GOOGLE_CLIENT_SECRET?: string;
   SESSION_HASH_KEY_V1?: string;
   SESSION_HASH_KEY_V2?: string;
+  RATE_KEY?: string;
 
   // Vars: strings, except GAME_REGISTRY which may arrive as an object.
   [key: string]: unknown;

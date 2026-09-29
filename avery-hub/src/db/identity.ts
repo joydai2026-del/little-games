@@ -39,17 +39,24 @@ export interface HubSessionRow {
   absolute_expiry: number;
 }
 
+/**
+ * New hub session, only while the teacher has fewer than `maxDevices` live
+ * sessions. The count and the insert are one statement, so concurrent
+ * sign-ins cannot exceed the limit. False = at the limit (show the picker).
+ */
 export async function createHubSession(
   db: Db,
-  s: { teacherId: string; hash: string; version: number; label: string; now: number; maxMs: number },
-): Promise<void> {
-  await db
+  s: { teacherId: string; hash: string; version: number; label: string; now: number; maxMs: number; maxDevices: number; idleMs: number },
+): Promise<boolean> {
+  const r = await db
     .prepare(
       `INSERT INTO sessions (id_hash, teacher_id, key_version, browser_label, created_at, rotated_at, last_used_at, absolute_expiry)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?5, ?6)`,
+       SELECT ?1, ?2, ?3, ?4, ?5, ?5, ?5, ?6
+       WHERE (SELECT COUNT(*) FROM sessions WHERE teacher_id = ?2 AND revoked_at IS NULL AND absolute_expiry > ?5 AND last_used_at > ?8) < ?7`,
     )
-    .bind(s.hash, s.teacherId, s.version, s.label, s.now, s.now + s.maxMs)
+    .bind(s.hash, s.teacherId, s.version, s.label, s.now, s.now + s.maxMs, s.maxDevices, s.now - s.idleMs)
     .run();
+  return r.meta.changes === 1;
 }
 
 /** A live hub session of a live teacher, or null. Touches last_used_at. */
@@ -58,20 +65,27 @@ export async function resolveHubSession(db: Db, hash: string, now: number, idleM
     .prepare(
       `SELECT s.id_hash, s.teacher_id, s.key_version, s.rotated_at, s.last_used_at, s.absolute_expiry
        FROM sessions s JOIN teachers t ON t.id = s.teacher_id
-       WHERE s.id_hash = ?1 AND s.revoked_at IS NULL AND s.absolute_expiry > ?2 AND s.last_used_at > ?3 AND t.deleted_at IS NULL`,
+       WHERE (s.id_hash = ?1 OR (s.previous_id_hash = ?1 AND s.previous_valid_until > ?2)) AND s.revoked_at IS NULL AND s.absolute_expiry > ?2 AND s.last_used_at > ?3 AND t.deleted_at IS NULL`,
     )
     .bind(hash, now, now - idleMs)
     .first<HubSessionRow>();
   if (!row) return null;
-  await db.prepare(`UPDATE sessions SET last_used_at = ?2 WHERE id_hash = ?1`).bind(hash, now).run();
+  await db.prepare(`UPDATE sessions SET last_used_at = ?2 WHERE id_hash = ?1`).bind(row.id_hash, now).run();
   return row;
 }
 
-/** New id for the same hub session; its game sessions follow (ON UPDATE CASCADE). */
-export async function rotateHubSession(db: Db, oldHash: string, newHash: string, version: number, now: number): Promise<boolean> {
+/**
+ * New id for the same hub session; its game sessions follow (ON UPDATE
+ * CASCADE). The old id keeps resolving for `overlapMs` so a request racing
+ * this one is not signed out.
+ */
+export async function rotateHubSession(db: Db, oldHash: string, newHash: string, version: number, now: number, overlapMs: number): Promise<boolean> {
   const r = await db
-    .prepare(`UPDATE sessions SET id_hash = ?2, key_version = ?3, rotated_at = ?4 WHERE id_hash = ?1 AND revoked_at IS NULL`)
-    .bind(oldHash, newHash, version, now)
+    .prepare(
+      `UPDATE sessions SET id_hash = ?2, key_version = ?3, rotated_at = ?4, previous_id_hash = ?1, previous_valid_until = ?5
+       WHERE id_hash = ?1 AND revoked_at IS NULL`,
+    )
+    .bind(oldHash, newHash, version, now, now + overlapMs)
     .run();
   return r.meta.changes === 1;
 }
@@ -81,20 +95,28 @@ export async function endHubSession(db: Db, hash: string): Promise<void> {
   await db.prepare(`DELETE FROM sessions WHERE id_hash = ?1`).bind(hash).run();
 }
 
+/**
+ * Mint a game session. One live game session per game per hub session: the
+ * previous one for this game is ended in the same batch. If the hub session
+ * ended meanwhile, the composite FK fails and the whole batch rolls back.
+ */
 export async function createGameSession(
   db: Db,
   g: { hash: string; version: number; teacherId: string; hubHash: string; gameId: string; now: number; maxMs: number },
 ): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO game_sessions (id_hash, teacher_id, hub_session_id_hash, game_id, key_version, created_at, last_used_at, absolute_expiry)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)`,
-    )
-    .bind(g.hash, g.teacherId, g.hubHash, g.gameId, g.version, g.now, g.now + g.maxMs)
-    .run();
+  await db.batch([
+    db.prepare(`DELETE FROM game_sessions WHERE teacher_id = ?1 AND hub_session_id_hash = ?2 AND game_id = ?3`).bind(g.teacherId, g.hubHash, g.gameId),
+    db
+      .prepare(
+        `INSERT INTO game_sessions (id_hash, teacher_id, hub_session_id_hash, game_id, key_version, created_at, last_used_at, absolute_expiry)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)`,
+      )
+      .bind(g.hash, g.teacherId, g.hubHash, g.gameId, g.version, g.now, g.now + g.maxMs),
+  ]);
 }
 
 export interface GameSessionRow {
+  id_hash: string;
   teacher_id: string;
   hub_session_id_hash: string;
   game_id: string;
@@ -115,7 +137,7 @@ export async function resolveGameSession(
 ): Promise<GameSessionRow | null> {
   const row = await db
     .prepare(
-      `SELECT g.teacher_id, g.hub_session_id_hash, g.game_id, t.email, t.display_name
+      `SELECT g.id_hash, g.teacher_id, g.hub_session_id_hash, g.game_id, t.email, t.display_name
        FROM game_sessions g
        JOIN sessions s ON s.teacher_id = g.teacher_id AND s.id_hash = g.hub_session_id_hash
        JOIN teachers t ON t.id = g.teacher_id

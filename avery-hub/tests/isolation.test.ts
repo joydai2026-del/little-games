@@ -47,12 +47,13 @@ describe('per-teacher isolation', () => {
     const classes = await h.core.listClasses(h.env, c, a.gameSessionId);
     expect(classes.ok && classes.classes).toEqual([]);
     const ent = await h.core.entitlement(h.env, c, a.gameSessionId);
-    expect(ent.ok && ent.listsSaved).toBe(0);
+    expect(ent).toEqual({ ok: true, plan: 'paid', accessUntil: expect.any(Number) });
     expect(snapshot(h, B)).toBe(before);
   });
 
   it("naming B's teacher id in a body or argument still acts on A", async () => {
     const { h, a, A, B } = await twoTeachers();
+    grantPaid(h, A);
     const before = snapshot(h, B);
     const r = await h.core.saveList(h.env, caller(h), a.gameSessionId, { title: 'A list', items: ['狗'], teacherId: B, teacher_id: B });
     expect(r.ok).toBe(true);
@@ -97,6 +98,7 @@ describe('per-teacher isolation', () => {
   it('same browser: sign in as A, save; switch to B; B sees none of A\'s lists; back to A, intact', async () => {
     const h = await buildHub();
     const a = await signIn(h, { sub: 'g-a', email: 'a@s.org' });
+    grantPaid(h, teacherId(h, 'a@s.org'));
     await h.core.saveList(h.env, caller(h), a.gameSessionId, { title: 'A list', items: ['一'] });
     // Sign out of the hub in this browser, then pick B at Google (select_account).
     const csrf = /name="csrf" value="([^"]+)"/.exec(await (await h.fetch('/me', { cookies: a.jar })).text())![1];

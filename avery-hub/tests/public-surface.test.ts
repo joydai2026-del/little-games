@@ -71,9 +71,9 @@ describe('admin', () => {
     const h = await buildHub();
     const a = await signIn(h, { sub: 'g-a', email: 'a@s.org' });
     const A = String(h.db.raw.prepare('SELECT id FROM teachers').get()!.id);
-    await h.core.saveList(h.env, caller(h), a.gameSessionId, { title: 'Old account list', items: ['一'] });
     const until = new Date(h.clock.t + 30 * 86_400_000).toISOString();
     expect((await adminPost(h, '/admin/grant-access', { teacherId: A, until, reason: 'pilot school' })).status).toBe(200);
+    expect((await h.core.saveList(h.env, caller(h), a.gameSessionId, { title: 'Old account list', items: ['一'] })).ok).toBe(true);
     const e = await h.core.entitlement(h.env, caller(h), a.gameSessionId);
     expect(e.ok && e.plan).toBe('paid');
     expect((await adminPost(h, '/admin/grant-seats', { emails: ['New@s.org'], until, school: 'PS 1', reason: 'PO 42' })).status).toBe(200);

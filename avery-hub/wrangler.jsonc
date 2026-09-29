@@ -1,8 +1,10 @@
 {
-  // avery-hub: sign-in, the teacher database and the free/paid gate for every Avery game.
+    // avery-hub: sign-in, the teacher database and the free/paid gate for every Avery game.
   // Environments inherit routes but NOT bindings or vars, so env.staging repeats
   // every binding (tests/wrangler-env.test.ts guards the copy). Secrets are set
   // with `wrangler secret put` by JJ, never here (see docs/ops/rotation.md).
+  // Rate-limit namespace ids differ per environment (same id = shared counters).
+  // DB_READY is "false" in production until the real D1 id replaces the placeholder.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "avery-hub",
   "main": "src/index.ts",
@@ -60,6 +62,14 @@
         "limit": 20,
         "period": 60
       }
+    },
+    {
+      "name": "AUTH_ADDRESS_LIMITER",
+      "namespace_id": "2103",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
     }
   ],
   "observability": {
@@ -72,6 +82,7 @@
   "vars": {
     "HUB_VERSION": "0.1.0-s1",
     "HUB_ORIGIN": "https://hub.averystudio.org",
+    "DB_READY": "false",
     "SUPPORT_EMAIL": "hello@averystudio.org",
     "GOOGLE_CLIENT_ID": "",
     "GOOGLE_AUTH_URL": "https://accounts.google.com/o/oauth2/v2/auth",
@@ -85,6 +96,7 @@
     "SESSION_IDLE_DAYS": "30",
     "SESSION_MAX_DAYS": "90",
     "SESSION_ROTATE_DAYS": "7",
+    "SESSION_ROTATE_OVERLAP_SECONDS": "30",
     "GAME_SESSION_HOURS": "12",
     "GAME_SESSION_IDLE_HOURS": "4",
     "HANDOFF_TOKEN_SECONDS": "60",
@@ -97,6 +109,7 @@
     "FREE_TASTE_ROUNDS_PER_DAY": "1",
     "FREE_MODE_SWITCH_COOLDOWN_DAYS": "5",
     "TRIAL_DAYS": "0",
+    "FREE_TIER_ENABLED": "false",
     "ANON_FREE_ROUNDS": "unlimited",
     "FREE_GAME_COUNT": "1",
     "FREE_GAME_CHOICES": "all",
@@ -316,7 +329,7 @@
       "ratelimits": [
         {
           "name": "AUTH_START_LIMITER",
-          "namespace_id": "2101",
+          "namespace_id": "2111",
           "simple": {
             "limit": 20,
             "period": 60
@@ -324,9 +337,17 @@
         },
         {
           "name": "REDEEM_LIMITER",
-          "namespace_id": "2102",
+          "namespace_id": "2112",
           "simple": {
             "limit": 20,
+            "period": 60
+          }
+        },
+        {
+          "name": "AUTH_ADDRESS_LIMITER",
+          "namespace_id": "2113",
+          "simple": {
+            "limit": 60,
             "period": 60
           }
         }
@@ -341,6 +362,7 @@
       "vars": {
         "HUB_VERSION": "0.1.0-s1",
         "HUB_ORIGIN": "https://avery-hub-staging.joyd-ai-2026.workers.dev",
+        "DB_READY": "true",
         "SUPPORT_EMAIL": "hello@averystudio.org",
         "GOOGLE_CLIENT_ID": "",
         "GOOGLE_AUTH_URL": "https://accounts.google.com/o/oauth2/v2/auth",
@@ -354,6 +376,7 @@
         "SESSION_IDLE_DAYS": "30",
         "SESSION_MAX_DAYS": "90",
         "SESSION_ROTATE_DAYS": "7",
+        "SESSION_ROTATE_OVERLAP_SECONDS": "30",
         "GAME_SESSION_HOURS": "12",
         "GAME_SESSION_IDLE_HOURS": "4",
         "HANDOFF_TOKEN_SECONDS": "60",
@@ -366,6 +389,7 @@
         "FREE_TASTE_ROUNDS_PER_DAY": "1",
         "FREE_MODE_SWITCH_COOLDOWN_DAYS": "5",
         "TRIAL_DAYS": "0",
+        "FREE_TIER_ENABLED": "false",
         "ANON_FREE_ROUNDS": "unlimited",
         "FREE_GAME_COUNT": "1",
         "FREE_GAME_CHOICES": "all",

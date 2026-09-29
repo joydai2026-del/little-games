@@ -1,6 +1,11 @@
 // RS256 JWT verification against a JWKS URL (Google ID tokens and Cloudflare
 // Access assertions). The URL, issuers and audience are config, so tests point
 // them at a local fake issuer.
+//
+// Fetching keys: one fetch at a time per URL (single flight); a normal cache of
+// JWKS_CACHE_MS; and an unknown `kid` forces a refresh at most once per
+// JWKS_MIN_REFRESH_MS per URL, so forged tokens cannot make us fetch on every
+// request.
 import { b64urlDecode } from '../crypto';
 
 interface Jwk {
@@ -11,23 +16,48 @@ interface Jwk {
   alg?: string;
 }
 
-const CACHE_MS = 10 * 60_000;
+const JWKS_CACHE_MS = 10 * 60_000;
+const JWKS_MIN_REFRESH_MS = 60_000;
 const cache = new Map<string, { at: number; keys: Jwk[] }>();
+const inflight = new Map<string, Promise<Jwk[]>>();
 
 /** Tests only. */
 export function clearJwksCache(): void {
   cache.clear();
+  inflight.clear();
 }
 
-async function keysFor(url: string, force: boolean, nowMs: number): Promise<Jwk[]> {
-  const hit = cache.get(url);
-  if (hit && !force && nowMs - hit.at < CACHE_MS) return hit.keys;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`jwks fetch ${res.status}`);
-  const body = (await res.json()) as { keys?: Jwk[] };
-  const keys = Array.isArray(body.keys) ? body.keys : [];
-  cache.set(url, { at: nowMs, keys });
-  return keys;
+function fetchKeys(url: string, nowMs: number): Promise<Jwk[]> {
+  const running = inflight.get(url);
+  if (running) return running;
+  const p = (async () => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`jwks fetch ${res.status}`);
+      const body = (await res.json()) as { keys?: Jwk[] };
+      const keys = Array.isArray(body.keys) ? body.keys : [];
+      cache.set(url, { at: nowMs, keys });
+      return keys;
+    } finally {
+      inflight.delete(url);
+    }
+  })();
+  inflight.set(url, p);
+  return p;
+}
+
+async function keyFor(url: string, kid: string | undefined, nowMs: number): Promise<Jwk | undefined> {
+  let hit = cache.get(url);
+  if (!hit || nowMs - hit.at >= JWKS_CACHE_MS) {
+    await fetchKeys(url, nowMs);
+    hit = cache.get(url);
+  }
+  let jwk = hit?.keys.find((k) => k.kid === kid);
+  if (!jwk && hit && nowMs - hit.at >= JWKS_MIN_REFRESH_MS) {
+    await fetchKeys(url, nowMs);
+    jwk = cache.get(url)?.keys.find((k) => k.kid === kid);
+  }
+  return jwk;
 }
 
 const dec = new TextDecoder();
@@ -49,12 +79,7 @@ export async function verifyRs256(token: unknown, o: VerifyOpts): Promise<Record
     const header = JSON.parse(dec.decode(b64urlDecode(parts[0]))) as { alg?: string; kid?: string };
     if (header.alg !== 'RS256') return null;
     const payload = JSON.parse(dec.decode(b64urlDecode(parts[1]))) as Record<string, unknown>;
-    let keys = await keysFor(o.jwksUrl, false, o.nowMs);
-    let jwk = keys.find((k) => k.kid === header.kid);
-    if (!jwk) {
-      keys = await keysFor(o.jwksUrl, true, o.nowMs);
-      jwk = keys.find((k) => k.kid === header.kid);
-    }
+    const jwk = await keyFor(o.jwksUrl, header.kid, o.nowMs);
     if (!jwk || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) return null;
     const key = await crypto.subtle.importKey(
       'jwk',

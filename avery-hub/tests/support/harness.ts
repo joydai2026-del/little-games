@@ -11,8 +11,38 @@ import { setClock } from '../../src/clock';
 import { clearJwksCache } from '../../src/auth/jwt';
 import type { Env } from '../../src/env';
 import { freshDb, type FakeD1 } from './fake-d1';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const HUB = 'https://hub.test';
+
+let defaultVars: Record<string, unknown> = {};
+/** Per test file: vars every buildHub() in that file starts from (e.g. FREE_TIER_ENABLED). */
+export function setDefaultVars(v: Record<string, unknown>): void {
+  defaultVars = v;
+}
+
+/** A counting stand-in for a Cloudflare rate-limit binding, using the limits in wrangler.jsonc. */
+export class CountingLimiter {
+  counts = new Map<string, number>();
+  keys: string[] = [];
+  constructor(readonly limit: number, readonly clock: { t: number }, readonly periodMs = 60_000) {}
+  async limit_(key: string) {
+    const k = `${Math.floor(this.clock.t / this.periodMs)}:${key}`;
+    const n = (this.counts.get(k) ?? 0) + 1;
+    this.counts.set(k, n);
+    this.keys.push(key);
+    return { success: n <= this.limit };
+  }
+  limitFn = ({ key }: { key: string }) => this.limit_(key);
+}
+
+function wranglerLimits(): Record<string, number> {
+  const text = readFileSync(join(decodeURIComponent(new URL('../..', import.meta.url).pathname), 'wrangler.jsonc'), 'utf8')
+    .split('\n').map((l) => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+  const cfg = JSON.parse(text) as { ratelimits: { name: string; simple: { limit: number } }[] };
+  return Object.fromEntries(cfg.ratelimits.map((r) => [r.name, r.simple.limit]));
+}
 export const GOOGLE_ISS = 'https://accounts.google.test';
 export const ACCESS_ISS = 'https://team.access.test';
 
@@ -70,6 +100,8 @@ export interface Hub {
   fetch(path: string, init?: RequestInit & { cookies?: Record<string, string> }): Promise<Response>;
   tokenStorage: Map<string, MapStorage>;
   core: typeof hub;
+  limiters: Record<string, CountingLimiter>;
+  fetchLog: string[];
 }
 
 export const METHODS = [
@@ -105,8 +137,14 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
       return o;
     },
   };
+  const limits = wranglerLimits();
+  const limiters = Object.fromEntries(Object.entries(limits).map(([n, l]) => [n, new CountingLimiter(l, clock)]));
   const env = {
     DB: db,
+    DB_READY: 'true',
+    RATE_KEY: randomToken(32),
+    FREE_TIER_ENABLED: 'false',
+    ...Object.fromEntries(Object.entries(limiters).map(([n, l]) => [n, { limit: l.limitFn }])),
     TOKENS,
     BILLING: {},
     HUB_VERSION: 'test',
@@ -131,13 +169,16 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
     FREE_MODE_SWITCH_COOLDOWN_DAYS: '5',
     FREE_GAME_CHOICES: 'all',
     GAME_REGISTRY: registry,
+    ...defaultVars,
     ...opts.vars,
   } as unknown as Env;
 
   const codes = new Map<string, { user: GoogleUser; nonceOverride?: string; aud?: string; iss?: string; expOffset?: number }>();
   const nonces = new Map<string, string>(); // code -> nonce captured from the auth redirect
+  const fetchLog: string[] = [];
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
+    fetchLog.push(url);
     if (url === `${GOOGLE_ISS}/certs`) return Response.json(google.jwks());
     if (url === `${ACCESS_ISS}/cdn-cgi/access/certs`) return Response.json(access.jwks());
     if (url === `${GOOGLE_ISS}/token`) {
@@ -162,7 +203,7 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
   });
 
   const h: Hub = {
-    env, db, google, access, clock, gameKeys, codes, tokenStorage, core: hub,
+    env, db, google, access, clock, gameKeys, codes, tokenStorage, core: hub, limiters, fetchLog,
     async fetch(path, init = {}) {
       const headers = new Headers(init.headers);
       if (init.cookies) headers.set('Cookie', Object.entries(init.cookies).map(([k, v]) => `${k}=${v}`).join('; '));
