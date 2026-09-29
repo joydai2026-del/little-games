@@ -1,0 +1,320 @@
+{
+  "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+  "deployedVersion": "f97a2e90-e40f-4810-b58a-a6e654f9c66d",
+  "deployedCommit": "4ad8235",
+  "startedAt": "2026-09-28T21:54:42.377Z",
+  "checks": [
+    {
+      "name": "home page",
+      "pass": true,
+      "at": "2026-09-28T21:54:44.413Z",
+      "status": 200
+    },
+    {
+      "name": "stroke proxy returns manifest bytes for 我",
+      "pass": true,
+      "at": "2026-09-28T21:54:44.496Z",
+      "status": 200,
+      "sha256": "08616462fc64b4c18c76a3f68a992305e98946f468bf42ec76ca9be1cd6c5ac8",
+      "contentType": "application/json; charset=utf-8",
+      "nosniff": "nosniff",
+      "cacheControl": "public, max-age=2592000, immutable"
+    },
+    {
+      "name": "stroke proxy rejects ..%2Fx",
+      "pass": true,
+      "at": "2026-09-28T21:54:44.525Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "stroke proxy rejects %E6%88%91%E4%BB%AC",
+      "pass": true,
+      "at": "2026-09-28T21:54:44.756Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "stroke proxy rejects %F0%A0%AE%B7",
+      "pass": true,
+      "at": "2026-09-28T21:54:45.139Z",
+      "status": 400,
+      "body": {
+        "error": "no stroke data for that"
+      }
+    },
+    {
+      "name": "licence served",
+      "pass": true,
+      "at": "2026-09-28T21:54:45.384Z",
+      "status": 200,
+      "firstLine": "ARPHIC PUBLIC LICENSE"
+    },
+    {
+      "name": "malformed room code is 400",
+      "pass": true,
+      "at": "2026-09-28T21:54:45.630Z",
+      "status": 400,
+      "body": {
+        "error": "that is not a room code"
+      }
+    },
+    {
+      "name": "oversized body is 413 with a plain message",
+      "pass": true,
+      "at": "2026-09-28T21:54:45.875Z",
+      "status": 413,
+      "body": {
+        "error": "That is too much text. Paste a shorter list (up to 4000 characters)."
+      }
+    },
+    {
+      "name": "over-long paste is 400 with a plain message",
+      "pass": true,
+      "at": "2026-09-28T21:54:46.014Z",
+      "status": 400,
+      "body": {
+        "error": "That paste is too long. Paste a shorter list (up to 4000 characters)."
+      }
+    },
+    {
+      "name": "room made: no-data character noted, one-stroke character skipped",
+      "pass": true,
+      "at": "2026-09-28T21:54:46.576Z",
+      "status": 200,
+      "code": "6UXG",
+      "list": {
+        "chars": [
+          "山"
+        ],
+        "missing": [
+          "𠮷"
+        ],
+        "skipped": [
+          "一"
+        ],
+        "strokeCounts": {
+          "山": 3
+        },
+        "repeats": 0,
+        "overflow": []
+      },
+      "options": {
+        "level": "big",
+        "charsPerRound": 1
+      }
+    },
+    {
+      "name": "race started: the phones get 2 of 3 strokes and never the missing number",
+      "pass": true,
+      "at": "2026-09-28T21:54:46.959Z",
+      "status": 200,
+      "round": 1,
+      "goAt": 1790632489885,
+      "turnKeys": [
+        "index",
+        "char",
+        "opensAt",
+        "closesAt",
+        "closedAt",
+        "firstRightAt",
+        "winners",
+        "visible",
+        "answer",
+        "hint"
+      ],
+      "visibleCount": 2,
+      "rules": {
+        "secondsPerChar": 12,
+        "hintAfterMisses": 3,
+        "revealMs": 3500,
+        "graceAfterFirstRightMs": 6000,
+        "minAnswerMs": 700
+      }
+    },
+    {
+      "name": "a bare \"correct\" without a drawing is refused (400)",
+      "pass": true,
+      "at": "2026-09-28T21:54:47.511Z",
+      "status": 400,
+      "body": {
+        "error": "send race, seq, turn and points (the stroke you drew, as [x, y] pairs)"
+      }
+    },
+    {
+      "name": "an answer before GO is refused",
+      "pass": true,
+      "at": "2026-09-28T21:54:47.681Z",
+      "status": 409,
+      "body": {
+        "error": "wait for GO",
+        "serverTime": 1790632487662
+      }
+    },
+    {
+      "name": "pace floor: a right stroke right after GO is refused (429)",
+      "pass": true,
+      "at": "2026-09-28T21:54:50.126Z",
+      "status": 429,
+      "body": {
+        "error": "too fast, slow down a little",
+        "serverTime": 1790632490099
+      },
+      "goAt": 1790632489885,
+      "minAnswerMs": 700
+    },
+    {
+      "name": "late joiner waits for the next race",
+      "pass": true,
+      "at": "2026-09-28T21:54:50.178Z",
+      "status": 409,
+      "body": {
+        "error": "this race started before you joined, you are in the next one",
+        "serverTime": 1790632490141
+      }
+    },
+    {
+      "name": "Bo: the missing stroke drawn BACKWARDS is graded wrong by the room; the retry counts once",
+      "pass": true,
+      "at": "2026-09-28T21:54:50.440Z",
+      "first": [
+        200,
+        "mistake"
+      ],
+      "retry": [
+        200,
+        true
+      ],
+      "bo": {
+        "wins": 0,
+        "rights": 0,
+        "mistakes": 1,
+        "totalMs": 0,
+        "seq": 1,
+        "turn": 0,
+        "rightAt": null,
+        "turnMistakes": 1
+      }
+    },
+    {
+      "name": "Ava: the missing stroke drawn along its median is graded right and wins the character",
+      "pass": true,
+      "at": "2026-09-28T21:54:51.041Z",
+      "status": 200,
+      "verdict": "correct",
+      "winners": [
+        "f057dc85-5856-4e05-be08-581d738e01e0"
+      ],
+      "ava": {
+        "wins": 1,
+        "rights": 1,
+        "mistakes": 0,
+        "totalMs": 1028,
+        "seq": 1,
+        "turn": 0,
+        "rightAt": 1790632490913,
+        "turnMistakes": 0
+      }
+    },
+    {
+      "name": "Bo still cannot see the answer while the character is open",
+      "pass": true,
+      "at": "2026-09-28T21:54:51.144Z",
+      "boAnswer": null
+    },
+    {
+      "name": "late joiner not on this race board",
+      "pass": true,
+      "at": "2026-09-28T21:54:51.144Z",
+      "board": [
+        "Ava",
+        "Bo"
+      ]
+    },
+    {
+      "name": "the room clock closed the character (grace after the first right) and ended the race by itself",
+      "pass": true,
+      "at": "2026-09-28T21:55:04.287Z",
+      "phase": "done",
+      "expectedCloseAt": 1790632496913,
+      "closedAt": 1790632496913,
+      "expectedEndAt": 1790632500413,
+      "endedAt": 1790632500413,
+      "results": [
+        {
+          "char": "山",
+          "hidden": 1,
+          "winners": [
+            "f057dc85-5856-4e05-be08-581d738e01e0"
+          ],
+          "times": {
+            "f057dc85-5856-4e05-be08-581d738e01e0": 1028
+          }
+        }
+      ],
+      "answerShownAfterClose": true,
+      "standings": [
+        {
+          "name": "Ava",
+          "wins": 1,
+          "rights": 1,
+          "mistakes": 0,
+          "place": 1
+        },
+        {
+          "name": "Bo",
+          "wins": 0,
+          "rights": 0,
+          "mistakes": 1,
+          "place": 2
+        }
+      ]
+    },
+    {
+      "name": "an answer after the race is refused",
+      "pass": true,
+      "at": "2026-09-28T21:55:04.337Z",
+      "status": 409,
+      "body": {
+        "error": "the race is not on right now",
+        "serverTime": 1790632504320
+      }
+    },
+    {
+      "name": "an answer from an earlier race is refused",
+      "pass": true,
+      "at": "2026-09-28T21:55:04.924Z",
+      "status": 409,
+      "body": {
+        "error": "that answer was for a different race",
+        "serverTime": 1790632504896
+      },
+      "race2": 2
+    },
+    {
+      "name": "late joiner plays the next race",
+      "pass": true,
+      "at": "2026-09-28T21:55:04.924Z",
+      "lateProgress": {
+        "wins": 0,
+        "rights": 0,
+        "mistakes": 0,
+        "totalMs": 0,
+        "seq": 0,
+        "turn": 0,
+        "rightAt": null,
+        "turnMistakes": 0
+      }
+    }
+  ],
+  "room": "6UXG",
+  "readTheCharacter": {
+    "missingStroke": 1
+  },
+  "finishedAt": "2026-09-28T21:55:04.924Z",
+  "allPass": true
+}

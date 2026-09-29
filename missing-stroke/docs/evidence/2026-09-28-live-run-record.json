@@ -1,0 +1,109 @@
+{
+  "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+  "deployed_version": "f97a2e90-e40f-4810-b58a-a6e654f9c66d",
+  "deployed_commit": "4ad8235",
+  "args": {
+    "url": "https://missing-stroke.joyd-ai-2026.workers.dev",
+    "record": false,
+    "level": "big",
+    "no_agent": false,
+    "solo": false
+  },
+  "started_at": "2026-09-28T21:55:12.178847+00:00",
+  "kid_moves": [
+    {
+      "char": "山",
+      "stroke_read": 0,
+      "move": "backwards (wrong)",
+      "pad_wiggled": true
+    },
+    {
+      "char": "山",
+      "stroke_read": 0,
+      "move": "right",
+      "pad_turned_right": true
+    },
+    {
+      "char": "水",
+      "stroke_read": 3,
+      "move": "right",
+      "pad_turned_right": true
+    },
+    {
+      "char": "火",
+      "stroke_read": 3,
+      "move": "right",
+      "pad_turned_right": true
+    }
+  ],
+  "console_errors": [],
+  "code": "9HZX",
+  "missing_note": "We do not have strokes for 𠮷 yet, so we left it out.",
+  "agent_output": [
+    "joined 9HZX as Robo",
+    "drew stroke 1 of 山 backwards: mistake",
+    "drew stroke 1 of 山: right",
+    "drew stroke 4 of 水: right",
+    "drew stroke 4 of 火: right",
+    "{\"rights\":3,\"mistakes\":1,\"wins\":1,\"place\":2,\"phase\":\"done\"}"
+  ],
+  "final": {
+    "phase": "done",
+    "standings": [
+      {
+        "playerId": "f821cfd9-09aa-44e0-a39d-e169fb131c79",
+        "name": "Mia",
+        "agent": false,
+        "wins": 2,
+        "rights": 3,
+        "mistakes": 1,
+        "now": "right",
+        "nowMs": 2163,
+        "place": 1
+      },
+      {
+        "playerId": "c6b98cb0-0376-478d-8866-4de0cef88218",
+        "name": "Robo",
+        "agent": true,
+        "wins": 1,
+        "rights": 3,
+        "mistakes": 1,
+        "now": "right",
+        "nowMs": 3300,
+        "place": 2
+      }
+    ],
+    "results": [
+      {
+        "char": "山",
+        "hidden": 0,
+        "winners": 1,
+        "times": [
+          3758,
+          6826
+        ]
+      },
+      {
+        "char": "水",
+        "hidden": 3,
+        "winners": 1,
+        "times": [
+          3332,
+          3280
+        ]
+      },
+      {
+        "char": "火",
+        "hidden": 3,
+        "winners": 1,
+        "times": [
+          2163,
+          3300
+        ]
+      }
+    ]
+  },
+  "board_text": "1\nMia★★won 2 · 3 of 3 right · 1 oops\n2\nRoboAI★won 1 · 3 of 3 right · 1 oops",
+  "kid_screen": "You are number 1!\n\nYou won 2 and got 3 of 3 right. 好棒!\n\n1\nMiayou★★won 2 · 3 of 3 right · 1 oops\n2\nRoboAI★won 1 · 3 of 3 right · 1 oops",
+  "finished_at": "2026-09-28T21:56:47.024919+00:00"
+}
