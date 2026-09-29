@@ -110,8 +110,7 @@ export function fakeLimiter(allow = true): RateLimit & { calls: number } {
 }
 
 /** An in-memory BudgetDO namespace (one real BudgetDO over FakeStorage). */
-export function fakeBudgets(): DurableObjectNamespace {
-  const storage = new FakeStorage();
+export function fakeBudgets(storage = new FakeStorage()): DurableObjectNamespace {
   const ctx = new FakeState(storage);
   const obj = new BudgetDO(ctx as unknown as DurableObjectState);
   return { idFromName: (n: string) => n, get: () => ({ fetch: (req: Request) => obj.fetch(req) }) } as unknown as DurableObjectNamespace;

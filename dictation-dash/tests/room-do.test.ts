@@ -103,25 +103,61 @@ describe('RoomDO', () => {
     expect((await joinFrom('203.0.113.7', 'Later')).status).toBe(409);
   });
 
-  it('the per-IP join count survives a restart (durable), and old addresses are pruned', async () => {
+  it('the per-IP join count survives a restart (durable), is salted per room, and is pruned', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
-    const env = boundEnv({ JOINS_PER_IP_PER_MINUTE: '2' }) as Env;
+    const env = boundEnv() as Env;
     const first = await buildRoom(env);
     await first.room.fetch(post('create', { code: 'ABCD', text: '大' }));
     const joinFrom = (room: typeof first.room, ip: string, name: string) =>
       room.fetch(new Request('https://room/join', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-client-ip': ip }, body: JSON.stringify({ name }) }));
-    expect((await joinFrom(first.room, '203.0.113.7', 'A')).status).toBe(200);
-    expect((await joinFrom(first.room, '203.0.113.7', 'B')).status).toBe(200);
-    // The Durable Object restarts over the same storage.
+    for (let i = 0; i < GAME.joinsPerIpPerMinute; i++) expect((await joinFrom(first.room, '203.0.113.7', `K${i}`)).status).toBe(200);
+    // The Durable Object restarts over the same storage: the per-IP count is still there, and it
+    // answers FIRST (its own message), before the room-wide rate or "full" would.
     const second = await buildRoom(env, first.storage);
-    expect((await joinFrom(second.room, '203.0.113.7', 'C')).status).toBe(429);
-    expect((await joinFrom(second.room, '198.51.100.1', 'D')).status).toBe(200);
-    // The address is stored only as a hash, and a minute later the old entries are gone.
-    expect(JSON.stringify(first.storage.map.get('joinsByIp'))).not.toContain('203.0.113.7');
+    const again = await joinFrom(second.room, '203.0.113.7', 'Again');
+    expect(again.status).toBe(429);
+    expect(((await again.json()) as any).error).toBe('too many joins from here, wait a moment');
+    // Salted with a random per-room salt: not the address, not a hash of code + address.
+    const stored = JSON.stringify(first.storage.map.get('joinsByIp'));
+    expect(stored).not.toContain('203.0.113.7');
+    const unsalted = async (x: string) =>
+      Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(x))).slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
+    expect(stored).not.toContain(await unsalted('ABCD|203.0.113.7'));
+    expect(typeof first.storage.map.get('joinSalt')).toBe('string');
+    const other = await buildRoom(env);
+    await other.room.fetch(post('create', { code: 'WXYZ', text: '大' }));
+    await joinFrom(other.room, '203.0.113.7', 'Elsewhere');
+    expect(Object.keys(other.storage.map.get('joinsByIp') as object)[0]).not.toBe(Object.keys(first.storage.map.get('joinsByIp') as object)[0]);
+    // A minute later the old entries are pruned on the next write.
     vi.setSystemTime(Date.now() + 61_000);
-    expect((await joinFrom(second.room, '192.0.2.9', 'E')).status).toBe(200);
+    await joinFrom(second.room, '192.0.2.9', 'Late'); // the room is full (409); nothing is written
     expect(Object.keys(first.storage.map.get('joinsByIp') as object)).toHaveLength(1);
+  });
+
+  it('JOINS_PER_IP_PER_MINUTE can never go below the seat cap (the round-4 lockout)', async () => {
+    const { joinsPerIpCap } = await import('../src/worker/room-do');
+    expect(joinsPerIpCap({ JOINS_PER_IP_PER_MINUTE: '2' } as Env)).toBe(GAME.maxKids);
+    expect(joinsPerIpCap({} as Env)).toBe(GAME.joinsPerIpPerMinute);
+    expect(joinsPerIpCap({ JOINS_PER_IP_PER_MINUTE: '100' } as Env)).toBe(100);
+  });
+
+  it('the global budget stores IP keys with a random per-day salt', async () => {
+    const { fakeBudgets, FakeStorage } = await import('./harness');
+    const storage = new FakeStorage();
+    const ns = fakeBudgets(storage);
+    const obj = ns.get(ns.idFromName('global'));
+    const r = (await (await obj.fetch(new Request('https://budget/reserve?limit=10&ipLimit=5&ip=203.0.113.7', { method: 'POST' }))).json()) as any;
+    expect(r.ok).toBe(true);
+    const read = (await (await obj.fetch(new Request('https://budget/read'))).json()) as any;
+    expect(read.ips).toBe(1);
+    const day = storage.map.get('day') as any;
+    expect(typeof day.salt).toBe('string');
+    expect(day.salt.length).toBeGreaterThan(16);
+    const unsalted = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${day.day}|203.0.113.7`))).slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
+    expect(Object.keys(day.byIp)).toHaveLength(1);
+    expect(Object.keys(day.byIp)[0]).not.toBe(unsalted);
+    expect(JSON.stringify(day)).not.toContain('203.0.113.7');
   });
 
   it('an expired room is gone', async () => {

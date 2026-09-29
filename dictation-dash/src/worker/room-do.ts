@@ -44,6 +44,8 @@ const KEY_GEOM = 'geom';
 const KEY_TTS = 'ttsDay';
 /** Recent joins per (hashed) IP, for the per-IP join cap. */
 const KEY_JOINS = 'joinsByIp';
+/** This room's random salt for the join-count hash (made when the room is created). */
+const KEY_SALT = 'joinSalt';
 const KEY_SECRETS = 'secrets';
 const ROOM_GONE = 'that room is not around any more';
 const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
@@ -64,9 +66,9 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** A salted hash of the joining IP: the address itself is never stored. */
-async function ipKey(code: string, ip: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${code}|${ip}`)));
+/** A hash of the joining IP with this room's random salt: the address is never stored, and cannot be brute-forced back without the salt. */
+async function ipKey(salt: string, ip: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}|${ip}`)));
   return Array.from(digest.slice(0, 12), (x) => x.toString(16).padStart(2, '0')).join('');
 }
 
@@ -81,8 +83,9 @@ export function pruneJoins(joins: Record<string, number[]>, now: number): Record
 }
 
 /** The per-IP join cap: config var JOINS_PER_IP_PER_MINUTE, default GAME.joinsPerIpPerMinute (the seat cap). */
-function joinsPerIpCap(env: Env): number {
-  return numberVar(env.JOINS_PER_IP_PER_MINUTE, GAME.joinsPerIpPerMinute, 1, 10_000);
+export function joinsPerIpCap(env: Env): number {
+  // Never below the seat cap: 8/min locked a class out on shared school Wi-Fi (review round 4).
+  return numberVar(env.JOINS_PER_IP_PER_MINUTE, GAME.joinsPerIpPerMinute, GAME.maxKids, 10_000);
 }
 
 export class RoomDO implements DurableObject {
@@ -99,6 +102,7 @@ export class RoomDO implements DurableObject {
    * is already stored in the room state.)
    */
   private joinsByIp: Record<string, number[]> = {};
+  private joinSalt = '';
   private geom: Record<string, CharGeom> = {};
   /** This room's paid speech calls today, held in memory so a reservation never awaits (persisted on every change). */
   private ttsDay: { day: string; used: number } = { day: '', used: 0 };
@@ -110,14 +114,16 @@ export class RoomDO implements DurableObject {
     private readonly env: Env
   ) {
     this.ctx.blockConcurrencyWhile(async () => {
-      const [room, secrets, geom, ttsDay, joins] = await Promise.all([
+      const [room, secrets, geom, ttsDay, joins, salt] = await Promise.all([
         this.ctx.storage.get<RoomState>(KEY_STATE),
         this.ctx.storage.get<Record<string, string>>(KEY_SECRETS),
         this.ctx.storage.get<Record<string, CharGeom>>(KEY_GEOM),
         this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS),
         this.ctx.storage.get<Record<string, number[]>>(KEY_JOINS),
+        this.ctx.storage.get<string>(KEY_SALT),
       ]);
       this.joinsByIp = joins ?? {};
+      this.joinSalt = salt ?? '';
       this.ttsDay = ttsDay ?? { day: '', used: 0 };
       this.room = room ?? null;
       this.secrets = secrets ?? {};
@@ -139,6 +145,8 @@ export class RoomDO implements DurableObject {
     this.room = null;
     this.secrets = {};
     this.geom = {};
+    this.joinsByIp = {};
+    this.joinSalt = '';
   }
 
   /** Makes sure the room holds verified stroke data for every character it needs. Returns an error message or null. */
@@ -212,7 +220,12 @@ export class RoomDO implements DurableObject {
     if (path === 'join') {
       await this.settle(now);
       // Every await happens first; the check, the join and the count then run in one step.
-      const key = await ipKey(this.room.code, request.headers.get('x-client-ip') ?? 'no-ip');
+      if (!this.joinSalt) {
+        // A room made before salts existed gets one now.
+        this.joinSalt = crypto.randomUUID();
+        await this.ctx.storage.put(KEY_SALT, this.joinSalt);
+      }
+      const key = await ipKey(this.joinSalt, request.headers.get('x-client-ip') ?? 'no-ip');
       const b = await body(request);
       if (!this.room) return json({ error: ROOM_GONE }, 404);
       // Per-IP flood control first (before the room's rate and fullness).
@@ -395,7 +408,8 @@ export class RoomDO implements DurableObject {
     const options = b.options && typeof b.options === 'object' ? (b.options as Record<string, unknown>) : undefined;
     this.room = createRoom(String(b.code ?? ''), { id: hostId, name: String(b.name ?? '') }, mode, options, resolveWords(typeof b.text === 'string' ? b.text : ''), now);
     this.secrets = { [hostId]: crypto.randomUUID() };
-    await this.ctx.storage.put({ [KEY_STATE]: this.room, [KEY_SECRETS]: this.secrets });
+    this.joinSalt = crypto.randomUUID();
+    await this.ctx.storage.put({ [KEY_STATE]: this.room, [KEY_SECRETS]: this.secrets, [KEY_SALT]: this.joinSalt });
     await this.armAlarm(now);
     return this.envelope(hostId, { code: this.room.code, playerId: hostId, playerSecret: this.secrets[hostId] });
   }
