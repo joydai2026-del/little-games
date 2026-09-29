@@ -4,6 +4,12 @@ Status: **TEMPLATE, NOT YET RUN.** No agent has Stripe access yet. The coordinat
 fills this in once JJ issues a read-capable restricted key, and **before** the
 Avery endpoint is added by `scripts/stripe-setup.ts`.
 
+This file is also the setup script's gate: it will not create the Avery webhook
+endpoint unless it is passed `--inventory-receipt docs/ops/stripe-webhook-inventory.md`
+and this file has a real date on the line below and no `TODO` left anywhere.
+
+inventory_completed: TODO
+
 ## Why this exists
 
 The Ownly Network LLC Stripe account is shared with Agent Company (it ran an
@@ -30,18 +36,20 @@ return signing secrets.
 printf 'header = "Authorization: Bearer %s"\n' "$AVERY_STRIPE_KEY" | \
   curl -sS --config - -G https://api.stripe.com/v1/webhook_endpoints \
     -H 'Stripe-Version: 2026-08-26.dahlia' -d limit=100 | \
-  jq -r '.data[] | [.id, .livemode, .status, .url, (.api_version // "account default"),
-                    (.metadata.app // "-"), (.enabled_events | join(" "))] | @tsv'
+  jq -r '"has_more=\(.has_more)", (.data[] | [.id, .livemode, .status, .url, (.api_version // "account default"),
+                    (.metadata.app // "-"), (.enabled_events | join(" "))] | @tsv)'
 ```
 
-If `has_more` is true in the raw response, repeat with `-d starting_after=<last id>`.
+The first output line shows `has_more`. If it is `true`, repeat with
+`-d starting_after=<last id>`. The `Stripe-Version` value must match
+`STRIPE_API_VERSION` in `src/stripe/client.ts`.
 
 ## Result (fill in)
 
 | Mode | Endpoint id | URL | Status | Events | Owner | Touches charge / subscription events? | Ignores Avery? | Action |
 |---|---|---|---|---|---|---|---|---|
-| test | | | | | | | | |
-| live | | | | | | | | |
+| test | TODO | | | | | | | |
+| live | TODO | | | | | | | |
 
 Run date: ______  Run by: ______  Key used (name only, never the value): ______
 
