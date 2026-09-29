@@ -10,6 +10,7 @@ README, tests, and build docs.
 | 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
 | 猜猜我是谁 Stroke Reveal | Momo draws a Chinese character one stroke at a time on the big screen; kids race to tap the right word on their phones. | `stroke-reveal/` |
 | 补一笔 Missing Stroke | Momo forgot one stroke: kids race to draw it in the right spot, solo or as a class. Live: https://missing-stroke.joyd-ai-2026.workers.dev | `missing-stroke/` |
+| Dictation Dash 听写赛跑 | Grades 3 to 5: Momo says a word, kids write it from memory stroke by stroke; Easy shows a faint outline, Hard is a blank box. Live: https://dictation-dash.joyd-ai-2026.workers.dev | `dictation-dash/` |
 
 ## 田字格 Writing Sheets
 
@@ -65,6 +66,18 @@ draw it in the right spot, solo on one phone or as a class. Details in [`missing
 <!-- mp4 user-attachments URL: pending, JJ adds -->
 
 Files: [missing-stroke-demo.mp4](missing-stroke/docs/demo/missing-stroke-demo.mp4) · [missing-stroke-demo.gif](missing-stroke/docs/demo/missing-stroke-demo.gif)
+
+## Dictation Dash 听写赛跑
+
+Live at: **https://dictation-dash.joyd-ai-2026.workers.dev** · A listening game for grades 3 to 5:
+Momo says a word, kids write it from memory, the fastest correct writer wins. Two levels on two big
+buttons: Easy (faint outline) and Hard (blank box). Details in [`dictation-dash/README.md`](dictation-dash/README.md).
+
+![Dictation Dash demo: a kid writes words from memory on a phone while the class board updates](dictation-dash/docs/demo/dictation-dash-demo.gif)
+
+<!-- mp4 user-attachments URL: pending, JJ adds -->
+
+Files: [dictation-dash-demo.mp4](dictation-dash/docs/demo/dictation-dash-demo.mp4) · [dictation-dash-demo.gif](dictation-dash/docs/demo/dictation-dash-demo.gif)
 
 ## Caption Wars
 

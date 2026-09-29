@@ -8,6 +8,7 @@ Small games JJ plays with AI players or with friends. One game per folder. Read 
 - `tianzige-generator/` : paste Chinese characters, print a 田字格 stroke-order practice sheet. Avery Studio classroom tool on Cloudflare.
 - `stroke-reveal/` : 猜猜我是谁 Stroke Reveal. Momo draws a character stroke by stroke, kids tap the right word (Avery Studio). Web app on Cloudflare.
 - `missing-stroke/` : 补一笔 Missing Stroke: Momo forgot one stroke, kids race to draw it (solo or class race). Avery Studio, web app on Cloudflare.
+- `dictation-dash/` : 听写赛跑 listening game for grades 3 to 5: Momo says a word, kids write it from memory (Easy outline / Hard blank). Avery Studio, Cloudflare + Workers AI speech.
 - Each game owns its own `README.md`, `package.json`, tests, and `docs/plans/`.
 
 ## House rules for this repo

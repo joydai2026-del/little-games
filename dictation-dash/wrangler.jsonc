@@ -1,0 +1,56 @@
+{
+  // JSONC config on purpose (the repo .gitignore ignores wrangler.toml, not this).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dictation-dash",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-07",
+  // workers.dev ONLY. No custom domain, no routes.
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "RoomDO" },
+      // One global counter of paid speech calls per UTC day.
+      { "name": "BUDGET", "class_name": "BudgetDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["BudgetDO"] }
+  ],
+  // Workers AI: the Chinese speech for each word (paid per call, so cached).
+  "ai": { "binding": "AI" },
+  "observability": { "enabled": true },
+  // Policy lives here, not in source. `period` may only be 10 or 60.
+  "ratelimits": [
+    // The only unauthenticated route that creates anything is POST /api/rooms.
+    { "name": "ROOM_CREATE_LIMITER", "namespace_id": "1011", "simple": { "limit": 20, "period": 60 } },
+    // Paid speech calls (cache misses only) per IP. A class of 30 hearing the
+    // same 5 words makes 5 misses; this only stops a script.
+    { "name": "TTS_LIMITER", "namespace_id": "1012", "simple": { "limit": 30, "period": 60 } }
+  ],
+  "vars": {
+    // Stroke data: the SOURCE is pinned in src/worker/strokes.ts next to its
+    // sha256 manifest (not a var on purpose). Only caching is policy.
+    "STROKE_CACHE_SECONDS": "2592000",
+    "STROKE_FETCH_TIMEOUT_MS": "6000",
+    // Upstream body cap. The largest file in hanzi-writer-data 2.0.1 is 8,621 bytes.
+    "STROKE_MAX_BYTES": "65536",
+    // Speech. The model id is config, never a literal in game logic.
+    "TTS_MODEL": "@cf/myshell-ai/melotts",
+    "TTS_LANG": "zh",
+    "TTS_MAX_ATTEMPTS": "3",
+    "TTS_CACHE_SECONDS": "86400",
+    "TTS_MAX_BYTES": "1048576",
+    // Paid speech calls (every model attempt, retries included) per UTC day.
+    // Reaching either one switches speech off (fail closed) until tomorrow.
+    "TTS_ROOM_DAILY_CALLS": "150",
+    "TTS_GLOBAL_DAILY_CALLS": "3000",
+    // One IP's share of the day (below the global cap).
+    "TTS_IP_DAILY_CALLS": "400"
+  }
+}

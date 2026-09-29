@@ -1,0 +1,3 @@
+# The Arphic licence is served byte-identical to the upstream file, trailing spaces included. Never edit it.
+public/licenses/ARPHICPL.TXT -whitespace
+tests/fixtures/strokes/*.json -whitespace -text

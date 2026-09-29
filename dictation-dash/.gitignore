@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.wrangler/
+docs/demo/*.webm
+docs/demo/_raw/
+docs/evidence/_audio/
