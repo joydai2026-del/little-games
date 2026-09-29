@@ -1,0 +1,45 @@
+<!-- The page shell every avery-hub page uses, rendered from src/pages/layout.ts.
+     Kept in sync by tests/brand-shell.test.ts; the brand check (scripts/check-brand.sh) reads this file. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FDF6EC">
+<meta name="robots" content="noindex">
+<title>Page title · Avery Studio</title>
+<link rel="icon" href="/momo-icon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Noto+Sans+SC:wght@400;500;700&family=Quicksand:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); }
+  main { max-width: 560px; margin: 0 auto; padding: 16px; }
+  h1 { font-family: var(--font-head); font-size: 1.8rem; margin: 8px 0 12px; }
+  .card { background: var(--card); border-radius: 18px; padding: 16px; margin: 14px 0; box-shadow: 0 2px 0 var(--paper-deep); }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--paper-deep); }
+  .row:last-child { border-bottom: 0; }
+  .muted { color: var(--ink-soft); }
+  form { margin: 10px 0; }
+  button { min-height: var(--tap); width: 100%; font: inherit; font-weight: 700; border-radius: 14px; cursor: pointer; }
+  a.btn-primary, a.btn-secondary { display: flex; align-items: center; justify-content: center; min-height: var(--tap); border-radius: 14px; text-decoration: none; font-weight: 700; }
+  .danger { background: var(--pink-soft); color: var(--ink); border: 3px solid var(--pink-deep); }
+</style>
+</head>
+<body>
+<header class="avery-header">
+  <a href="/me" aria-label="Avery Studio: my account">
+    <img src="/momo-icon.png" srcset="/momo-icon.png 1x, /momo-icon@2x.png 2x" alt="" width="44" height="44">
+    <span class="avery-lockup"><span class="avery-wordmark">Avery Studio</span><span class="avery-tagline">with 墨墨 Momo</span></span>
+  </a>
+</header>
+<main>
+{{BODY}}
+</main>
+<footer class="avery-footer">
+  <p class="avery-line"><b>Avery Studio</b> · 墨墨 Momo · averystudio.org</p>
+  <p class="avery-credits">Need help? Write to <a href="mailto:hello@averystudio.org">hello@averystudio.org</a>.</p>
+</footer>
+</body>
+</html>
