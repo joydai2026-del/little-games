@@ -234,7 +234,9 @@ const ARGS: SetupArgs = { env: 'staging', live: false, hubOrigin: ORIGIN };
 const EXPECTED: ExpectedTarget = { hubOrigin: ORIGIN, accountId: ACCOUNT };
 /** The fake starts with ONE non-Avery endpoint (Agent Company); this is its reviewed digest. */
 const AGENTCO_DIGEST = await inventoryDigest([new FakeStripe().store.webhooks[0]!]);
-const GATES_OK: Gates = { inventory: { ok: true, reason: 'test_mode_completed 2026-09-29', accountId: ACCOUNT, digest: AGENTCO_DIGEST, reviewedIds: ['we_agentco'] }, tax: { taxable: true } };
+/** The review row matching the fake's Agent Company endpoint exactly. */
+const AGENTCO_ROW = { id: 'we_agentco', url: 'https://api.ownlyagent.com/stripe', status: 'enabled', events: ['*'] };
+const GATES_OK: Gates = { inventory: { ok: true, reason: 'test_mode_completed 2026-09-29', accountId: ACCOUNT, digest: AGENTCO_DIGEST, reviewedRows: [AGENTCO_ROW] }, tax: { taxable: true } };
 
 async function setup(fake: FakeStripe, o: { args?: SetupArgs; expected?: ExpectedTarget; gates?: Gates } = {}) {
   const lines: string[] = [];
@@ -529,18 +531,48 @@ describe('stripe-setup against a fake Stripe', () => {
 
   it('an endpoint with no complete review row is refused even when the digest matches', async () => {
     const fake = new FakeStripe();
-    await refusal(setup(fake, { gates: { inventory: { ...GATES_OK.inventory, reviewedIds: ['we_someother'] } } }), /no review row for we_agentco/);
+    await refusal(setup(fake, { gates: { inventory: { ...GATES_OK.inventory, reviewedRows: [{ ...AGENTCO_ROW, id: 'we_someother' }] } } }), /no review row for we_agentco \(live: url https:\/\/api\.ownlyagent\.com\/stripe/);
     expect(fake.posts).toHaveLength(0);
+  });
+
+  const rowCases: Array<[string, typeof AGENTCO_ROW]> = [
+    ['url', { ...AGENTCO_ROW, url: 'https://api.ownlyagent.com/old' }],
+    ['status', { ...AGENTCO_ROW, status: 'disabled' }],
+    ['events', { ...AGENTCO_ROW, events: ['charge.refunded'] }],
+  ];
+  for (const [what, row] of rowCases) {
+    it(`a review row whose ${what} differs from the live endpoint is refused, with the live values printed`, async () => {
+      const fake = new FakeStripe();
+      await refusal(
+        setup(fake, { gates: { inventory: { ...GATES_OK.inventory, reviewedRows: [row] } } }),
+        /review row for we_agentco does not match Stripe \(live: url https:\/\/api\.ownlyagent\.com\/stripe, status enabled, events \*\)/,
+      );
+      expect(fake.posts).toHaveLength(0);
+    });
+  }
+
+  it('a receipt naming another account also prints the digest hint', async () => {
+    const fake = new FakeStripe();
+    await refusal(
+      setup(fake, { gates: { inventory: { ...GATES_OK.inventory, accountId: 'acct_other' } } }),
+      new RegExp(`receipt is for acct_other.*test_mode_endpoints_digest after review: ${AGENTCO_DIGEST}`),
+    );
   });
 
   it('a FOREIGN endpoint carrying app=avery metadata is still part of the digest', async () => {
     const fake = new FakeStripe();
     fake.store.webhooks.push({ id: 'we_stale_avery', object: 'webhook_endpoint', url: 'https://old-hub.example/stripe/webhook', enabled_events: ['charge.refunded'], status: 'enabled', livemode: false, metadata: { app: 'avery', avery_object: 'hub_webhook' } });
     await refusal(setup(fake), /inventory is stale/);
-    // Same URL as ours but missing the avery_object tag: also part of the digest.
+    // OUR hub URL, app=avery, right events, but missing the avery_object tag:
+    // not the fully identified Avery endpoint, so it stays in the digest and
+    // the tag backfill (a webhook write) is refused as a stale inventory.
     const f2 = new FakeStripe();
-    f2.store.webhooks.push({ id: 'we_untagged', object: 'webhook_endpoint', url: 'https://x.example/h', enabled_events: ['*'], status: 'enabled', livemode: false, metadata: { app: 'avery' } });
+    f2.store.webhooks.push({
+      id: 'we_untagged', object: 'webhook_endpoint', url: `${ORIGIN}/stripe/webhook`, enabled_events: [...HANDLED_EVENTS], status: 'enabled',
+      livemode: false, api_version: STRIPE_API_VERSION, metadata: { app: 'avery' },
+    });
     await refusal(setup(f2), /inventory is stale/);
+    expect(f2.store.webhooks.find((w) => w.id === 'we_untagged')!.metadata).toEqual({ app: 'avery' });
   });
 
   it('the account-mismatch refusal also prints the digest hint', async () => {
@@ -819,7 +851,7 @@ describe('stripe-setup key, flag and config checks', () => {
 
   it('inventory receipt: per-mode fields; the other mode being unfinished does not block', () => {
     const today = '2026-09-29';
-    expect(checkInventoryReceipt(INV, 'test', today)).toEqual({ ok: true, reason: 'test_mode_completed 2026-09-29', accountId: 'acct_ownlytest123', digest: AGENTCO_DIGEST, reviewedIds: ['we_agentco'] });
+    expect(checkInventoryReceipt(INV, 'test', today)).toEqual({ ok: true, reason: 'test_mode_completed 2026-09-29', accountId: 'acct_ownlytest123', digest: AGENTCO_DIGEST, reviewedRows: [AGENTCO_ROW] });
     expect(checkInventoryReceipt(INV.replace('acct_ownlytest123', ''), 'test', today).reason).toMatch(/account_id/);
     expect(checkInventoryReceipt(INV.replace(AGENTCO_DIGEST, 'TODO'), 'test', today).reason).toMatch(/endpoints_digest/);
     expect(checkInventoryReceipt(INV.replace(AGENTCO_DIGEST, 'abc'), 'test', today).reason).toMatch(/64-hex/);
@@ -845,7 +877,9 @@ describe('stripe-setup key, flag and config checks', () => {
     expect(reviewRowProblem(ROW.replace('ignores avery', 'reviewed'))).toMatch(/Ignores Avery\?/);
     expect(reviewRowProblem(ROW.replace('ignores avery', 'Avery endpoint'))).toBeNull();
     expect(reviewRowProblem(ROW.replace('we_agentco', 'agentco'))).toMatch(/we_\.\.\. or none/);
-    expect(reviewRowProblem('| test | none | - | - | - | - | no | ignores avery | none |')).toBeNull();
+    expect(reviewRowProblem('| test | none | none | none | none | none | no | ignores avery | none |')).toBeNull();
+    expect(reviewRowProblem('| test | none | - | - | - | - | no | ignores avery | none |')).toMatch(/column 3 is blank or unknown/);
+    expect(reviewRowProblem(ROW.replace('| Agent Company |', '| - |'))).toMatch(/column 6 is blank or unknown/);
   });
 
   // An in-memory file system for the receipt wiring main() uses.

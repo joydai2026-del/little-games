@@ -13,8 +13,11 @@ a copy) and, for the mode it runs in (test or live):
   to, and the endpoints digest;
 - the result table has one complete row for EVERY other endpoint in that mode
   (all 9 columns filled, nothing blank, "unknown" or TODO; "Touches..." is `yes`
-  or `no`; "Ignores Avery?" is exactly `ignores avery` or `avery endpoint`). An
-  account with no other endpoints writes one row with endpoint id `none`.
+  or `no`; "Ignores Avery?" is exactly `ignores avery` or `avery endpoint`; a
+  `-` is not a value). The row's URL, Status and Events must match what Stripe
+  shows now (events separated by spaces or commas). An account with no other
+  endpoints writes one row with `none` in every column except mode, touches (`no`)
+  and verdict (`ignores avery`).
 
 The digest is a sha256 over every endpoint except the Avery hub endpoint itself
 (id, url, status, events). Only the endpoint at this environment's hub URL AND

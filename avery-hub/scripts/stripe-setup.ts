@@ -76,14 +76,22 @@ export interface ExpectedTarget {
 }
 
 /** Results of the file checks main() does before calling runSetup. */
+export interface ReviewedRow {
+  id: string;
+  url: string;
+  status: string;
+  /** Sorted event names as written in the row. */
+  events: string[];
+}
+
 export interface InventoryGate {
   ok: boolean;
   reason: string;
   accountId?: string;
   /** sha256 hex of the reviewed non-Avery endpoints (see inventoryDigest). */
   digest?: string;
-  /** Endpoint ids that have a complete review row for this mode ("none" allowed). */
-  reviewedIds?: string[];
+  /** Complete review rows for this mode; compared field by field with the live endpoints. */
+  reviewedRows?: ReviewedRow[];
 }
 export interface Gates {
   inventory: InventoryGate;
@@ -236,13 +244,14 @@ export function checkInventoryReceipt(text: string, mode: 'test' | 'live', today
   if (!digest || !/^[0-9a-f]{64}$/.test(digest)) return { ok: false, reason: `field "${prefix}_endpoints_digest" must be the 64-hex digest the script prints` };
   const rows = text.split('\n').filter((l) => new RegExp(`^\\|\\s*${mode}\\s*\\|`).test(l));
   if (rows.length === 0) return { ok: false, reason: `no reviewed "| ${mode} |" rows in the result table` };
-  const reviewedIds: string[] = [];
+  const reviewedRows: ReviewedRow[] = [];
   for (const row of rows) {
     const problem = reviewRowProblem(row);
     if (problem) return { ok: false, reason: `review row "${row.trim()}": ${problem}` };
-    reviewedIds.push(row.split('|')[2]!.trim());
+    const cells = rowCells(row);
+    reviewedRows.push({ id: cells[1]!, url: cells[2]!, status: cells[3]!, events: splitEvents(cells[4]!) });
   }
-  return { ok: true, reason: dated.reason, accountId, digest, reviewedIds };
+  return { ok: true, reason: dated.reason, accountId, digest, reviewedRows };
 }
 
 /** Allowed values for the "Ignores Avery?" column of a reviewed row. */
@@ -252,12 +261,18 @@ export const REVIEW_VERDICTS = ['ignores avery', 'avery endpoint'] as const;
  * One row of the result table: | Mode | Endpoint id | URL | Status | Events |
  * Owner | Touches charge / subscription events? | Ignores Avery? | Action |.
  * Every cell filled, no unknowns, touches = yes/no, verdict one of REVIEW_VERDICTS.
- * An account with no other endpoints writes one row with endpoint id `none`.
+ * An account with no other endpoints writes one row with `none` in every
+ * column except mode, touches (`no`) and verdict (`ignores avery`). A `-` is
+ * never a value. URL, status and events are later compared with the live endpoint.
  */
+const rowCells = (row: string) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+/** Events cell: names separated by commas or spaces (`*` for all). */
+const splitEvents = (cell: string) => cell.split(/[\s,]+/).filter(Boolean).sort();
+
 export function reviewRowProblem(row: string): string | null {
-  const cells = row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  const cells = rowCells(row);
   if (cells.length !== 9) return `needs 9 columns, has ${cells.length}`;
-  const bad = cells.findIndex((c) => c === '' || /^(todo|unknown|\?|tbd|n\/a)$/i.test(c) || /TODO/.test(c));
+  const bad = cells.findIndex((c) => c === '' || /^(todo|unknown|\?|tbd|n\/a|-+)$/i.test(c) || /TODO/.test(c));
   if (bad >= 0) return `column ${bad + 1} is blank or unknown`;
   const [, id, , , , , touches, verdict] = cells;
   if (id !== 'none' && !/^we_[A-Za-z0-9]+$/.test(id!)) return 'endpoint id must be we_... or none';
@@ -561,13 +576,21 @@ export async function runSetup(opts: {
     const need = `a completed ${mode}-mode inventory receipt (--inventory-receipt docs/ops/${S.inventoryFile})`;
     const hint = digestHint;
     if (!inv.ok) throw new SetupRefused(`changing the webhook endpoint needs ${need}: ${inv.reason}.${hint}`);
-    if (inv.accountId !== account.id) throw new SetupRefused(`the inventory receipt is for ${String(inv.accountId)}, not this account ${String(account.id)}`);
+    if (inv.accountId !== account.id) {
+      throw new SetupRefused(`the inventory receipt is for ${String(inv.accountId)}, not this account ${String(account.id)}.${hint}`);
+    }
     if (inv.digest !== currentDigest) {
       throw new SetupRefused(`the inventory is stale: the other endpoints changed since it was reviewed. Re-review them and update the receipt.${hint}`);
     }
-    const unreviewed = allHooks.filter((w) => !isOurHook(w) && !(inv.reviewedIds ?? []).includes(String(w.id)));
-    if (unreviewed.length) {
-      throw new SetupRefused(`the inventory has no review row for ${unreviewed.map((w) => String(w.id)).join(', ')}. Add a complete row for each endpoint.`);
+    // Each live endpoint needs a row whose URL, status and events match what Stripe shows now.
+    for (const w of allHooks.filter((x) => !isOurHook(x))) {
+      const row = (inv.reviewedRows ?? []).find((r) => r.id === String(w.id));
+      const live = `url ${String(w.url)}, status ${String(w.status)}, events ${[...((w.enabled_events ?? []) as string[])].sort().join(' ')}`;
+      if (!row) throw new SetupRefused(`the inventory has no review row for ${String(w.id)} (live: ${live}). Add a complete row for each endpoint.`);
+      const liveEvents = [...((w.enabled_events ?? []) as string[])].sort().join(',');
+      if (row.url !== w.url || row.status !== w.status || row.events.join(',') !== liveEvents) {
+        throw new SetupRefused(`the review row for ${String(w.id)} does not match Stripe (live: ${live}). Re-review it and correct the row.`);
+      }
     }
   }
 
