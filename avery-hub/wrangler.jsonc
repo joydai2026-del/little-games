@@ -1,0 +1,558 @@
+{
+  // avery-hub: sign-in, the teacher database and the free/paid gate for every Avery game.
+  // Environments inherit routes but NOT bindings or vars, so env.staging repeats
+  // every binding (tests/wrangler-env.test.ts guards the copy). Secrets are set
+  // with `wrangler secret put` by JJ, never here (see docs/ops/rotation.md).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "avery-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "hub.averystudio.org",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "avery_hub",
+      "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TOKENS",
+        "class_name": "TokenDO"
+      },
+      {
+        "name": "BILLING",
+        "class_name": "BillingDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "TokenDO",
+        "BillingDO"
+      ]
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_START_LIMITER",
+      "namespace_id": "2101",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "REDEEM_LIMITER",
+      "namespace_id": "2102",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "HUB_VERSION": "0.1.0-s1",
+    "HUB_ORIGIN": "https://hub.averystudio.org",
+    "SUPPORT_EMAIL": "hello@averystudio.org",
+    "GOOGLE_CLIENT_ID": "",
+    "GOOGLE_AUTH_URL": "https://accounts.google.com/o/oauth2/v2/auth",
+    "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
+    "GOOGLE_JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
+    "GOOGLE_ISSUERS": "https://accounts.google.com,accounts.google.com",
+    "ACCESS_JWKS_URL": "",
+    "ACCESS_ISSUER": "",
+    "ACCESS_AUD": "",
+    "SESSION_HASH_KEY_CURRENT": "1",
+    "SESSION_IDLE_DAYS": "30",
+    "SESSION_MAX_DAYS": "90",
+    "SESSION_ROTATE_DAYS": "7",
+    "GAME_SESSION_HOURS": "12",
+    "GAME_SESSION_IDLE_HOURS": "4",
+    "HANDOFF_TOKEN_SECONDS": "60",
+    "OAUTH_STATE_SECONDS": "600",
+    "BIND_COOKIE_MINUTES": "10",
+    "MAX_TEACHER_DEVICES": "3",
+    "ROOM_PASS_HOURS": "4",
+    "FREE_LIST_LIMIT": "1",
+    "PAID_LIST_LIMIT": "500",
+    "FREE_TASTE_ROUNDS_PER_DAY": "1",
+    "FREE_MODE_SWITCH_COOLDOWN_DAYS": "5",
+    "TRIAL_DAYS": "0",
+    "ANON_FREE_ROUNDS": "unlimited",
+    "FREE_GAME_COUNT": "1",
+    "FREE_GAME_CHOICES": "all",
+    "LIST_MAX_ITEMS": "200",
+    "LIST_MAX_BYTES": "65536",
+    "CLASS_CODE_LENGTH": "6",
+    "KEEP_AFTER_END_DAYS": "90",
+    "INACTIVE_DELETE_DAYS": "400",
+    "GAME_REGISTRY": {
+      "vocab": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://vocab.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "memory",
+          "race",
+          "climb",
+          "reveal",
+          "sky-tower",
+          "tone",
+          "listen",
+          "echo",
+          "whack"
+        ]
+      },
+      "tianzige": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://tianzige.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "main"
+        ]
+      },
+      "trace-race": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://trace-race.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "main"
+        ]
+      },
+      "stroke-reveal": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://stroke-reveal.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "main"
+        ]
+      },
+      "missing-stroke": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://missing-stroke.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "main"
+        ]
+      },
+      "dictation-dash": {
+        "keyHash": "",
+        "returnUrls": [
+          "https://dictation-dash.averystudio.org/auth/finish"
+        ],
+        "methods": [
+          "redeemHandoff",
+          "resolveSession",
+          "entitlement",
+          "authorizeRound",
+          "useTaste",
+          "switchFreeMode",
+          "listLists",
+          "getList",
+          "saveList",
+          "deleteList",
+          "listClasses",
+          "saveClass",
+          "deleteClass",
+          "mintRoomPass",
+          "checkRoomPass",
+          "signOut"
+        ],
+        "modes": [
+          "main"
+        ]
+      }
+    }
+  },
+  "env": {
+    "staging": {
+      "name": "avery-hub-staging",
+      "workers_dev": true,
+      "preview_urls": true,
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "avery_hub_staging",
+          "database_id": "PENDING_STAGING_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "TOKENS",
+            "class_name": "TokenDO"
+          },
+          {
+            "name": "BILLING",
+            "class_name": "BillingDO"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": [
+            "TokenDO",
+            "BillingDO"
+          ]
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "AUTH_START_LIMITER",
+          "namespace_id": "2101",
+          "simple": {
+            "limit": 20,
+            "period": 60
+          }
+        },
+        {
+          "name": "REDEEM_LIMITER",
+          "namespace_id": "2102",
+          "simple": {
+            "limit": 20,
+            "period": 60
+          }
+        }
+      ],
+      "observability": {
+        "enabled": true
+      },
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS"
+      },
+      "vars": {
+        "HUB_VERSION": "0.1.0-s1",
+        "HUB_ORIGIN": "https://avery-hub-staging.joyd-ai-2026.workers.dev",
+        "SUPPORT_EMAIL": "hello@averystudio.org",
+        "GOOGLE_CLIENT_ID": "",
+        "GOOGLE_AUTH_URL": "https://accounts.google.com/o/oauth2/v2/auth",
+        "GOOGLE_TOKEN_URL": "https://oauth2.googleapis.com/token",
+        "GOOGLE_JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
+        "GOOGLE_ISSUERS": "https://accounts.google.com,accounts.google.com",
+        "ACCESS_JWKS_URL": "",
+        "ACCESS_ISSUER": "",
+        "ACCESS_AUD": "",
+        "SESSION_HASH_KEY_CURRENT": "1",
+        "SESSION_IDLE_DAYS": "30",
+        "SESSION_MAX_DAYS": "90",
+        "SESSION_ROTATE_DAYS": "7",
+        "GAME_SESSION_HOURS": "12",
+        "GAME_SESSION_IDLE_HOURS": "4",
+        "HANDOFF_TOKEN_SECONDS": "60",
+        "OAUTH_STATE_SECONDS": "600",
+        "BIND_COOKIE_MINUTES": "10",
+        "MAX_TEACHER_DEVICES": "3",
+        "ROOM_PASS_HOURS": "4",
+        "FREE_LIST_LIMIT": "1",
+        "PAID_LIST_LIMIT": "500",
+        "FREE_TASTE_ROUNDS_PER_DAY": "1",
+        "FREE_MODE_SWITCH_COOLDOWN_DAYS": "5",
+        "TRIAL_DAYS": "0",
+        "ANON_FREE_ROUNDS": "unlimited",
+        "FREE_GAME_COUNT": "1",
+        "FREE_GAME_CHOICES": "all",
+        "LIST_MAX_ITEMS": "200",
+        "LIST_MAX_BYTES": "65536",
+        "CLASS_CODE_LENGTH": "6",
+        "KEEP_AFTER_END_DAYS": "90",
+        "INACTIVE_DELETE_DAYS": "400",
+        "GAME_REGISTRY": {
+          "vocab": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://bilingual-vocab-game-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "memory",
+              "race",
+              "climb",
+              "reveal",
+              "sky-tower",
+              "tone",
+              "listen",
+              "echo",
+              "whack"
+            ]
+          },
+          "tianzige": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://tianzige-generator-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "main"
+            ]
+          },
+          "trace-race": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://trace-race-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "main"
+            ]
+          },
+          "stroke-reveal": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://stroke-reveal-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "main"
+            ]
+          },
+          "missing-stroke": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://missing-stroke-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "main"
+            ]
+          },
+          "dictation-dash": {
+            "keyHash": "",
+            "returnUrls": [
+              "https://dictation-dash-staging.joyd-ai-2026.workers.dev/auth/finish",
+              "http://localhost:8788/auth/finish"
+            ],
+            "methods": [
+              "redeemHandoff",
+              "resolveSession",
+              "entitlement",
+              "authorizeRound",
+              "useTaste",
+              "switchFreeMode",
+              "listLists",
+              "getList",
+              "saveList",
+              "deleteList",
+              "listClasses",
+              "saveClass",
+              "deleteClass",
+              "mintRoomPass",
+              "checkRoomPass",
+              "signOut"
+            ],
+            "modes": [
+              "main"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
