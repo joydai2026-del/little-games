@@ -11,10 +11,15 @@ a copy) and, for the mode it runs in (test or live):
 
 - the three lines below are filled: a real date, the account id the key belongs
   to, and the endpoints digest;
-- the result table has at least one reviewed row for that mode and none of its
-  rows says TODO.
+- the result table has one complete row for EVERY other endpoint in that mode
+  (all 9 columns filled, nothing blank, "unknown" or TODO; "Touches..." is `yes`
+  or `no`; "Ignores Avery?" is exactly `ignores avery` or `avery endpoint`). An
+  account with no other endpoints writes one row with endpoint id `none`.
 
-The digest is a sha256 over the non-Avery endpoints (id, url, status, events).
+The digest is a sha256 over every endpoint except the Avery hub endpoint itself
+(id, url, status, events). Only the endpoint at this environment's hub URL AND
+tagged `avery_object=hub_webhook` is left out; any other endpoint, even one that
+carries `app=avery`, is part of the reviewed snapshot.
 The setup script prints the current value when it refuses, and in its readback;
 copy it here only after reviewing every row. If any endpoint is added, removed or
 changed later, the digest no longer matches and the script refuses until the

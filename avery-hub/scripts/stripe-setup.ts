@@ -82,6 +82,8 @@ export interface InventoryGate {
   accountId?: string;
   /** sha256 hex of the reviewed non-Avery endpoints (see inventoryDigest). */
   digest?: string;
+  /** Endpoint ids that have a complete review row for this mode ("none" allowed). */
+  reviewedIds?: string[];
 }
 export interface Gates {
   inventory: InventoryGate;
@@ -234,8 +236,36 @@ export function checkInventoryReceipt(text: string, mode: 'test' | 'live', today
   if (!digest || !/^[0-9a-f]{64}$/.test(digest)) return { ok: false, reason: `field "${prefix}_endpoints_digest" must be the 64-hex digest the script prints` };
   const rows = text.split('\n').filter((l) => new RegExp(`^\\|\\s*${mode}\\s*\\|`).test(l));
   if (rows.length === 0) return { ok: false, reason: `no reviewed "| ${mode} |" rows in the result table` };
-  if (rows.some((r) => /TODO/.test(r))) return { ok: false, reason: `a "| ${mode} |" row still contains TODO` };
-  return { ok: true, reason: dated.reason, accountId, digest };
+  const reviewedIds: string[] = [];
+  for (const row of rows) {
+    const problem = reviewRowProblem(row);
+    if (problem) return { ok: false, reason: `review row "${row.trim()}": ${problem}` };
+    reviewedIds.push(row.split('|')[2]!.trim());
+  }
+  return { ok: true, reason: dated.reason, accountId, digest, reviewedIds };
+}
+
+/** Allowed values for the "Ignores Avery?" column of a reviewed row. */
+export const REVIEW_VERDICTS = ['ignores avery', 'avery endpoint'] as const;
+
+/**
+ * One row of the result table: | Mode | Endpoint id | URL | Status | Events |
+ * Owner | Touches charge / subscription events? | Ignores Avery? | Action |.
+ * Every cell filled, no unknowns, touches = yes/no, verdict one of REVIEW_VERDICTS.
+ * An account with no other endpoints writes one row with endpoint id `none`.
+ */
+export function reviewRowProblem(row: string): string | null {
+  const cells = row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  if (cells.length !== 9) return `needs 9 columns, has ${cells.length}`;
+  const bad = cells.findIndex((c) => c === '' || /^(todo|unknown|\?|tbd|n\/a)$/i.test(c) || /TODO/.test(c));
+  if (bad >= 0) return `column ${bad + 1} is blank or unknown`;
+  const [, id, , , , , touches, verdict] = cells;
+  if (id !== 'none' && !/^we_[A-Za-z0-9]+$/.test(id!)) return 'endpoint id must be we_... or none';
+  if (!/^(yes|no)$/i.test(touches!)) return 'the "touches charge / subscription events" column must be yes or no';
+  if (!(REVIEW_VERDICTS as readonly string[]).includes(verdict!.toLowerCase())) {
+    return `the "Ignores Avery?" column must be "${REVIEW_VERDICTS.join('" or "')}"`;
+  }
+  return null;
 }
 
 /** sha256 over the sorted non-Avery endpoints: id, url, status, sorted events. */
@@ -354,9 +384,18 @@ export async function runSetup(opts: {
   const descProblem = descriptorProblem(S.product.statementDescriptor);
   if (descProblem) throw new SetupRefused(descProblem);
 
+  // The Avery endpoint is excluded from the inventory digest ONLY by full
+  // identity (this environment's hub URL AND the avery_object tag); any other
+  // endpoint, even one carrying app=avery, is part of the reviewed snapshot.
+  const url = `${args.hubOrigin}${S.webhook.path}`;
+  const allHooks = await client.listAll('/v1/webhook_endpoints');
+  const isOurHook = (w: StripeObject) => w.url === url && meta(w).app === S.app && meta(w).avery_object === S.webhook.tag;
+  const currentDigest = await inventoryDigest(allHooks.filter((w) => !isOurHook(w)));
+  const digestHint = ` Current ${mode}_mode_endpoints_digest after review: ${currentDigest}`;
+
   const account = await client.get('/v1/account');
   if (account.id !== expected.accountId) {
-    throw new SetupRefused(`this key belongs to Stripe account ${String(account.id)}, not the configured STRIPE_ACCOUNT_ID ${expected.accountId}`);
+    throw new SetupRefused(`this key belongs to Stripe account ${String(account.id)}, not the configured STRIPE_ACCOUNT_ID ${expected.accountId}.${digestHint}`);
   }
   if (args.live) {
     const tax = await client.get('/v1/tax/settings');
@@ -492,10 +531,7 @@ export async function runSetup(opts: {
   if (existingPortal) wrongMode(existingPortal, 'portal configuration');
 
   // Webhook endpoint (exact URL), and whether any write to it is needed.
-  const url = `${args.hubOrigin}${S.webhook.path}`;
   const wantEvents = [...opts.webhookEvents].sort();
-  const allHooks = await client.listAll('/v1/webhook_endpoints');
-  const currentDigest = await inventoryDigest(allHooks.filter((w) => meta(w).app !== S.app));
   const endpoints = allHooks.filter((w) => w.url === url);
   if (endpoints.length > 1) throw new SetupRefused(`found ${endpoints.length} webhook endpoints for ${url}; remove the extras first`);
   const existingHook = endpoints[0];
@@ -523,11 +559,15 @@ export async function runSetup(opts: {
     // Any webhook write (create, events, re-enable) needs a current inventory for THIS mode and account.
     const inv = opts.gates.inventory;
     const need = `a completed ${mode}-mode inventory receipt (--inventory-receipt docs/ops/${S.inventoryFile})`;
-    const hint = ` Current ${mode}_mode_endpoints_digest after review: ${currentDigest}`;
+    const hint = digestHint;
     if (!inv.ok) throw new SetupRefused(`changing the webhook endpoint needs ${need}: ${inv.reason}.${hint}`);
     if (inv.accountId !== account.id) throw new SetupRefused(`the inventory receipt is for ${String(inv.accountId)}, not this account ${String(account.id)}`);
     if (inv.digest !== currentDigest) {
       throw new SetupRefused(`the inventory is stale: the other endpoints changed since it was reviewed. Re-review them and update the receipt.${hint}`);
+    }
+    const unreviewed = allHooks.filter((w) => !isOurHook(w) && !(inv.reviewedIds ?? []).includes(String(w.id)));
+    if (unreviewed.length) {
+      throw new SetupRefused(`the inventory has no review row for ${unreviewed.map((w) => String(w.id)).join(', ')}. Add a complete row for each endpoint.`);
     }
   }
 
