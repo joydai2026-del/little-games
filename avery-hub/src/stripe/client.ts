@@ -27,21 +27,25 @@ export type FormParams = { [k: string]: FormValue };
 export type StripeObject = Record<string, unknown>;
 
 export class StripeApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly type: string | undefined,
-    readonly code: string | undefined,
-    message: string,
-    readonly requestId: string | undefined,
-  ) {
+  // Plain fields, not constructor parameter properties, so plain Node
+  // (type stripping) can load this file for the setup script.
+  readonly status: number;
+  readonly type: string | undefined;
+  readonly code: string | undefined;
+  readonly requestId: string | undefined;
+  constructor(status: number, type: string | undefined, code: string | undefined, message: string, requestId: string | undefined) {
     super(message);
     this.name = 'StripeApiError';
+    this.status = status;
+    this.type = type;
+    this.code = code;
+    this.requestId = requestId;
   }
 }
 
 export class StripeNetworkError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
     this.name = 'StripeNetworkError';
   }
 }
