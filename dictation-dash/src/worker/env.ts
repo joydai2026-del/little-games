@@ -15,6 +15,8 @@ export interface Env {
   TTS_ROOM_DAILY_CALLS?: string;
   /** Paid speech calls the whole game may make per UTC day. */
   TTS_GLOBAL_DAILY_CALLS?: string;
+  /** Joins one IP may make into one room per minute. Default GAME.joinsPerIpPerMinute (the seat cap); never lower it below the seat cap. */
+  JOINS_PER_IP_PER_MINUTE?: string;
   /** Paid speech calls one IP may make per UTC day (below the global cap, so one IP cannot switch speech off for everyone). */
   TTS_IP_DAILY_CALLS?: string;
   /** Seconds browsers and the edge keep one character's stroke JSON. */

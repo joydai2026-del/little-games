@@ -33,7 +33,7 @@ import type { CharGeom, Mode, RoomState } from '../shared/types';
 import type { Env } from './env';
 import { loadGeometry, resolveWords } from './strokes';
 import { speakWord } from './tts';
-import { budgetConfig, ttsConfig, utcDay } from './env';
+import { budgetConfig, numberVar, ttsConfig, utcDay } from './env';
 
 const KEY_STATE = 'state';
 /** Word clips live in the room's own storage: the Cache API does nothing on workers.dev. */
@@ -42,6 +42,8 @@ const CLIP_PREFIX = 'clip:';
 const KEY_GEOM = 'geom';
 /** This room's paid speech calls today. */
 const KEY_TTS = 'ttsDay';
+/** Recent joins per (hashed) IP, for the per-IP join cap. */
+const KEY_JOINS = 'joinsByIp';
 const KEY_SECRETS = 'secrets';
 const ROOM_GONE = 'that room is not around any more';
 const PASTE_TOO_LONG = `That paste is too long. Paste a shorter list (up to ${GAME.maxPasteLength} characters).`;
@@ -62,12 +64,41 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/** A salted hash of the joining IP: the address itself is never stored. */
+async function ipKey(code: string, ip: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${code}|${ip}`)));
+  return Array.from(digest.slice(0, 12), (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** Keeps only the last minute of joins, and drops addresses with none left. */
+export function pruneJoins(joins: Record<string, number[]>, now: number): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [k, times] of Object.entries(joins)) {
+    const recent = times.filter((x) => now - x < 60_000);
+    if (recent.length) out[k] = recent;
+  }
+  return out;
+}
+
+/** The per-IP join cap: config var JOINS_PER_IP_PER_MINUTE, default GAME.joinsPerIpPerMinute (the seat cap). */
+function joinsPerIpCap(env: Env): number {
+  return numberVar(env.JOINS_PER_IP_PER_MINUTE, GAME.joinsPerIpPerMinute, 1, 10_000);
+}
+
 export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
-  /** Recent join times per IP (memory only, never stored): the per-IP anti-flood control. */
-  private readonly joinsByIp = new Map<string, number[]>();
+  /**
+   * Recent join times per IP (keyed by a salted hash, never the address), for
+   * the per-IP join cap. Ruling (Codex review round 4): the per-IP cap defaults
+   * to the seat cap so this is inert by default, but a config key that stops
+   * enforcing after a restart is a false policy surface, so the counters are
+   * DURABLE: loaded with the room, saved with every join, pruned to the last
+   * minute on every write. (The room-wide rate reads players' joinedAt, which
+   * is already stored in the room state.)
+   */
+  private joinsByIp: Record<string, number[]> = {};
   private geom: Record<string, CharGeom> = {};
   /** This room's paid speech calls today, held in memory so a reservation never awaits (persisted on every change). */
   private ttsDay: { day: string; used: number } = { day: '', used: 0 };
@@ -79,12 +110,14 @@ export class RoomDO implements DurableObject {
     private readonly env: Env
   ) {
     this.ctx.blockConcurrencyWhile(async () => {
-      const [room, secrets, geom, ttsDay] = await Promise.all([
+      const [room, secrets, geom, ttsDay, joins] = await Promise.all([
         this.ctx.storage.get<RoomState>(KEY_STATE),
         this.ctx.storage.get<Record<string, string>>(KEY_SECRETS),
         this.ctx.storage.get<Record<string, CharGeom>>(KEY_GEOM),
         this.ctx.storage.get<{ day: string; used: number }>(KEY_TTS),
+        this.ctx.storage.get<Record<string, number[]>>(KEY_JOINS),
       ]);
+      this.joinsByIp = joins ?? {};
       this.ttsDay = ttsDay ?? { day: '', used: 0 };
       this.room = room ?? null;
       this.secrets = secrets ?? {};
@@ -178,19 +211,22 @@ export class RoomDO implements DurableObject {
 
     if (path === 'join') {
       await this.settle(now);
-      // Per-IP flood control first (before the room's rate and fullness): one device cannot take many seats.
-      const ip = request.headers.get('x-client-ip') ?? 'no-ip';
-      const recent = (this.joinsByIp.get(ip) ?? []).filter((t) => now - t < 60_000);
-      if (recent.length >= GAME.joinsPerIpPerMinute) return json({ error: 'too many joins from here, wait a moment' }, 429);
+      // Every await happens first; the check, the join and the count then run in one step.
+      const key = await ipKey(this.room.code, request.headers.get('x-client-ip') ?? 'no-ip');
       const b = await body(request);
+      if (!this.room) return json({ error: ROOM_GONE }, 404);
+      // Per-IP flood control first (before the room's rate and fullness).
+      const t = Date.now();
+      const pruned = pruneJoins(this.joinsByIp, t);
+      if ((pruned[key] ?? []).length >= joinsPerIpCap(this.env)) return json({ error: 'too many joins from here, wait a moment' }, 429);
       const playerId = newPlayerId();
-      const result = join(this.room, { id: playerId, name: String(b.name ?? ''), agent: b.agent === true }, now);
+      const result = join(this.room, { id: playerId, name: String(b.name ?? ''), agent: b.agent === true }, t);
       if (result.error) return json({ error: result.error }, result.status ?? 409);
-      this.joinsByIp.set(ip, [...recent, now]);
+      this.joinsByIp = { ...pruned, [key]: [...(pruned[key] ?? []), t] };
       this.room = result.state;
       const secret = crypto.randomUUID();
       this.secrets = { ...this.secrets, [playerId]: secret };
-      await this.ctx.storage.put({ [KEY_STATE]: this.room, [KEY_SECRETS]: this.secrets });
+      await this.ctx.storage.put({ [KEY_STATE]: this.room, [KEY_SECRETS]: this.secrets, [KEY_JOINS]: this.joinsByIp });
       await this.armAlarm(now);
       return this.envelope(playerId, { playerId, playerSecret: secret });
     }

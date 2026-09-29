@@ -103,6 +103,27 @@ describe('RoomDO', () => {
     expect((await joinFrom('203.0.113.7', 'Later')).status).toBe(409);
   });
 
+  it('the per-IP join count survives a restart (durable), and old addresses are pruned', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const env = boundEnv({ JOINS_PER_IP_PER_MINUTE: '2' }) as Env;
+    const first = await buildRoom(env);
+    await first.room.fetch(post('create', { code: 'ABCD', text: '大' }));
+    const joinFrom = (room: typeof first.room, ip: string, name: string) =>
+      room.fetch(new Request('https://room/join', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-client-ip': ip }, body: JSON.stringify({ name }) }));
+    expect((await joinFrom(first.room, '203.0.113.7', 'A')).status).toBe(200);
+    expect((await joinFrom(first.room, '203.0.113.7', 'B')).status).toBe(200);
+    // The Durable Object restarts over the same storage.
+    const second = await buildRoom(env, first.storage);
+    expect((await joinFrom(second.room, '203.0.113.7', 'C')).status).toBe(429);
+    expect((await joinFrom(second.room, '198.51.100.1', 'D')).status).toBe(200);
+    // The address is stored only as a hash, and a minute later the old entries are gone.
+    expect(JSON.stringify(first.storage.map.get('joinsByIp'))).not.toContain('203.0.113.7');
+    vi.setSystemTime(Date.now() + 61_000);
+    expect((await joinFrom(second.room, '192.0.2.9', 'E')).status).toBe(200);
+    expect(Object.keys(first.storage.map.get('joinsByIp') as object)).toHaveLength(1);
+  });
+
   it('an expired room is gone', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
