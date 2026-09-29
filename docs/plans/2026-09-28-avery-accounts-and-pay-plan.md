@@ -360,6 +360,8 @@ Also config: `GOOGLE_CLIENT_ID`, `POSTHOG_PROJECT_KEY`, price ids, portal id, `G
 
 `config/packs.json`, validated at deploy: `id`, `title`, `r2Key`, `version`, `sha256` of the exact file, `licenceLine`, and **`licence_checked: { date, by, sha256 }`**. A pack is visible only when `licence_checked.sha256` equals the file's `sha256`, so replacing a file hides the pack until it is checked again. The deploy test also checks each R2 object exists, starts with `%PDF-`, is under a size limit and has a page count (C: size limit set in S6).
 
+Also `creator_id` (default `owner`), for the follow-up creator marketplace; nothing reads it until then.
+
 ### Downloads route
 
 `GET /downloads` lists visible packs and her delivered request files (yearly or grant; others see the subscribe card). `POST /downloads/<id>` (Origin and CSRF checked): yearly check and a read of today's count, read from R2, stamp the footer with her sign-in email and the UTC date (D11), then the conditional `pack_downloads` insert; only then the file is sent with a sanitized ASCII filename (RFC 6266 `filename*` for the rest), `Content-Disposition: attachment`, `Cache-Control: private, no-store`. **A failed read or stamp is not counted** and sends an alert. No stamped copy is cached. As D11 says: a non-ASCII domain prints in punycode, and a non-ASCII local part falls back to her short teacher id ("Licensed to teacher #<short id>, <date>").
@@ -537,6 +539,18 @@ S0c (any time, live before S5)  |                                     |         
 | Children pick generated nicknames instead of typing (stronger option from the legal checklist) | a WHAT for JJ; the one-word rule is the minimum |
 | Staging hostname without the owner's handle (`hub-staging.averystudio.org`) | cosmetic; decision 13 fixed the current name |
 | AEO plan for the games page | separate track |
+
+### Creator marketplace (owner idea, 2026-09-29, phased, self-funded)
+
+Owner's words: "like twinkl, the platform where teachers submit their work to sell, we can build a chinese only website for all the chinese teachers to submit their work to sell, super niche, but also pretty big market now that immersion is in... we dont have investment money, so things have to sell first with enough revenue, we then scale."
+
+| Phase | What teachers see | Sellers | Trigger to start the next phase |
+|---|---|---|---|
+| Phase 1 (this plan) | $29 a year plan with six games, both generators, Avery packs | none, Avery only | 100 paying teachers |
+| Phase 2 | same plan; library grows with 5 to 10 invited Chinese teacher-creators; their word lists feed the games | invited and curated; paid from a revenue pool by member downloads (Twinkl and Spotify style); payouts through Stripe Connect Express so tax forms are handled; QA gate (the Avery product-QA standard) built before any seller tool | 300 paying teachers, or the pool pays a creator more than TPT does |
+| Phase 3 | open submissions, creator profiles, search | anyone, QA gate before listing | funds itself from phase 2 |
+
+What this plan does today so the marketplace is an extension, not a rewrite: the `packs` catalog carries a `creator_id` (default the owner) and the per-file licence receipt; nothing else is built until the phase 2 trigger. Risks: two-sided cold start, TPT's network effects, and Chinese-content curation being both the expensive part and the whole value. The owner's separate deep-research (browser session) is not yet in the vault; it should be filed next to the 2026-09-29 market report before phase 2 planning.
 
 ## Sources read for this version
 
