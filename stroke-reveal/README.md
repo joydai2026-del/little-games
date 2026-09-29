@@ -1,6 +1,8 @@
 # 猜猜我是谁 Stroke Reveal
 
-Live at: **https://stroke-reveal.joyd-ai-2026.workers.dev**
+Live at: **https://stroke-reveal.averystudio.org**
+
+The old address https://stroke-reveal.joyd-ai-2026.workers.dev still works and serves the same game.
 
 An Avery Studio classroom reading game for Mandarin immersion K-5. Momo draws a character one
 stroke at a time on the big screen, and the first kid to tap the right word wins. The teacher
@@ -101,7 +103,7 @@ An agent plays through the same HTTP API the phones use. It "looks at the big sc
 with the public stroke data of each card's first character. No npm install, Node 18+:
 
 ```
-node stroke-reveal/agent/play.mjs --url https://stroke-reveal.joyd-ai-2026.workers.dev --room ABCD --name Robo
+node stroke-reveal/agent/play.mjs --url https://stroke-reveal.averystudio.org --room ABCD --name Robo
 ```
 
 Flags: `--patience 0.4` (share of the character to see before guessing, 0 to 1), `--mistakes 0.1`
@@ -138,7 +140,7 @@ the K-2 pause, 429 (wait and resend). Your own tries are in `state.mine`; the ri
 AI players in `state.robots`.
 
 ```
-U=https://stroke-reveal.joyd-ai-2026.workers.dev
+U=https://stroke-reveal.averystudio.org
 # teacher makes a room
 curl -s -X POST $U/api/rooms -H 'content-type: application/json' \
   -d '{"text":"1. 大人 dàrén\n2. 山 shān\n3. 学校 xuéxiào\n4. 人 rén","options":{"level":"g35","charsPerRound":2}}'
@@ -193,7 +195,7 @@ npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
 npm run check:palette # colours only from public/theme.css (Avery kit) and src/client/game.css
 npm run check:brand   # theme.css + Momo PNGs identical to avery-brand/, title/favicon/header/footer present
-npm run deploy        # build + wrangler deploy (workers.dev only)
+npm run deploy        # build + wrangler deploy (workers.dev + stroke-reveal.averystudio.org)
 node scripts/live-gate.mjs        # live API gate, prints a JSON receipt
 python3 scripts/record-demo.py    # live headless kid + teacher run, stills + demo mp4 + gif (--no-video for stills only)
 ```

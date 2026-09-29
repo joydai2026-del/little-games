@@ -3,7 +3,7 @@
 // check, status, and the fields that prove it) for docs/evidence/. Makes no
 // sound, needs no browser.
 //
-//   node scripts/live-gate.mjs [--url https://stroke-reveal.joyd-ai-2026.workers.dev]
+//   node scripts/live-gate.mjs [--url https://stroke-reveal.averystudio.org]
 //
 // Story: a teacher makes a room, two AI agents join through the API, one
 // watches the drawing and guesses early, the other waits; nobody polls and the
@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { firstChar, matchingCards, planGuess } from '../agent/lib.mjs';
 
 const argUrl = process.argv.indexOf('--url');
-const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://stroke-reveal.joyd-ai-2026.workers.dev').replace(/\/+$/, '');
+const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://stroke-reveal.averystudio.org').replace(/\/+$/, '');
 const receipt = {
   url: U,
   deployedVersion: process.env.STROKE_REVEAL_VERSION ?? null,

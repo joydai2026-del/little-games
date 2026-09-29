@@ -21,7 +21,7 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige-generator.joyd-ai-2026.workers.dev"
+URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige.averystudio.org"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = json.load(open(os.path.join(ROOT, "src", "worker", "stroke-manifest.json"), encoding="utf-8"))["files"]
 INK_CHECK = "/Users/joyd/Avery Studio Product Factory/scripts/hanzi/check_pdf_ink.py"

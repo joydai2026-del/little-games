@@ -3,7 +3,7 @@
 // HTTP API the phones use and answers each character at a human-ish pace,
 // with a few honest misses.
 //
-//   node agent/play.mjs --url https://missing-stroke.joyd-ai-2026.workers.dev --room ABCD --name "Robo"
+//   node agent/play.mjs --url https://missing-stroke.averystudio.org --room ABCD --name "Robo"
 //   MISSING_STROKE_URL=... node agent/play.mjs --room ABCD --pace-ms 900 --mistakes 0.15
 //
 // Options (all config, no literals in the loop):

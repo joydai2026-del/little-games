@@ -1,6 +1,8 @@
 # Dictation Dash 听写赛跑
 
-Live at: **https://dictation-dash.joyd-ai-2026.workers.dev**
+Live at: **https://dictation-dash.averystudio.org**
+
+The old address https://dictation-dash.joyd-ai-2026.workers.dev still works and serves the same game.
 
 An Avery Studio listening game for Mandarin immersion, grades 3 to 5. **Momo says a word, kids
 write it from memory, and the fastest correct writer wins.** Each word is spoken by a Chinese
@@ -111,7 +113,7 @@ it "studied" with `--words`; it picks list words with the right number of boxes 
 the room says a stroke is wrong. With no list it cannot write and skips.
 
 ```
-node agent/play.mjs --url https://dictation-dash.joyd-ai-2026.workers.dev --room ABCD --name Robo \
+node agent/play.mjs --url https://dictation-dash.averystudio.org --room ABCD --name Robo \
   --words "朋友 学校 大山" [--pace-ms 700] [--mistakes 0.1] [--rounds 2] [--seed 7]
 ```
 
@@ -126,7 +128,7 @@ npm run cf:dev       # the whole Worker locally (Workers AI calls the real model
 npm test             # vitest + node:test
 npm run typecheck
 npm run check:xss && npm run check:palette && npm run check:brand
-npm run deploy       # workers.dev only
+npm run deploy       # workers.dev + dictation-dash.averystudio.org
 node scripts/live-gate.mjs                  # live API gate (no sound; clips saved, never played)
 python3 scripts/live-run.py [--record]      # headless kid run on the live site, stills + demo
 ```

@@ -7,14 +7,14 @@ README, tests, and build docs.
 |---|---|---|
 | Caption Wars | One photo drops, everyone captions it, everyone votes for the winner. | `caption-wars/` |
 | Trace Race 笔顺比赛 | Kids race to trace Chinese characters stroke by stroke, in the right order, on their phones. | `trace-race/` |
-| 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige-generator.joyd-ai-2026.workers.dev | `tianzige-generator/` |
+| 田字格 Writing Sheets | Paste Chinese characters, print a stroke-order practice sheet (Avery Studio classroom tool). Live: https://tianzige.averystudio.org | `tianzige-generator/` |
 | 猜猜我是谁 Stroke Reveal | Momo draws a Chinese character one stroke at a time on the big screen; kids race to tap the right word on their phones. | `stroke-reveal/` |
-| 补一笔 Missing Stroke | Momo forgot one stroke: kids race to draw it in the right spot, solo or as a class. Live: https://missing-stroke.joyd-ai-2026.workers.dev | `missing-stroke/` |
-| Dictation Dash 听写赛跑 | Grades 3 to 5: Momo says a word, kids write it from memory stroke by stroke; Easy shows a faint outline, Hard is a blank box. Live: https://dictation-dash.joyd-ai-2026.workers.dev | `dictation-dash/` |
+| 补一笔 Missing Stroke | Momo forgot one stroke: kids race to draw it in the right spot, solo or as a class. Live: https://missing-stroke.averystudio.org | `missing-stroke/` |
+| Dictation Dash 听写赛跑 | Grades 3 to 5: Momo says a word, kids write it from memory stroke by stroke; Easy shows a faint outline, Hard is a blank box. Live: https://dictation-dash.averystudio.org | `dictation-dash/` |
 
 ## 田字格 Writing Sheets
 
-Live at: **https://tianzige-generator.joyd-ai-2026.workers.dev**. Paste Chinese characters (messy is
+Live at: **https://tianzige.averystudio.org**. Paste Chinese characters (messy is
 fine), print a stroke-order practice sheet. AI agents get the same sheet from `POST /api/sheet`.
 Details in [`tianzige-generator/README.md`](tianzige-generator/README.md).
 
@@ -30,7 +30,7 @@ Source files: [mp4](tianzige-generator/docs/demo/tianzige-generator-demo.mp4), [
 
 ## Trace Race 笔顺比赛
 
-Live at: **https://trace-race.joyd-ai-2026.workers.dev** · Kids race to trace Chinese characters
+Live at: **https://trace-race.averystudio.org** · Kids race to trace Chinese characters
 stroke by stroke, in the right order, on their phones. Details in [`trace-race/README.md`](trace-race/README.md).
 
 ![Trace Race demo: a kid traces on a phone while the race board updates](trace-race/docs/demo/trace-race-demo.gif)
@@ -44,7 +44,7 @@ Files: [trace-race-demo.mp4](trace-race/docs/demo/trace-race-demo.mp4) · [trace
 
 ## 猜猜我是谁 Stroke Reveal
 
-Live at: **https://stroke-reveal.joyd-ai-2026.workers.dev** · Momo draws a character one stroke at a
+Live at: **https://stroke-reveal.averystudio.org** · Momo draws a character one stroke at a
 time, and the first kid to tap the right word wins the most points. Details in
 [`stroke-reveal/README.md`](stroke-reveal/README.md).
 
@@ -56,7 +56,7 @@ Files: [stroke-reveal-demo.mp4](stroke-reveal/docs/demo/stroke-reveal-demo.mp4) 
 
 ## 补一笔 Missing Stroke
 
-Live at: **https://missing-stroke.joyd-ai-2026.workers.dev** · Momo forgot one stroke: kids race to
+Live at: **https://missing-stroke.averystudio.org** · Momo forgot one stroke: kids race to
 draw it in the right spot, solo on one phone or as a class. Details in [`missing-stroke/README.md`](missing-stroke/README.md).
 
 ![Missing Stroke demo: a kid draws the missing stroke on a phone while the class board updates](missing-stroke/docs/demo/missing-stroke-demo.gif)
@@ -69,7 +69,7 @@ Files: [missing-stroke-demo.mp4](missing-stroke/docs/demo/missing-stroke-demo.mp
 
 ## Dictation Dash 听写赛跑
 
-Live at: **https://dictation-dash.joyd-ai-2026.workers.dev** · A listening game for grades 3 to 5:
+Live at: **https://dictation-dash.averystudio.org** · A listening game for grades 3 to 5:
 Momo says a word, kids write it from memory, the fastest correct writer wins. Two levels on two big
 buttons: Easy (faint outline) and Hard (blank box). Details in [`dictation-dash/README.md`](dictation-dash/README.md).
 

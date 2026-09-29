@@ -7,7 +7,7 @@ stroke's median (on the first character she first draws it BACKWARDS, a real
 wrong stroke, so the pad wiggles), and one AI agent plays through
 agent/play.mjs. Saves stills to docs/demo/ and prints a JSON log.
 
-  python3 scripts/live-run.py [--url https://missing-stroke.joyd-ai-2026.workers.dev]
+  python3 scripts/live-run.py [--url https://missing-stroke.averystudio.org]
   python3 scripts/live-run.py --record        # also record the demo: mp4 + gif
   python3 scripts/live-run.py --solo          # solo mode on one phone (no room): every character drawn
 """
@@ -132,7 +132,7 @@ def solo_run(base, level):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="https://missing-stroke.joyd-ai-2026.workers.dev")
+    ap.add_argument("--url", default="https://missing-stroke.averystudio.org")
     ap.add_argument("--record", action="store_true")
     ap.add_argument("--level", default="middle", choices=["little", "middle", "big"])
     ap.add_argument("--no-agent", action="store_true")

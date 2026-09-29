@@ -3,7 +3,7 @@
 // status, and the fields that prove it) for docs/evidence/. Makes no sound,
 // needs no browser.
 //
-//   node scripts/live-gate.mjs [--url https://missing-stroke.joyd-ai-2026.workers.dev]
+//   node scripts/live-gate.mjs [--url https://missing-stroke.averystudio.org]
 //
 // The race: a room, two agents over the HTTP API that DRAW (they send points;
 // the room grades them): Ava draws the missing stroke along its median, Bo
@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 
 const argUrl = process.argv.indexOf('--url');
-const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://missing-stroke.joyd-ai-2026.workers.dev').replace(/\/+$/, '');
+const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://missing-stroke.averystudio.org').replace(/\/+$/, '');
 const receipt = {
   url: U,
   deployedVersion: process.env.MISSING_STROKE_VERSION ?? null,

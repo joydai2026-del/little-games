@@ -2,7 +2,7 @@
 // Terminal racer for Trace Race. Joins a live room over the same HTTP API the
 // phones use and traces at a human-ish pace, with a few honest mistakes.
 //
-//   node agent/play.mjs --url https://trace-race.joyd-ai-2026.workers.dev --room ABCD --name "Robo"
+//   node agent/play.mjs --url https://trace-race.averystudio.org --room ABCD --name "Robo"
 //   TRACE_RACE_URL=... node agent/play.mjs --room ABCD --pace-ms 900 --mistakes 0.15
 //
 // Options (all config, no literals in the loop):

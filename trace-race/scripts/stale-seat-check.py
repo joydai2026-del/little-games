@@ -10,7 +10,7 @@ import argparse, json
 from playwright.sync_api import sync_playwright
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--url", default="https://trace-race.joyd-ai-2026.workers.dev")
+ap.add_argument("--url", default="https://trace-race.averystudio.org")
 base = ap.parse_args().url.rstrip("/")
 out = {}
 with sync_playwright() as pw:

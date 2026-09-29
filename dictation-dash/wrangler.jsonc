@@ -4,8 +4,9 @@
   "name": "dictation-dash",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-09-07",
-  // workers.dev ONLY. No custom domain, no routes.
+  // workers.dev stays on; the custom domain below is the public address.
   "workers_dev": true,
+  "routes": [{ "pattern": "dictation-dash.averystudio.org", "custom_domain": true }],
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
