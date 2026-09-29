@@ -2,23 +2,23 @@
 date: 2026-09-28
 revised: 2026-09-29
 topic: Avery accounts and pay (Google sign-in, D1, Stripe under Ownly Network LLC)
-status: plan version 3.1 (v3 after review round 1: Claude FIX-FIRST 5 must-fixes, Codex FIX-FIRST 12 must-fixes; the coordinator's adjudications are written in as decisions with reasons)
+status: plan version 3.2 (v3.1 after review round 1, then a final consistency patch from the round-2 reviews; no further review round)
 branch: feat/avery-accounts-pay-plan
 owner notes (private vault): projects/little-games/2026-09-29-avery-pay-jj-setup-steps.html, projects/little-games/2026-09-28-pricing-and-stripe-options.html
 review files: see review files (local), not in this repo
 ---
 
-# Avery accounts and pay: build plan (version 3.1)
+# Avery accounts and pay: build plan (version 3.2)
 
 ## In one minute
 
 - **One free round, then pay.** In each browser, without signing in, a teacher gets exactly ONE free round in each of the six games (the vocab app counts as one game). After that the game says "Sign in and subscribe to keep playing". No free plan, no free trial.
-- **Paid = everything:** $29 a year or $4.99 a month. All six games and every mode, unlimited saved lists, classes with class codes, play history, the 1-hour class ranking, the Tianzige Generator and the Chinese writing-pack engine. The **yearly** plan also includes the printable packs (licence-checked file by file) and a "Tell us what you need" request button.
+- **Paid = everything:** $29 a year or $4.99 a month. All six games and every mode, unlimited saved lists, classes with class codes, play history, the 1-hour class ranking, the Tianzige Generator and the Chinese writing-pack engine. The **yearly** plan also includes the printable packs and a "Tell us what you need" request button.
 - **Sign in with Google** to subscribe. Her lists, classes, history and subscription follow her to any device. Two teachers' data never mix.
 - **Kids** never sign in, never see a paywall or a price, never load analytics, and their internet address is never logged by the games. They type only a one-word nickname to join a room.
 - **avery-hub** owns sign-in, the teacher database, Stripe, downloads and the answer to "may this teacher start this round?". It moves to its own **private** repo before billing is built (S0d). Each game stays its own Worker and asks the hub.
 - **Money** goes through the existing **Ownly Network LLC** Stripe account; bank statements say **AVERY STUDIO**.
-- **Schedule (20% contingency included):** about 29 working days to live with at most 3 builders and 1 review panel at a time (24 base), about 50 working days one session at a time (41.5 base). JJ-side waits (Google publishing, Stripe keys, tax check, licence check, legal wording) come on top.
+- **Schedule (20% contingency included):** about 30 working days to live with at most 3 builders and 1 review panel at a time (25.25 base), about 51 working days one session at a time (42.25 base). JJ-side waits (Google publishing, Stripe keys, tax check, licence check, legal wording) come on top.
 
 Claim grades: **A** = read today in the named source, **B** = standard platform behaviour not re-read today, **C** = estimate or judgement.
 
@@ -41,12 +41,12 @@ Non-blocking owner items: the per-file font and art licence check for the packs;
 | 1 | Teachers sign in with Google, stay signed in, and get a profile: lists, classes, history, subscription. Teachers' data never overlaps. Kids never sign in and never see a paywall. | JJ, 2026-09-28 | S1 |
 | 2 | One Stripe account, Ownly Network LLC; seller for tax is Ownly Network LLC. | JJ, 2026-09-28 | S2a, S2b, S5 |
 | 3 | A yearly and a monthly plan run as a pricing test (thresholds below). | JJ, 2026-09-28 | pricing test |
-| 5 | Teacher-side analytics; teacher screens only; no child data. AEO later. | JJ, 2026-09-28 | S4 |
+| 5 | S3 and S4 build side by side (both need S2d merged, 1.5); then S3 panel (0.5), S4 panel (0.5) one after the other; S3 fix (1) overlaps the S4 panel, S4 fix (1) follows: 1.5 + 0.5 + 0.5 + 1 | 3.5 |
 | 6 | Student rankings students can see (1-hour board; long-term board blocked for the law, below). | JJ, 2026-09-28 | S3 |
 | 8 | The paid gate moves ahead of the brief's order (brief priority 5). | JJ, 2026-09-28 | whole plan |
 | 9 | **Hard paywall, no free tier.** "If they don't pay, then don't play." One free round per game (vocab app = one game), then "Sign in and subscribe to keep playing". No calendar trial. | JJ, 2026-09-29 | "The gate" |
 | 10 | **$29.00 a year (`avery_yearly_v2`) or $4.99 a month (`avery_monthly_v2`).** v1 prices are never created in live mode. | JJ, 2026-09-29 | "Stripe" |
-| 11 | **Paid = everything**; yearly adds the printable packs (single-teacher licence) and the request button (1 a month, filled by hand, 60-day pilot). | JJ, 2026-09-29 | "Materials" |
+| 11 | **Paid = everything** (all six games and modes, unlimited lists, classes, history, the 1-hour ranking, the Tianzige Generator and the writing-pack engine); the **yearly** plan adds the brand's printable packs (after a font and art licence check) and a "Tell us what you need" request button (1 a month, filled by hand, 60-day pilot). How a pack is personalised is not JJ's decision; see D11. | JJ, 2026-09-29 | "Materials" |
 | 12 | **Refunds:** yearly, full refund within 14 days of the first purchase and of each renewal, and a refund ends access; monthly, cancel any time, no refund. 7-day grace after a cancel at period end, only when the teacher asked for it. | JJ, 2026-09-29 | `accessFor` |
 | 13 | **Hosting:** six games on `*.averystudio.org`; hub `hub.averystudio.org`, staging `avery-hub-staging.joyd-ai-2026.workers.dev`; support `hello@averystudio.org`; legal page `https://www.averystudio.org/legal/policies` (`#terms #privacy #children #refunds`); house-rule reword little-games PR #24 merges before the hub. | JJ, 2026-09-29 | S0c, S5 |
 | 14 | **One live game session per game per hub session** (a new hand-off ends the previous game session of that game). | JJ, 2026-09-29 | built (S1) |
@@ -55,22 +55,25 @@ Rows 4 (free-mode switch and taste rounds) and 7 (unlimited anonymous play) of v
 
 ### Defaults set by the agent or coordinator (JJ may overturn any row)
 
+**Decisions waiting for JJ:** D2 (JavaScript bypass in browser-run modes), D3 and D4 (revocation timing and the 24-hour outage cache), D8 (Dashboard trials), D9 (grant benefits), D10 (download cap). Each stands as written until she answers.
+
 Each row says why, so a later review round cannot flip it silently.
 
 | # | Default | Why |
 |---|---|---|
 | D1 | **Free round per browser, not per device.** JJ said "play it once for all the games" and "or whatever" on the mechanism (JJ, 2026-09-29); the agent chose a per-browser cookie. Clearing cookies, a private window or another browser gives another free round; parallel first requests from one browser may each get one. | A per-device limit needs a device fingerprint, which the house rules and the children's-privacy law rule out. The real wall is the paid grant. |
 | D2 | **Browser-run modes can be bypassed by rewriting our JavaScript** (Tianzige preview, Missing Stroke solo, vocab single-screen modes). Accepted risk, **pending JJ**. Rooms beyond one round, saved lists, classes, history and downloads are never reachable that way. | Moving every mode's rendering to the server is a large rebuild for a small leak; the valuable parts are server-side already. |
-| D3 | **"Access ends at once" means:** a running round finishes; the NEXT round start is refused; a room re-checks its pass at every round start while the hub answers; with the hub down, the stored pass lasts until its expiry, which is that game's room lifetime plus 15 minutes, so a lesson is never cut mid-room. | Cutting a class off mid-round punishes kids for a billing event; the bound keeps the leak to one lesson. |
-| D4 | **Entitlement cache during a hub outage:** a game caches a paid answer for `ENTITLEMENT_CACHE_HOURS` (24) and grants rounds from it when the hub is unreachable, so revocation can lag up to 24 hours during an outage. | A paying teacher should not lose her class because our hub is down; outages are rare and short. |
+| D3 | **(pending JJ)** **"Access ends at once" means:** a running round finishes; the NEXT round start is refused; a room re-checks its pass at every round start while the hub answers; with the hub down, the stored pass lasts until its expiry, which is that game's room lifetime plus 15 minutes, so a lesson is never cut mid-room. | Cutting a class off mid-round punishes kids for a billing event; the bound keeps the leak to one lesson. |
+| D4 | **(pending JJ)** **Entitlement cache during a hub outage:** a game caches a paid answer for `ENTITLEMENT_CACHE_HOURS` (24) and grants rounds from it when the hub is unreachable, so revocation can lag up to 24 hours during an outage. | A paying teacher should not lose her class because our hub is down; outages are rare and short. |
 | D5 | **Grace:** 7 days after period end only when the teacher asked for the cancel (Stripe `cancellation_details.reason` = `cancellation_requested`) and the subscription ran to its period end (`ended_at >= current_period_end`); an active paid subscription also gets the 7 days after its period end so a late renewal webhook never locks her out; never past the last PAID period plus the grace. | JJ's row 12, applied to how Stripe actually ends a period-end cancel (status becomes `canceled`, B). Matches the S2a code. |
 | D6 | **Paused collection** (Dashboard `pause_collection`, status stays `active`): access only through the last PAID period end, no grace. | Nobody keeps access for time not paid for (coordinator, S2a fix round 2). A goodwill pause is JJ's manual grant instead. |
 | D7 | **Past-due grace** 7 days (`PAST_DUE_GRACE_DAYS`), counted from the start of the unpaid period (the failed renewal); a renewal whose charge has not landed yet gets the same 7 days from the last paid period end. | Stripe retries failed cards for days (B); a card problem should not end a lesson the same morning. |
-| D8 | **Manual trials** are honoured to their `trial_end` if someone ever creates one in the Dashboard; `TRIAL_DAYS` stays 0. | A trial only exists if JJ set it on purpose. |
-| D9 | **Seat and manual grants count as yearly** for packs and requests (`GRANT_COUNTS_AS` = `yearly`). | School purchase orders are yearly by nature. |
-| D10 | **Download cap 20 a day** (`DOWNLOADS_PER_DAY`, UTC day). | Stops bulk scraping; far above what one teacher prints. |
-| D11 | **Packs are stamped with the teacher's sign-in email and the date** ("Licensed to x@school.org, 2026-09-29"), never her display name. | Emails fit the built-in Helvetica font, so no Chinese font file or second PDF dependency is needed; a display name like 王老师 would not print. |
+| D8 | **(pending JJ)** **Manual trials** are honoured to their `trial_end` if someone ever creates one in the Dashboard; `TRIAL_DAYS` stays 0. | A trial only exists if JJ set it on purpose. |
+| D9 | **(pending JJ)** **Seat and manual grants count as yearly** for packs and requests (`GRANT_COUNTS_AS` = `yearly`). | School purchase orders are yearly by nature. |
+| D10 | **(pending JJ)** **Download cap 20 a day** (`DOWNLOADS_PER_DAY`, UTC day). | Stops bulk scraping; far above what one teacher prints. |
+| D11 | **Packs are stamped with the teacher's sign-in email and the UTC date** ("Licensed to x@school.org, 2026-09-29"), never her display name; an email with a non-ASCII local part falls back to her short teacher id; a non-ASCII domain prints in punycode. | Emails fit the built-in Helvetica font, so no Chinese font file or second PDF dependency is needed; a display name like 王老师 would not print. |
 | D12 | **Anonymous rooms:** the free round is used up at room creation (cookie checked and set there); round starts inside the room check only the room's pass, which allows exactly one round. | Checking the cookie again at `/start` would refuse the free round the room just granted (Dictation Dash solo is a room, A). |
+| D13 | **Monthly pro-rata refund after a price rise:** a monthly teacher who cancels within 14 days after her first charge at a higher price gets back the unused part. This is the one narrow exception to "monthly, no refund", which otherwise stands as JJ decided (row 12). | Legal: New York GBL 527-a(1)(b-1) requires either consent to the higher price or this 14-day pro-rata cancel. |
 
 **Kept from version 2, for the law.** A device id that lives in the browser links a child across rooms and days, which the FTC treats as personal information unless used only to run the service (A, FTC COPPA FAQ, read 2026-09-28). So the 1-hour board uses a **room-only participant id**, and the **long-term class ranking stays BLOCKED** until a school and parent notice and consent path exists.
 
@@ -82,11 +85,11 @@ Version 2 of this plan had two review rounds, **both FIX-FIRST**, with fixes app
 |---|---|---|---|---|---|
 | S1 hub core: Worker, D1 schema, `forTeacher`, Google OIDC code (no client yet), hub and game sessions, device limit, TokenDO hand-off, HubService (sessions, lists, classes, room passes), profile, export, delete, admin behind Access | `origin/feat/avery-hub`, `85901f9` (A) | 118 (coordinator, not re-run) | staging, D1 `avery_hub_staging` (A, S1 report) | public surface only (A); no real sign-in | round 1 full panel FIX-FIRST; fix round 1 landed (`4466baf`, `ffc60a4`, `85901f9`); round-2 panel not yet run |
 | **Not built:** billing, Checkout, BillingDO webhooks, reconciliation, `authorizeRound`, downloads, requests | none | none | no | no | S2b, S6 |
-| S2a Stripe model: REST client, CRM webhook verifier, `accessFor`, event routing, idempotency keys, setup script with read-only discovery and gates | `origin/feat/avery-stripe-model`, `21898f8` plus uncommitted fix-round-2 edits (A) | per its build report | nothing deployed; no real Stripe call | no | round 1 full panel fixed; round 2 FIX-FIRST (2 must-fixes); fix round 2 in progress |
+| S2a Stripe model: REST client, CRM webhook verifier, `accessFor`, event routing, idempotency keys, setup script with read-only discovery and gates | `origin/feat/avery-stripe-model`, `a3e29d1` (A) | 186 at `a3e29d1` (coordinator, not re-run) | nothing deployed; no real Stripe call | no | rounds 1 and 2 fixed; **fix round 3 in progress** |
 | S0b legal page and house rule | joydong.org PR #88; little-games PR #24 | n/a | not published | no | two review rounds each; the page still describes version 2 (S0c) |
 | Custom domains for the five little-games Workers | little-games PR #23, merged (A) | per game | yes (A) | yes, live gates passed (A) | done |
 
-What S1 already built from this plan (A, `85901f9`, HUB-API doc): one game session per game per browser (row 14); `FREE_TIER_ENABLED` = `false` by default, so `useTaste` and `switchFreeMode` are refused; `entitlement` returns `{ plan: "free" | "paid", accessUntil }` ("free" means not subscribed); every method may return `unavailable` and never throws across RPC; `DB_READY` guard; `AUTH_ADDRESS_LIMITER` abuse bucket; rotation keeps the previous session id valid for `SESSION_ROTATE_OVERLAP_SECONDS` (30); migrations `0001_init.sql` and `0002_rotation_overlap.sql` exist, so the next is **`0003_v3.sql`**. Open finding counts: S1 round 1 is fixed pending re-review; S2a round 2 has 2 open must-fixes (details kept privately, not in this public file).
+What S1 already built from this plan (A, `85901f9`, HUB-API doc): one game session per game per browser (row 14); `FREE_TIER_ENABLED` = `false` by default, so `useTaste` and `switchFreeMode` are refused; `entitlement` returns `{ plan: "free" | "paid", accessUntil }` ("free" means not subscribed); every method may return `unavailable` and never throws across RPC; `DB_READY` guard; `AUTH_ADDRESS_LIMITER` abuse bucket; rotation keeps the previous session id valid for `SESSION_ROTATE_OVERLAP_SECONDS` (30); migrations `0001_init.sql` and `0002_rotation_overlap.sql` exist, so the next is **`0003_v3.sql`**. Open finding counts: S1 round 1 is fixed pending re-review; S2a is in fix round 3 (details kept privately, not in this public file).
 
 ## Pricing test (the rules, written in)
 
@@ -112,11 +115,11 @@ In `config/pricing-test.json` (hub repo), read by an agent-callable report scrip
 | **Room Durable Object** | each room game | the room, its pass, the 1-hour ranking |
 | **Legal page** | `https://www.averystudio.org/legal/policies` | terms, privacy, children, refunds |
 
-Caption Wars is not an Avery game (not in `GAME_REGISTRY`, A) and is not gated. Why the hub moves to a private repo (S0d): little-games is **PUBLIC** (A, `gh repo view`, 2026-09-29), and the hub's ops receipts (the filled Stripe webhook inventory, the tax receipt the setup script requires, A), alert and request issues, migrations and review trail do not belong in public. Games reach the hub only by service-binding name, so no code link breaks.
+Caption Wars is not an Avery game (not in `GAME_REGISTRY`, A) and is not gated. Why the hub moves to a private repo (S0d): little-games is **PUBLIC** (A, `gh repo view`, 2026-09-29), and the hub's ops receipts (the filled Stripe webhook inventory, the tax receipt the setup script requires, A), alert and request issues, migrations and review trail do not belong in public. Games reach the hub only by service-binding name, so no code link breaks. Hub code pushed to public little-games branches before the split stays in public git history; it contained no secrets (secrets live only in Cloudflare).
 
 ### The internal API is RPC only
 
-Built in S1: the hub's `fetch` serves only `/auth/*`, `/me`, `/me/*`, `/billing/*`, `/downloads/*`, `/stripe/webhook`, `/admin/*`; `/internal/*`, `/rpc`, `/HubService` and every method name return 404. `/admin/*` sits behind Cloudflare Access and the hub verifies the Access token itself (fail closed when unset), on every hostname including staging preview hosts. Every method takes `{ gameId, gameKey }`; each `HUB_GAME_KEY` is 32 random bytes and only its hash sits in `GAME_REGISTRY` (with return URLs, allowed methods, modes). A session or pass minted for game Y is refused when game X presents it.
+Built in S1: the hub's `fetch` serves only `/auth/*`, `/me`, `/me/*`, `/billing/*` and `/stripe/webhook` (both answer 501 until S2b), `/admin/*`; **`/downloads/*` is NOT built** (S6 adds it); `/internal/*`, `/rpc`, `/HubService` and every method name return 404. `/admin/*` sits behind Cloudflare Access and the hub verifies the Access token itself (fail closed when unset), on every hostname including staging preview hosts. Every method takes `{ gameId, gameKey }`; each `HUB_GAME_KEY` is 32 random bytes and only its hash sits in `GAME_REGISTRY` (with return URLs, allowed methods, modes). A session or pass minted for game Y is refused when game X presents it.
 
 | Method | Purpose | Needs |
 |---|---|---|
@@ -288,9 +291,9 @@ Events: `checkout.session.completed`, `customer.subscription.created/.updated/.d
 6. Errors: stays queued, backoff from 30 s to 1 hour; the hourly cron re-enqueues D1 rows still `received` or `failed`.
 7. Three failed attempts: alert.
 
-### State model: `accessFor` (matches the S2a code, `src/stripe/access.ts`, read today, A)
+### State model: `accessFor` (matches the S2a code, `src/stripe/access.ts` at `a3e29d1`, A)
 
-`accessFor(subscription, latestCharge, dispute, refundOps, lastPaidPeriodEnd, now, policy)` returns `{ plan, until, reason }`. Policy values are validated with maxima (grace days at most 30, trial days at most 90).
+`accessFor(subscription, latestCharge, dispute, refundOps, now, policy, lastPaidPeriodEnd)` returns `{ plan, until, reason }`. Policy values are validated with maxima (grace days at most 30, trial days at most 90).
 
 | Input state | Access |
 |---|---|
@@ -322,7 +325,7 @@ Issues in `joydai2026-del/avery-hub` (private, S0d), labels `avery-alert` (`aver
 ### Refunds, receipts, price changes
 
 - Yearly: full refund within `REFUND_WINDOW_DAYS` (14) of the first purchase and each renewal; access ends at once (D3). Monthly: cancel any time, no refund, access to period end plus grace when she asked (D5).
-- **Price increase (legal checklist, NY GBL 527-a(1)(b-1)):** notice 14 to 30 days before the new price (`PRICE_CHANGE_NOTICE_DAYS` window); a monthly teacher may cancel within 14 days after the first higher charge and gets a pro-rata refund of the unused part (the admin refund tool takes a pro-rata amount; runbook step). Yearly renewals are already covered by the 14-day refund.
+- **Price increase (legal checklist, NY GBL 527-a(1)(b-1)):** notice 14 to 30 days before the new price (`PRICE_CHANGE_NOTICE_DAYS` window); a monthly teacher may cancel within 14 days after the first higher charge and gets a pro-rata refund of the unused part (D13; the admin refund tool takes a pro-rata amount; runbook step). Yearly renewals are already covered by the 14-day refund.
 - Stripe keeps processing fees on refunds (A, docs.stripe.com/refunds); about $1.14 per $29 refund (C). S5 records the real fee lines.
 - Receipts and Stripe's built-in upcoming-renewal email are turned on (B); automatic delivery is proven on the first live purchase.
 
@@ -359,7 +362,7 @@ Also config: `GOOGLE_CLIENT_ID`, `POSTHOG_PROJECT_KEY`, price ids, portal id, `G
 
 ### Downloads route
 
-`GET /downloads` lists visible packs and her delivered request files (yearly or grant; others see the subscribe card). `POST /downloads/<id>` (Origin and CSRF checked): yearly check and a read of today's count, read from R2, stamp the footer with her sign-in email and the UTC date (D11), then the conditional `pack_downloads` insert; only then the file is sent with a sanitized ASCII filename (RFC 6266 `filename*` for the rest), `Content-Disposition: attachment`, `Cache-Control: private, no-store`. **A failed read or stamp is not counted** and sends an alert. No stamped copy is cached. An email that is not plain ASCII prints its domain in punycode; a non-ASCII local part prints "teacher #<short id>" instead (C).
+`GET /downloads` lists visible packs and her delivered request files (yearly or grant; others see the subscribe card). `POST /downloads/<id>` (Origin and CSRF checked): yearly check and a read of today's count, read from R2, stamp the footer with her sign-in email and the UTC date (D11), then the conditional `pack_downloads` insert; only then the file is sent with a sanitized ASCII filename (RFC 6266 `filename*` for the rest), `Content-Disposition: attachment`, `Cache-Control: private, no-store`. **A failed read or stamp is not counted** and sends an alert. No stamped copy is cached. As D11 says: a non-ASCII domain prints in punycode, and a non-ASCII local part falls back to her short teacher id ("Licensed to teacher #<short id>, <date>").
 
 **Stamping HOW (C):** A) `pdf-lib` with the built-in Helvetica, one line per page: pure JavaScript, a few lines of our code; a new dependency, so the two-round repo safety scan runs first, and the scan notes its release age. B) a hand-written PDF incremental update: no dependency, fragile with compressed object streams. **Preference: A**, B only if the scan fails (packs then exported without object streams). CPU is measured on the biggest pack in S6. Each page size in each pack is opened and looked at once (render gate).
 
@@ -426,18 +429,18 @@ Assumptions: at most **3 parallel builders** and **1 review panel at a time**. R
 | Slice | Work | Build | Review (tier) | Fix | Total | Parallel with | Depends on | Files it owns |
 |---|---|---|---|---|---|---|---|---|
 | **S1-fix** | round-2 full panel on `85901f9` and its fixes; `0003_v3.sql`; localhost return URLs to a `dev` env; expired-row cron; Time Travel rehearsal | 0.5 | 0.5 (full) | 1 | 2 | S2a-fix, S0c | nothing | hub `src/{db,rpc,auth,admin,routes,pages}`, migrations, hub shared files |
-| **S2a-fix** | fix round 2 (disputes on any charge, paused collection, expanded charge ids, `prevented`); v2 prices and lookup keys; v1 archive and test-subscription cancel; `interval` output | 0.5 | 0.5 (full) | 1 | 2 | S1-fix, S0c | JJ test key (can finish on fakes) | hub `src/stripe/`, `scripts/stripe-setup.ts`, `docs/ops/*`, `tests/stripe/` |
+| **S2a-fix** | fix round 3 (round 2's dispute, paused-collection, charge-id and `prevented` fixes are committed at `a3e29d1`); v2 prices and lookup keys; v1 archive and test-subscription cancel; `interval` output | 0.5 | 0.5 (full) | 1 | 2 | S1-fix, S0c | JJ test key (can finish on fakes) | hub `src/stripe/`, `scripts/stripe-setup.ts`, `docs/ops/*`, `tests/stripe/` |
 | **S0c** | legal page changes above | 1 | 0.5 (default, 2 rounds max) | 0 | 1.5 | S1-fix, S2a-fix | JJ wording approval | joydong.org `legal/policies.html` |
-| **S0d** | `git subtree split` of `avery-hub/` into private `joydai2026-del/avery-hub` with history; the little-games copy moved to `archive/2026-09-29-avery-hub-moved/` (never deleted) with a pre-archive tag; CI and deploy from the new repo; ops receipts and issues live there | 0.5 | 0.5 (default) | 0 | 1 | none | S1-fix, S2a-fix merged | the new repo; little-games `archive/` |
+| **S0d** | `git subtree split` of `avery-hub/` into private `joydai2026-del/avery-hub` with full history, then `avery-hub/` is removed from little-games with NO archive copy left in the public repo: the private repo with full history IS the archive (house rule "archive, never delete" satisfied); CI and deploy from the new repo; ops receipts and issues live there | 0.5 | 0.5 (default) | 0 | 1 | none | S1-fix, S2a-fix merged | the new repo; removal of `avery-hub/` from little-games |
 | **S2b** | Checkout (Stripe-list check, open-session expiry, auto-renew and yearly-only text, plan page terms), BillingDO webhooks, per-charge dispute resolution, reconciliation by product with cursor, alerts, refund tools (including pro-rata), `authorizeRound` with one-time grants, per-game `ROOM_PASS_MINUTES`, `interval` in `entitlement`, seat grants, hub-down tests, full test-mode run | 4.5 | 1.5 (full) | 1 | 7 | S0c | S0d | hub `src/billing/`, `src/do/billing-do.ts`, `src/rpc/` gate methods, hub shared files |
 | **S2c** | the seven integration steps in the vocab app; server-built questions; both room paths; `ROOM_TTL_MS` to config; nickname filter; logs off; custom-domain branch confirmed; contract tests | 2.5 | 1 (full) | 1 | 4.5 | S2d, S6 | S2b | vocab `src/worker/*`, `src/client/*`, `wrangler.jsonc`, `package.json` |
-| **S2d** | (1) `avery-gate/` shared module and contract tests, one builder, contract reviewed before branching; (2) five game builders, one per game; (3) one integration commit and a six-game bypass suite on the merged SHA | 1 + 5 + 0.5 | 2 (full: contract, then merged SHA) | 1 | 9.5 | S2c, S6 | S2b | `avery-gate/` (step 1); `<game>/` of its own game (step 2); integration owner (step 3) |
+| **S2d** | (1) `avery-gate/` shared module and contract tests, one builder, contract reviewed (default panel) before branching; (2) five game builders, one per game, **each game's change gets the default panel (one Claude reviewer plus Codex) before it merges**; (3) one integration commit and a six-game bypass suite on the merged SHA, which gets the **full panel** | 1 + 5 + 0.5 | 2.75 (0.5 contract default, 5 x 0.25 per-game default, 1 merged full) | 1 | 10.25 | S2c, S6 | S2b | `avery-gate/` (step 1); `<game>/` of its own game (step 2); integration owner (step 3) |
 | **S6** | R2, `packs.json` with licence receipts and validation, `/downloads` with stamping after the safety scan, request form, delivery, `/admin/requests`, retention cron, pilot report rules | 3 | 1 (full) | 1 | 5 | S2c, S2d | S2b; owner licence receipts before any pack shows | hub `src/{downloads,requests}/`, `config/{packs,materials-pilot}.json`, hub shared files after S2b |
 | **S3** | room-only participant id, 1-hour board in paid rooms, nickname rule, clear-on-end tests | 1.5 | 0.5 (full: kid data) | 1 | 3 | S4 | S2c, S2d | vocab and game ranking files, Room DO ranking slot |
 | **S4** | teacher-only loader and route shutdown, the 11 events, analytics tests, pricing and pilot report script | 1.5 | 0.5 (full: teacher data, production writes) | 1 | 3 | S3 | S2c, S2d, S6 | vocab `analytics.ts`, `avery-gate/analytics.ts`, hub `src/analytics/`, `scripts/pricing-test-report.ts` |
 | **S5** | production D1, R2, namespaces; published consent screen; live key, provisioning, readback; tax gate passed; first real purchase, cancel, refund on the live site; receipts; fee lines; demos re-recorded (free round and paywall; paid screens with a `grantAccess` staff account) | 1.5 | 0.5 (full) | 1 | 3 | none | all above; S0c live; For JJ items 1-3 | ops docs, demo outputs |
 
-**Totals:** build 23.5, review 9, fix 9: **41.5 days of work, about 50 with 20% contingency** (one session at a time).
+**Totals:** build 23.5, review 9.75, fix 9: **42.25 days of work, about 51 with 20% contingency** (42.25 x 1.2 = 50.7; one session at a time).
 
 **Elapsed time (3 builders, 1 panel):**
 
@@ -446,21 +449,21 @@ Assumptions: at most **3 parallel builders** and **1 review panel at a time**. R
 | 1 | S1-fix, S2a-fix, S0c side by side; their panels one after another | 2.5 |
 | 2 | S0d | 1 |
 | 3 | S2b | 7 |
-| 4 | S2c, S6 and the S2d shared module start together; the five game builders use the free builder slots (two waves); panels queue S2c, S6, S2d; S3 builds once builders free up | 7.5 |
+| 4 | S2c (build 2.5), S6 (build 3) and the S2d shared module (build 1) start together; the five game builders use the free builder slots (days 1.5 to 4.5); one panel at a time: module contract, S2c, game 1, S6, games 2 to 5; S2c and S6 fixes; then the integration commit, the merged full panel and its fix day | 8.25 |
 | 5 | S3 panel and fixes, then S4 (needs S2d merged) | 3 |
 | 6 | S5 | 3 |
-| | **Base 24; with 20% contingency about 29 working days** | |
+| | **Base 2.5 + 1 + 7 + 8.25 + 3.5 + 3 = 25.25; with 20% contingency about 30 working days (30.3)** | |
 
 Outside our control and added on top: Google consent publishing and brand review, Stripe keys, the tax check, the licence check, JJ's legal wording.
 
 ```
 S1-fix --+
-S2a-fix -+--> S0d --> S2b --+--> S2c ---------+--> S3 --+
-S0c (any time, live before S5)  |                 |         |
-                                +--> S2d (module -> 5 games -> merge) --> S4 --+--> S5
-                                +--> S6 ----------------------------------+    |
-(owner licence receipts) --> S6 packs visible                                  |
-(JJ: Google, Stripe, tax) -----------------------------------------------------+
+S2a-fix -+--> S0d --> S2b --+--> S2c --------------------------------+--> S3 --+
+S0c (any time, live before S5)  |                                     |         |
+                                +--> S2d (module -> 5 games -> merge) +--> S4 --+--> S5
+                                +--> S6 ----------------------------------> S4  |
+(owner licence receipts) --> S6 packs visible                                   |
+(JJ: Google, Stripe, tax) ------------------------------------------------------+
 ```
 
 ## Six-month operations checklist (S5 exit criteria)
@@ -515,7 +518,7 @@ S0c (any time, live before S5)  |                 |         |
 | Question | Default until she answers |
 |---|---|
 | Accept the browser-run bypass (D2)? | accepted |
-| Every row D1 to D12 | stands |
+| Every row D1 to D13 | stands |
 | Tax (home state, taxability with packs, other states) | accountant, before S5 |
 | Legal placeholders and phone number | owner, before S0c publishes |
 | Pack licence receipts | owner, per file, before S6 shows a pack |
@@ -533,9 +536,8 @@ S0c (any time, live before S5)  |                 |         |
 | One-page written security plan and the 30-day school breach notice (COPPA 312.8, Illinois SOPPA) | owner and legal document work, not code; before the first school contract |
 | Children pick generated nicknames instead of typing (stronger option from the legal checklist) | a WHAT for JJ; the one-word rule is the minimum |
 | Staging hostname without the owner's handle (`hub-staging.averystudio.org`) | cosmetic; decision 13 fixed the current name |
-| Per-game full panels in S2d instead of one panel on the merged SHA | capacity: one panel at a time; the six-game bypass suite covers cross-game gaps |
 | AEO plan for the games page | separate track |
 
 ## Sources read for this version
 
-This plan's earlier versions and their reviews (local review files); the S1 and S2a build reports; `origin/feat/avery-hub` at `85901f9` (`wrangler.jsonc`, `docs/HUB-API.md`, migrations list); `origin/feat/avery-stripe-model` at `21898f8` and its working-tree `src/stripe/access.ts`; the five game Workers and the vocab repo as listed in the six-game table; the joydong.org legal page draft; the materials market research summary; the legal checklist and its reviews; `gh repo view joydai2026-del/little-games` (PUBLIC), 2026-09-29; web sources from version 2 (Cloudflare RPC and D1, Stripe Checkout, products, statement descriptors, refunds, tax, Google OpenID Connect, FTC COPPA FAQ), read 2026-09-28.
+This plan's earlier versions and their reviews (local review files); the S1 and S2a build reports; `origin/feat/avery-hub` at `85901f9` (`wrangler.jsonc`, `docs/HUB-API.md`, migrations list); `origin/feat/avery-stripe-model` at `a3e29d1` (`src/stripe/access.ts`); the five game Workers and the vocab repo as listed in the six-game table; the joydong.org legal page draft; the materials market research summary; the legal checklist and its reviews; `gh repo view joydai2026-del/little-games` (PUBLIC), 2026-09-29; web sources from version 2 (Cloudflare RPC and D1, Stripe Checkout, products, statement descriptors, refunds, tax, Google OpenID Connect, FTC COPPA FAQ), read 2026-09-28.
