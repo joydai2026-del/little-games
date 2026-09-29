@@ -7,7 +7,7 @@ Owner: JJ. Support address: hello@averystudio.org.
 | Plan | Refund |
 |---|---|
 | Yearly ($39.00) | Full refund, no questions, within **14 days** of the first purchase **and within 14 days of each yearly renewal** (`REFUND_WINDOW_DAYS` = 14) |
-| Monthly ($6.99) | No refund. She can cancel any time; access runs to the end of the paid month plus grace |
+| Monthly ($6.99) | No refund. She can cancel any time in the portal (cancel at period end); access runs to the end of the paid month plus `ACCESS_END_GRACE_DAYS` (7) |
 
 How to measure the 14 days: from the `created` time of the charge being refunded
 (the first purchase or that year's renewal) to the day she asked. Stripe does
@@ -20,13 +20,21 @@ A refund does **not** cancel a subscription in Stripe; they are separate
 operations. Do all three, in this order. Each step is recorded in
 `billing_ops` and can be re-run safely until all three are done: the same
 `op_id` produces the same Stripe idempotency key, so a retry never refunds or
-cancels twice.
+cancels twice. Stripe keeps idempotency keys for about 24 hours; a re-run after
+that is still safe because Stripe refuses a second refund of a fully refunded
+charge and a second cancel of a canceled subscription, and S2b must treat those
+two errors as "step already done".
 
 | Step | What | Stripe idempotency key |
 |---|---|---|
 | 1 | Refund the charge in full | `refund:<charge_id>:<op_id>` |
 | 2 | Cancel the subscription **immediately**, no proration | `cancel:<subscription_id>:refund:<op_id>` |
 | 3 | Mark the op `refunded_full` and bump the teacher's `entitlement_version` | none (hub database) |
+
+Grace rule: only a cancel that ran to the period end (portal cancel, Stripe
+`cancellation_details.reason` = `cancellation_requested` and `ended_at` at the
+period end) gets the 7-day grace. A cancel-now (this refund workflow, a lost
+dispute, account deletion) ends mid-period and gets **no** grace.
 
 After step 3 the teacher is on free. `accessFor` keeps her on free even if a
 later Stripe fetch still shows the subscription `active`, because a completed
