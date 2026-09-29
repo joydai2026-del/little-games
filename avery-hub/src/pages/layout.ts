@@ -8,6 +8,8 @@ export interface PageOpts {
   status?: number;
   headers?: HeadersInit;
   supportEmail: string;
+  /** Origins a form on this page may end up at after a redirect (Chrome applies form-action to redirects). */
+  formRedirectOrigins?: string[];
 }
 
 export function page(title: string, body: string, o: PageOpts): Response {
@@ -59,7 +61,8 @@ ${body}
   headers.set('Cache-Control', 'no-store');
   headers.set('X-Frame-Options', 'DENY');
   headers.set('Referrer-Policy', 'no-referrer');
-  headers.set('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  const formAction = ["'self'", ...(o.formRedirectOrigins ?? [])].join(' ');
+  headers.set('Content-Security-Policy', `default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`);
   return new Response(html, { status: o.status ?? 200, headers });
 }
 

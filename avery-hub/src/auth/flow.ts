@@ -145,7 +145,11 @@ export async function authCallback(req: Request, env: Env): Promise<Response> {
       'Pick a device to sign out',
       `<h1>You're signed in on ${devices.length} devices</h1>
 <div class="card"><p>You can be signed in on up to ${p.maxDevices}. Pick one to sign out, and this one will sign in.</p>${rows}</div>`,
-      { supportEmail: p.supportEmail, headers: [['Set-Cookie', clearOauth], ['Set-Cookie', setCookie(PENDING_COOKIE, pending, p.oauthStateMs / 1000)]] },
+      {
+        supportEmail: p.supportEmail,
+        formRedirectOrigins: target.returnUrl ? [new URL(target.returnUrl).origin] : [],
+        headers: [['Set-Cookie', clearOauth], ['Set-Cookie', setCookie(PENDING_COOKIE, pending, p.oauthStateMs / 1000)]],
+      },
     );
   }
   const hub = await startHubSession(env, p, teacherId, label, now());

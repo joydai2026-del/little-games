@@ -156,6 +156,8 @@ describe('device limit', () => {
     const html = await fourth.page!.text();
     expect(html).toContain('Pick one to sign out');
     expect(html).toContain('Chrome on Mac');
+    // The picker form redirects to the game, so the game's origin must be allowed as a form target.
+    expect(fourth.page!.headers.get('Content-Security-Policy')).toContain("form-action 'self' https://vocab.test;");
     for (const d of devs) expect((await h.core.resolveSession(h.env, caller(h), d.gameSessionId)).ok).toBe(true);
     // Pick the first device.
     const pending = /name="pending" value="([^"]+)"/.exec(html)![1];
