@@ -5,8 +5,8 @@ it from memory stroke by stroke, the fastest correct writer wins. Two levels on 
 (Easy = faint outline, Hard = blank box). Review round 1 (Codex RETHINK, Claude FIX-FIRST) moved
 every rule that matters onto the server.
 
-Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `eafdbf49-2fb5-47db-953d-841415d3c948`
-(commit `7d076a4`), workers.dev only.
+Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `fb9a30d2-d68e-4c7d-8d17-fd7f315c38df`
+(commit `8a7a165`), workers.dev only. The live gate passes 42 of 42 on fb9a30d2. The demo and the kid-run receipt are from eafdbf49: round 3 changed no screen.
 
 Grades: **A** = seen on the live deployed version above, in this session, with a stored receipt.
 **B** = source, unit tests or a local run. **C** = assumed, not checked.
