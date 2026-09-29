@@ -71,7 +71,7 @@ on it are taken back, so skipping never helps. On Hard, a stroke that is only ri
 hint counts as "helped" and scores half. After 6 wrong tries on one stroke (the hint shows after
 4) the room stops grading that stroke (tap Skip), and strokes closer than 200 ms apart are refused
 (`GAME.maxMissesPerStroke`, `GAME.minStrokeGapMs`). A room takes up to 40 joins a minute (a whole
-class) but only 8 a minute from one device (`GAME.joinsPerIpPerMinute`, checked first). A kid can skip a word only after the room served its sound (or tried and
+class, even behind one school Wi-Fi address; `GAME.joinsPerIpPerMinute` is also 40 and checked first). A kid can skip a word only after the room served its sound (or tried and
 failed), and a closed word is named to a kid only once every kid has closed it (`GAME.strokeScore`), shown as a small "helped" mark on
 the board; on Easy it scores in full. Equal results share a place.
 

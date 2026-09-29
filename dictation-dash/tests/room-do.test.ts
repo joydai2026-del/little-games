@@ -84,20 +84,21 @@ describe('RoomDO', () => {
     expect(((await storage.get('state')) as any).phase).toBe('done');
   });
 
-  it('joins: 30 kids on 30 devices in one minute all get in; the 9th join from ONE device gets 429, even when the room is full', async () => {
+  it('joins: a class of 30 behind ONE school IP all get in within a minute; the 41st join, from any mix, gets 429', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_800_000_000_000);
+    expect(GAME.joinsPerIpPerMinute).toBeGreaterThanOrEqual(GAME.maxKids);
     const { room } = await buildRoom(boundEnv() as Env);
     await room.fetch(post('create', { code: 'ABCD', text: '大' }));
     const joinFrom = (ip: string, name: string) =>
       room.fetch(new Request('https://room/join', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-client-ip': ip }, body: JSON.stringify({ name }) }));
-    for (let i = 0; i < 30; i++) expect((await joinFrom(`198.51.100.${i}`, `Kid ${i}`)).status).toBe(200);
-    for (let i = 0; i < GAME.joinsPerIpPerMinute; i++) expect((await joinFrom('203.0.113.7', `Flood ${i}`)).status).toBe(i + 30 < GAME.maxKids ? 200 : 409);
-    expect((await joinFrom('203.0.113.7', 'Flood 9')).status).toBe(429);
-    // A full room: the per-device check still answers first.
-    for (let i = 0; i < 4; i++) await joinFrom(`192.0.2.${i}`, `Late ${i}`);
-    expect((await joinFrom('203.0.113.7', 'Again')).status).toBe(429);
-    // A minute later that device may join again (here the room is full, so 409).
+    for (let i = 0; i < 30; i++) expect((await joinFrom('203.0.113.7', `Kid ${i}`)).status).toBe(200);
+    for (let i = 0; i < 10; i++) expect((await joinFrom(i % 2 ? '203.0.113.7' : `198.51.100.${i}`, `More ${i}`)).status).toBe(200);
+    const flood = await joinFrom('192.0.2.1', 'Number 41');
+    expect(flood.status).toBe(429);
+    expect(((await flood.json()) as any).error).toMatch(/too many/);
+    expect((await joinFrom('203.0.113.7', 'Number 41 again')).status).toBe(429);
+    // A minute later the answer is the honest one: the room is full.
     vi.setSystemTime(Date.now() + 61_000);
     expect((await joinFrom('203.0.113.7', 'Later')).status).toBe(409);
   });

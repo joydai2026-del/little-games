@@ -181,7 +181,7 @@ export class RoomDO implements DurableObject {
       // Per-IP flood control first (before the room's rate and fullness): one device cannot take many seats.
       const ip = request.headers.get('x-client-ip') ?? 'no-ip';
       const recent = (this.joinsByIp.get(ip) ?? []).filter((t) => now - t < 60_000);
-      if (recent.length >= GAME.joinsPerIpPerMinute) return json({ error: 'too many joins from this device, wait a minute and try again' }, 429);
+      if (recent.length >= GAME.joinsPerIpPerMinute) return json({ error: 'too many joins from here, wait a moment' }, 429);
       const b = await body(request);
       const playerId = newPlayerId();
       const result = join(this.room, { id: playerId, name: String(b.name ?? ''), agent: b.agent === true }, now);

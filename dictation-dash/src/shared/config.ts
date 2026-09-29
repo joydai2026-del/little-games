@@ -81,8 +81,13 @@ export const GAME = {
   strokeScore: { easy: { plain: 1, helped: 1 }, hard: { plain: 1, helped: 0.5 } },
   /** Joins one room accepts per minute: at least the seat count, so a whole class can join together. */
   joinsPerMinute: 40,
-  /** Joins one IP may make into one room per minute: the anti-flood control, checked before fullness. */
-  joinsPerIpPerMinute: 8,
+  /**
+   * Joins one IP may make into one room per minute, checked before fullness.
+   * 8/min blocked a class on shared school Wi-Fi (review round 4); griefer
+   * protection is the per-room rate plus the teacher making a new room; do not
+   * lower this below the seat cap.
+   */
+  joinsPerIpPerMinute: 40,
   /**
    * Wrong strokes one player may make on ONE stroke; after that the room stops
    * grading that stroke (tap Skip). Every miss counts, hint or not: the hint

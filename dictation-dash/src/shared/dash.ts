@@ -124,7 +124,8 @@ export function join(state: RoomState, who: { id: string; name: string; agent?: 
   if (state.mode === 'solo') return fail(state, 'this is a practice room for one', 409);
   const name = cleanName(who.name);
   if (!name) return fail(state, 'please type your name', 400);
-  // The rate is checked BEFORE fullness, and is below the seat count: a script cannot take every seat at once.
+  // The rate is checked BEFORE fullness and equals the seat count: a whole class can join at once,
+  // and a flood past it gets "too many" (429) instead of "full".
   const recent = state.players.filter((p) => p.role === 'kid' && now - p.joinedAt < 60_000).length;
   if (recent >= GAME.joinsPerMinute) return fail(state, 'too many people joined at once, wait a minute and try again', 429);
   if (writers(state).length >= GAME.maxKids) return fail(state, 'this room is full', 409);

@@ -651,7 +651,7 @@ class KidRound {
     if (this.errorText && !this.beforeGo) text = this.errorText;
     else if (Date.now() < this.hiccupUntil) text = HICCUP_TEXT;
     else if (!this.beforeGo && me && !this.finished && me.heard)
-      text = me.missesLeft === 0 ? 'No more tries on this word. Tap Skip for the next one.' : me.hint ? 'Look at the pink stroke, then write it.' : this.state.options.level === 'easy' ? 'Write it stroke by stroke. The faint outline helps you.' : 'Write it from memory, stroke by stroke.';
+      text = me.missesLeft === 0 ? 'No more tries on this stroke. Tap Skip to move on.' : me.hint ? 'Look at the pink stroke, then write it.' : this.state.options.level === 'easy' ? 'Write it stroke by stroke. The faint outline helps you.' : 'Write it from memory, stroke by stroke.';
     if (this.status.textContent !== text) this.status.textContent = text;
   }
 

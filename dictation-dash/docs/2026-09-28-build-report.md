@@ -1,4 +1,4 @@
-# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 3)
+# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 4)
 
 **What this is:** the grades 3 to 5 listening game JJ approved today. Momo says a word, kids write
 it from memory stroke by stroke, the fastest correct writer wins. Two levels on two big buttons
@@ -42,7 +42,7 @@ Grades: **A** = seen on the live deployed version above, in this session, with a
 | Per-stroke gap 200 ms; the room stops grading a stroke after 6 tries (the hint shows after 4), per stroke so long idioms are not punished | B | tests |
 | Room budget reserved without an await: two different new words, one slot, exactly one model call | B | `tests/tts.test.ts` |
 | Per-IP daily cap below the global cap; readback | A (readback) / B (cap reached) | live gate; tests |
-| Joins: 40/min per room (a whole class of 30 gets in), 8/min per device checked before fullness (the 9th gets 429) | B | `tests/room-do.test.ts` |
+| Joins: 40/min per room and 40/min per IP (a class of 30 behind one school Wi-Fi gets in), checked before fullness (the 41st gets 429). 8/min per IP was tried in round 3 and locked a class out | B | `tests/room-do.test.ts` |
 | Done-screen "Show words" works; pad shows "Checking..." while a stroke is graded | B | source; the demo run exercised the done screen but not the toggle |
 | Demo: kid writes Easy then Hard (tapped in the real UI), Try again path | A | `docs/evidence/2026-09-28-live-run.json` on eafdbf49 |
 | Crafted strokes cannot freeze the room | B | cost test |
