@@ -1,12 +1,13 @@
 // Ported from crm/front-desk/test/stripe-webhook.test.ts (CRM commit 78a60c7,
 // the last commit touching that file). The CRM tests go through its HTTP route
 // (401 or 200); the hub's route is built in S2b, so each case here asserts the
-// verifier's verdict directly (false = the route answers 401). Cases:
-//   valid, wrong value, wrong length, stale timestamp, missing header,
-//   malformed header shapes, unconfigured secret (the CRM's "mode whose secret
-//   is unconfigured"). The CRM's "unhandled event type acknowledged 200" is
-//   ported to tests/stripe/events.test.ts (allow-list), and its duplicate-event
-//   and unknown-mode cases are route-level and belong to S2b.
+// verifier's verdict directly (false = the route answers 401). Ported: 6 of the
+// CRM's 7 signature-rejection cases (wrong value, wrong length, stale timestamp,
+// missing header, malformed header shapes, unconfigured secret) plus the valid
+// case. Not ported here: "unknown mode: 401, never 500" (the hub has one
+// endpoint per environment, and the route-level 401-never-500 test belongs to
+// S2b). "Unhandled event type acknowledged 200" is the allow-list check in
+// tests/stripe/events.test.ts; duplicate-event handling is S2b.
 //
 // Signatures are built here with a separate helper (Web Crypto, written
 // independently of computeStripeSignature), because the project has no Node
