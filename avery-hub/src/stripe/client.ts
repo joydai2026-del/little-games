@@ -5,9 +5,11 @@
 //      Ownly account's default version cannot change what the hub reads;
 //   2. every mutating call REQUIRES an Idempotency-Key (enforced by the type).
 //
-// Retries: only on HTTP 409 (Stripe's "a request with this key is still in
-// flight") or a network failure, and always with the SAME idempotency key, so a
-// retry can never create a second object. Everything else throws at once.
+// Retries: network failures, a failed body read, timeouts, 409 (a request with
+// this key is still in flight), 429 and 5xx, always with the SAME idempotency
+// key so a retry can never create a second object, bounded by maxAttempts
+// (STRIPE_MAX_ATTEMPTS). `Stripe-Should-Retry: false` stops a retry. Any other
+// 4xx throws at once. Paths are checked so the key can only go to Stripe.
 //
 // This file imports nothing so the setup script can load it with plain Node.
 
@@ -33,13 +35,23 @@ export class StripeApiError extends Error {
   readonly type: string | undefined;
   readonly code: string | undefined;
   readonly requestId: string | undefined;
-  constructor(status: number, type: string | undefined, code: string | undefined, message: string, requestId: string | undefined) {
+  /** Stripe's `Stripe-Should-Retry` header, when sent. */
+  readonly shouldRetry: string | null;
+  constructor(
+    status: number,
+    type: string | undefined,
+    code: string | undefined,
+    message: string,
+    requestId: string | undefined,
+    shouldRetry: string | null = null,
+  ) {
     super(message);
     this.name = 'StripeApiError';
     this.status = status;
     this.type = type;
     this.code = code;
     this.requestId = requestId;
+    this.shouldRetry = shouldRetry;
   }
 }
 
@@ -50,16 +62,50 @@ export class StripeNetworkError extends Error {
   }
 }
 
+export class StripeTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StripeTimeoutError';
+  }
+}
+
+/** Misuse by the caller (bad path, missing idempotency key, bad config). Never retried. */
+export class StripeClientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StripeClientError';
+  }
+}
+
 export interface StripeClientOptions {
   secretKey: string;
   fetch?: typeof fetch;
   apiBase?: string;
   apiVersion?: string;
-  /** Extra attempts after the first, only for 409 or network errors. */
-  maxRetries?: number;
+  /** Total attempts including the first (config STRIPE_MAX_ATTEMPTS, default 3). */
+  maxAttempts?: number;
+  /** Per-attempt timeout in ms (config STRIPE_TIMEOUT_MS, default 15000). */
+  timeoutMs?: number;
   /** Base backoff in ms; doubles each retry. */
   retryBaseMs?: number;
   sleep?: (ms: number) => Promise<void>;
+}
+
+export const CLIENT_DEFAULTS = { maxAttempts: 3, timeoutMs: 15_000 } as const;
+
+/** Reads STRIPE_MAX_ATTEMPTS and STRIPE_TIMEOUT_MS (strings) with validation. */
+export function clientConfigFromEnv(env: Record<string, unknown>): { maxAttempts: number; timeoutMs: number } {
+  const read = (name: string, fallback: number, min: number, max: number): number => {
+    const raw = env[name];
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\s*\d+\s*$/.test(raw) ? Number(raw) : Number.NaN;
+    if (!Number.isInteger(n) || n < min || n > max) throw new StripeClientError(`config ${name} must be an integer from ${min} to ${max}`);
+    return n;
+  };
+  return {
+    maxAttempts: read('STRIPE_MAX_ATTEMPTS', CLIENT_DEFAULTS.maxAttempts, 1, 10),
+    timeoutMs: read('STRIPE_TIMEOUT_MS', CLIENT_DEFAULTS.timeoutMs, 100, 120_000),
+  };
 }
 
 export interface StripeClient {
@@ -86,21 +132,38 @@ export function encodeForm(params: FormParams): string {
   return out.toString();
 }
 
+const SAFE_PATH = /^\/v1\/[A-Za-z0-9_./-]+$/;
+
+/** Builds the request URL and proves it still points at Stripe. Throws otherwise. */
+export function buildStripeUrl(base: string, path: string): URL {
+  if (!SAFE_PATH.test(path) || path.includes('//') || path.includes('..')) {
+    throw new StripeClientError('refusing an unsafe Stripe API path');
+  }
+  const origin = new URL(base).origin;
+  const url = new URL(path, origin);
+  if (url.origin !== origin) throw new StripeClientError('refusing a Stripe API path that leaves the Stripe origin');
+  return url;
+}
+
 export function createStripeClient(opts: StripeClientOptions): StripeClient {
-  if (!opts.secretKey) throw new Error('Stripe secret key is missing');
+  if (!opts.secretKey) throw new StripeClientError('Stripe secret key is missing');
   const doFetch = opts.fetch ?? fetch;
-  const base = (opts.apiBase ?? STRIPE_API_BASE).replace(/\/+$/, '');
+  const base = new URL(opts.apiBase ?? STRIPE_API_BASE).origin;
   const version = opts.apiVersion ?? STRIPE_API_VERSION;
-  const maxRetries = opts.maxRetries ?? 2;
+  const maxAttempts = opts.maxAttempts ?? CLIENT_DEFAULTS.maxAttempts;
+  const timeoutMs = opts.timeoutMs ?? CLIENT_DEFAULTS.timeoutMs;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new StripeClientError('maxAttempts must be an integer >= 1');
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new StripeClientError('timeoutMs must be > 0');
   const retryBaseMs = opts.retryBaseMs ?? 500;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
+  /** One attempt, bounded by the timeout (covers the body read too). */
   async function once(method: 'GET' | 'POST', path: string, params: FormParams | undefined, key?: string): Promise<StripeObject> {
+    const url = buildStripeUrl(base, path);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${opts.secretKey}`,
       'Stripe-Version': version,
     };
-    let url = `${base}${path}`;
     let body: string | undefined;
     if (method === 'POST') {
       headers['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -108,51 +171,82 @@ export function createStripeClient(opts: StripeClientOptions): StripeClient {
       body = encodeForm(params ?? {});
     } else if (params) {
       const q = encodeForm(params);
-      if (q) url += `?${q}`;
+      if (q) url.search = q;
     }
-    let res: Response;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new StripeTimeoutError(`timeout after ${timeoutMs} ms on ${method} ${path}`));
+      }, timeoutMs);
+    });
+    const attempt = (async () => {
+      let res: Response;
+      try {
+        res = await doFetch(url.toString(), { method, headers, signal: controller.signal, ...(body !== undefined ? { body } : {}) });
+      } catch (e) {
+        throw new StripeNetworkError(`network error on ${method} ${path}`, e);
+      }
+      let text: string;
+      try {
+        text = await res.text();
+      } catch (e) {
+        // Stripe may have done the work; the retry reuses the idempotency key.
+        throw new StripeNetworkError(`failed reading the response of ${method} ${path}`, e);
+      }
+      let json: StripeObject | undefined;
+      try {
+        json = JSON.parse(text) as StripeObject;
+      } catch {
+        json = undefined;
+      }
+      if (!res.ok) {
+        const err = (json?.error ?? {}) as { type?: string; code?: string; message?: string };
+        throw new StripeApiError(
+          res.status,
+          err.type,
+          err.code,
+          err.message ?? `stripe error ${res.status} on ${method} ${path}`,
+          res.headers.get('Request-Id') ?? undefined,
+          res.headers.get('Stripe-Should-Retry'),
+        );
+      }
+      if (!json) throw new StripeApiError(res.status, undefined, undefined, `stripe returned non-JSON on ${path}`, undefined);
+      return json;
+    })();
+    attempt.catch(() => {}); // the race below owns the error
     try {
-      res = await doFetch(url, { method, headers, ...(body !== undefined ? { body } : {}) });
-    } catch (e) {
-      throw new StripeNetworkError(`network error on ${method} ${path}`, e);
+      return await Promise.race([attempt, timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
-    const text = await res.text();
-    let json: StripeObject | undefined;
-    try {
-      json = JSON.parse(text) as StripeObject;
-    } catch {
-      json = undefined;
+  }
+
+  function retryable(e: unknown): boolean {
+    if (e instanceof StripeNetworkError || e instanceof StripeTimeoutError) return true;
+    if (e instanceof StripeApiError) {
+      if (e.shouldRetry === 'false') return false;
+      return e.status === 409 || e.status === 429 || e.status >= 500;
     }
-    if (!res.ok) {
-      const err = (json?.error ?? {}) as { type?: string; code?: string; message?: string };
-      throw new StripeApiError(
-        res.status,
-        err.type,
-        err.code,
-        err.message ?? `stripe error ${res.status} on ${method} ${path}`,
-        res.headers.get('Request-Id') ?? undefined,
-      );
-    }
-    if (!json) throw new StripeApiError(res.status, undefined, undefined, `stripe returned non-JSON on ${path}`, undefined);
-    return json;
+    return false;
   }
 
   async function withRetry(method: 'GET' | 'POST', path: string, params: FormParams | undefined, key?: string): Promise<StripeObject> {
-    for (let attempt = 0; ; attempt++) {
+    for (let attempt = 1; ; attempt++) {
       try {
         return await once(method, path, params, key);
       } catch (e) {
-        const retryable = e instanceof StripeNetworkError || (e instanceof StripeApiError && e.status === 409);
-        if (!retryable || attempt >= maxRetries) throw e;
-        await sleep(retryBaseMs * 2 ** attempt);
+        if (!retryable(e) || attempt >= maxAttempts) throw e;
+        await sleep(retryBaseMs * 2 ** (attempt - 1));
       }
     }
   }
 
   return {
     get: (path, query) => withRetry('GET', path, query),
-    post: (path, params, o) => {
-      if (!o?.idempotencyKey) throw new Error(`idempotency key required for POST ${path}`);
+    async post(path, params, o) {
+      if (!o?.idempotencyKey) throw new StripeClientError(`idempotency key required for POST ${path}`);
       return withRetry('POST', path, params, o.idempotencyKey);
     },
     async listAll(path, query = {}, maxPages = 50) {
@@ -165,7 +259,7 @@ export function createStripeClient(opts: StripeClientOptions): StripeClient {
         if (!res.has_more || data.length === 0) return all;
         after = String(data[data.length - 1]!.id);
       }
-      throw new Error(`listAll ${path} exceeded ${maxPages} pages`);
+      throw new StripeClientError(`listAll ${path} exceeded ${maxPages} pages`);
     },
   };
 }
