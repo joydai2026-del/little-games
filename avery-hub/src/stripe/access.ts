@@ -81,9 +81,11 @@ export interface DisputeLike {
    * The subscription the disputed charge paid for. S2b resolves it from the
    * charge's invoice (`invoice.parent.subscription_details.subscription` on
    * dahlia). A dispute on ANY charge of this subscription counts, not only the
-   * latest one. `null` means it could not be resolved: that fails closed.
+   * latest one. Contract: S2b passes a non-empty string, or nothing. ANYTHING
+   * else (omitted, undefined, null, empty string, an expanded object) means
+   * "unresolved" and fails closed (reason `dispute_unresolved`).
    */
-  subscriptionId: string | null;
+  subscriptionId?: string | null;
 }
 
 /** Rows from billing_ops (S2b). Only full-refund ops matter here. */
@@ -102,7 +104,8 @@ const MAX_SECONDS = 1e11;
 const OPEN_DISPUTE = new Set(['needs_response', 'under_review', 'warning_needs_response', 'warning_under_review']);
 /** Closed statuses that give access back to the subscription. `prevented` is
  * "prevented from becoming a formal chargeback" (Stripe dispute object, read
- * 2026-09-29), so the charge stands. */
+ * 2026-09-29). Prevention can involve a refund; that is caught by the refund
+ * check below, so a prevented-and-refunded charge still gives free. */
 const RESTORING_DISPUTE = new Set(['won', 'warning_closed', 'prevented']);
 
 /** Hard upper bounds, so a typo cannot grant years of access or accept years-old webhooks. */
@@ -165,15 +168,18 @@ export function accessFor(
   now: number,
   policy: AccessPolicy,
   /**
-   * End (Unix seconds) of the last period Stripe was actually PAID for. S2b
-   * derives it from the latest paid invoice's line period end. null = unknown.
+   * End (Unix seconds, whole number) of the last period Stripe was actually
+   * PAID for. S2b passes it ONLY when a paid invoice is proven, from that
+   * invoice's line period end. `null` means "no paid invoice known" and gives
+   * free for active and past_due. A negative, fractional or millisecond value
+   * throws.
    */
   lastPaidPeriodEnd: number | null,
 ): Access {
   assertNow(now);
   assertPolicy(policy);
-  if (lastPaidPeriodEnd !== null && (!Number.isFinite(lastPaidPeriodEnd) || lastPaidPeriodEnd > MAX_SECONDS)) {
-    throw new AccessInputError('lastPaidPeriodEnd must be Unix seconds or null');
+  if (lastPaidPeriodEnd !== null && (!Number.isInteger(lastPaidPeriodEnd) || lastPaidPeriodEnd < 0 || lastPaidPeriodEnd > MAX_SECONDS)) {
+    throw new AccessInputError('lastPaidPeriodEnd must be whole Unix seconds or null');
   }
   if (!subscription) return free('no_subscription');
 
@@ -182,8 +188,10 @@ export function accessFor(
   // A dispute counts when its charge paid for THIS subscription (any of its
   // charges, not only the latest), or when that cannot be resolved (fail
   // closed). It is ignored only when it provably belongs to another subscription.
-  if (dispute && (dispute.subscriptionId === subscription.id || dispute.subscriptionId === null)) {
-    const unresolved = dispute.subscriptionId === null;
+  const disputeSub: unknown = dispute?.subscriptionId;
+  const resolved = typeof disputeSub === 'string' && disputeSub !== '';
+  if (dispute && (!resolved || disputeSub === subscription.id)) {
+    const unresolved = !resolved;
     if (dispute.status === 'lost') return free(unresolved ? 'dispute_unresolved' : 'dispute_lost');
     if (OPEN_DISPUTE.has(dispute.status)) {
       if (policy.DISPUTE_ACTION === 'pause') return free(unresolved ? 'dispute_unresolved' : 'dispute_open');
@@ -225,9 +233,10 @@ export function accessFor(
       return paidUntil(end === null ? null : end + grace, now, subscription.cancel_at_period_end ? 'active_canceling' : 'active');
     }
     case 'past_due': {
-      // Payment became due at the start of the current period (the renewal).
-      const start = periodStart(subscription);
-      return paidUntil(start === null ? null : start + policy.PAST_DUE_GRACE_DAYS * DAY, now, 'past_due_grace');
+      // Grace counts from the end of the last PROVEN paid period (normally the
+      // start of the unpaid renewal). No proven paid period: free.
+      if (lastPaidPeriodEnd === null) return free('no_paid_period');
+      return paidUntil(lastPaidPeriodEnd + policy.PAST_DUE_GRACE_DAYS * DAY, now, 'past_due_grace');
     }
     case 'canceled': {
       // A cancel that ran to the period end (portal "cancel at period end") gets

@@ -70,10 +70,12 @@ describe('accessFor: one test per plan table row', () => {
     expect(run(sub('active'))).toEqual({ plan: 'paid', until: END + 7 * DAY, reason: 'active' });
   });
 
-  it('past_due: paid during PAST_DUE_GRACE_DAYS from the period start, then free', () => {
+  it('past_due: paid during PAST_DUE_GRACE_DAYS from the last paid period end, then free', () => {
+    // The renewal 2 days ago failed; the last paid period ended then.
     const s = sub('past_due', { items: { data: [{ current_period_start: NOW - 2 * DAY, current_period_end: NOW + 363 * DAY }] } });
-    expect(run(s)).toEqual({ plan: 'paid', until: NOW + 5 * DAY, reason: 'past_due_grace' });
-    expect(run(s, { now: NOW + 6 * DAY })).toEqual({ plan: 'free', until: null, reason: 'past_due_grace_ended' });
+    const lastPaid = NOW - 2 * DAY;
+    expect(run(s, { lastPaid })).toEqual({ plan: 'paid', until: NOW + 5 * DAY, reason: 'past_due_grace' });
+    expect(run(s, { lastPaid, now: NOW + 6 * DAY })).toEqual({ plan: 'free', until: null, reason: 'past_due_grace_ended' });
   });
 
   it('unpaid: free', () => {
@@ -186,7 +188,7 @@ describe('accessFor: extra cases from the S2a brief', () => {
   it('grace comes from the policy object, not a literal', () => {
     expect(run(sub('active'), { policy: { ...POLICY, ACCESS_END_GRACE_DAYS: 0 } }).until).toBe(END);
     const s = sub('past_due', { items: { data: [{ current_period_start: NOW - 2 * DAY, current_period_end: END }] } });
-    expect(run(s, { policy: { ...POLICY, PAST_DUE_GRACE_DAYS: 1 } }).plan).toBe('free');
+    expect(run(s, { lastPaid: NOW - 2 * DAY, policy: { ...POLICY, PAST_DUE_GRACE_DAYS: 1 } }).plan).toBe('free');
   });
 
   it('active but the period long over (stale data): free', () => {
@@ -291,8 +293,8 @@ describe('accessFor: paid-through rule (no access for time not paid for)', () =>
 describe('accessFor: combinations (ported from the coverage review scratch run)', () => {
   it('past_due + cancel_at_period_end: past-due grace applies', () => {
     const s = sub('past_due', { cancel_at_period_end: true, items: { data: [{ current_period_start: NOW - 2 * DAY, current_period_end: NOW + 28 * DAY }] } });
-    expect(run(s).plan).toBe('paid');
-    expect(run(s, { now: NOW + 6 * DAY }).plan).toBe('free');
+    expect(run(s, { lastPaid: NOW - 2 * DAY }).plan).toBe('paid');
+    expect(run(s, { lastPaid: NOW - 2 * DAY, now: NOW + 6 * DAY }).plan).toBe('free');
   });
 
   it('active + open dispute + full refund: free; with the dispute won it stays free (refunded)', () => {
@@ -327,8 +329,45 @@ describe('accessFor: combinations (ported from the coverage review scratch run)'
 
   it('past_due grace boundary at exactly N days', () => {
     const s = sub('past_due', { items: { data: [{ current_period_start: NOW, current_period_end: NOW + 30 * DAY }] } });
-    expect(run(s, { now: NOW + 7 * DAY - 1 }).plan).toBe('paid');
-    expect(run(s, { now: NOW + 7 * DAY }).plan).toBe('free');
+    expect(run(s, { lastPaid: NOW, now: NOW + 7 * DAY - 1 }).plan).toBe('paid');
+    expect(run(s, { lastPaid: NOW, now: NOW + 7 * DAY }).plan).toBe('free');
+  });
+});
+
+describe('fix round 3: past_due anchor, dispute id validation, lastPaidPeriodEnd contract', () => {
+  it('past_due with no proven paid period fails closed', () => {
+    const s = sub('past_due', { items: { data: [{ current_period_start: NOW, current_period_end: NOW + 30 * DAY }] } });
+    expect(run(s, { lastPaid: null })).toEqual({ plan: 'free', until: null, reason: 'no_paid_period' });
+  });
+
+  it('past_due grace does not come from the (unpaid) new period start', () => {
+    // Stale proof: the last paid period ended 40 days ago, the new period started today.
+    const s = sub('past_due', { items: { data: [{ current_period_start: NOW, current_period_end: NOW + 30 * DAY }] } });
+    expect(run(s, { lastPaid: NOW - 40 * DAY }).plan).toBe('free');
+  });
+
+  const badIds: Array<[string, Record<string, unknown>]> = [
+    ['omitted key', {}],
+    ['undefined', { subscriptionId: undefined }],
+    ['explicit null', { subscriptionId: null }],
+    ['empty string', { subscriptionId: '' }],
+    ['expanded object', { subscriptionId: { id: 'sub_1' } }],
+  ];
+  for (const [name, extra] of badIds) {
+    it(`dispute subscription id ${name}: unresolved, fails closed (open and lost)`, () => {
+      for (const status of ['needs_response', 'lost']) {
+        const dispute = { id: 'dp_x', status, charge: 'ch_old', ...extra } as unknown as Parameters<typeof accessFor>[2];
+        const r = accessFor(sub('active'), paidCharge, dispute, [], NOW, POLICY, END);
+        expect(r, `${name} ${status}`).toEqual({ plan: 'free', until: null, reason: 'dispute_unresolved' });
+      }
+    });
+  }
+
+  it('lastPaidPeriodEnd: null gives free for active; negative or fractional throws', () => {
+    expect(run(sub('active'), { lastPaid: null }).reason).toBe('no_paid_period');
+    expect(() => run(sub('active'), { lastPaid: -1 })).toThrow(AccessInputError);
+    expect(() => run(sub('active'), { lastPaid: END + 0.5 })).toThrow(AccessInputError);
+    expect(() => run(sub('active'), { lastPaid: Number.NaN })).toThrow(AccessInputError);
   });
 });
 
