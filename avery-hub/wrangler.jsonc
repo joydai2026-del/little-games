@@ -288,7 +288,7 @@
         {
           "binding": "DB",
           "database_name": "avery_hub_staging",
-          "database_id": "PENDING_STAGING_D1_ID",
+          "database_id": "b287b7d8-bec3-437b-805c-d0a41987ebde",
           "migrations_dir": "migrations"
         }
       ],
