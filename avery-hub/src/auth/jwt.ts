@@ -140,6 +140,11 @@ async function keyFor(url: string, kid: string | undefined, nowMs: number, jp: J
   return jwk;
 }
 
+/** Tests only: remembered-unknown kids, least recently used first. */
+export function unknownKidList(url: string): string[] {
+  return [...(states.get(url)?.unknownKids.keys() ?? [])];
+}
+
 /** Tests only. */
 export function unknownKidCount(url: string): number {
   return states.get(url)?.unknownKids.size ?? 0;

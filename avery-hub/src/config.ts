@@ -35,6 +35,8 @@ export interface Policy {
   maxDevices: number;
   roomPassMs: number;
   freeTierEnabled: boolean;
+  /** Days a seat grant is kept after it ends; null = invalid config (the clean-up refuses to run). */
+  seatGrantRetentionDays: number | null;
   dbReady: boolean;
   freeListLimit: number;
   paidListLimit: number;
@@ -60,6 +62,17 @@ function num(env: Env, key: string, fallback: number): number {
 function str(env: Env, key: string, fallback = ''): string {
   const raw = env[key];
   return typeof raw === 'string' ? raw : fallback;
+}
+
+/**
+ * A whole number in [min, max]; `fallback` only when the var is absent. Present
+ * but empty, not a number, fractional or out of range = null (fail closed).
+ */
+function boundedInt(raw: unknown, fallback: number, min: number, max: number): number | null {
+  if (raw === undefined) return fallback;
+  if (typeof raw === 'string' && !/^\d+$/.test(raw.trim())) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
 
 export function parseRegistry(raw: unknown): Registry {
@@ -123,6 +136,7 @@ export function policy(env: Env): Policy {
     freeTierEnabled: str(env, 'FREE_TIER_ENABLED', 'false') === 'true',
     // Production ships with a placeholder D1 id and DB_READY "false"; the Worker refuses to serve until both are set.
     dbReady: str(env, 'DB_READY', 'false') === 'true',
+    seatGrantRetentionDays: boundedInt(env.SEAT_GRANT_RETENTION_DAYS, 400, 30, 3650),
     freeListLimit: num(env, 'FREE_LIST_LIMIT', 1),
     paidListLimit: num(env, 'PAID_LIST_LIMIT', 500),
     tasteRoundsPerDay: num(env, 'FREE_TASTE_ROUNDS_PER_DAY', 1),

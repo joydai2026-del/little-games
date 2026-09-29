@@ -14,6 +14,7 @@ import { runCleanup } from './cleanup';
 export { TokenDO } from './do/token-do';
 export { BillingDO } from './do/billing-do';
 export { HubService } from './rpc/hub-service';
+import { ALERT_TAG } from './alert';
 
 function notFound(): Response {
   return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
@@ -64,7 +65,11 @@ export default {
     }
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    const r = await runCleanup(env);
-    console.log('cleanup', JSON.stringify(r));
+    try {
+      const r = await runCleanup(env);
+      console.log('cleanup', JSON.stringify(r));
+    } catch (e) {
+      console.error(`${ALERT_TAG} cleanup failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   },
 } satisfies ExportedHandler<Env>;

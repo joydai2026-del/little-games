@@ -5,8 +5,8 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { Env } from '../env';
 import { hub, type Caller } from './core';
 
-/** Fixed tag S2b's alert channel picks up from the Worker logs. */
-export const ALERT_TAG = 'AVERY_ALERT';
+import { ALERT_TAG } from '../alert';
+export { ALERT_TAG };
 
 /**
  * Workers RPC sends a thrown error (message and stack) to the caller. Never

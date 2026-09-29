@@ -13,6 +13,7 @@ import { authUrl, exchangeAndVerify, googleReady } from './google';
 import { HUB_COOKIE, OAUTH_COOKIE, PENDING_COOKIE, clearCookie, readCookie, setCookie } from './cookies';
 import { browserLabel, csrfOk, currentHubSession, originOk, startHubSession } from './hub-session';
 import { createToken, takeToken } from './tokens';
+import { ALERT_TAG } from '../alert';
 
 const BIND_RE = /^[0-9a-f]{64}$/;
 
@@ -91,7 +92,10 @@ export async function authStart(req: Request, env: Env): Promise<Response> {
   const t = readTarget(url, p);
   if (t === 'bad') return badLink(p);
   // A missing limiter binding is a broken deploy: fail closed, never open.
-  if (!env.AUTH_START_LIMITER || !env.AUTH_ADDRESS_LIMITER) return cantSignIn(p.supportEmail);
+  if (!env.AUTH_START_LIMITER || !env.AUTH_ADDRESS_LIMITER) {
+    console.error(`${ALERT_TAG} /auth/start: a rate-limit binding is missing; sign-in is refused`);
+    return cantSignIn(p.supportEmail);
+  }
   if (t.gameId && !(await env.AUTH_START_LIMITER.limit({ key: `${t.gameId}:${t.bindHash}` })).success) {
     return cantSignIn(p.supportEmail, 429);
   }

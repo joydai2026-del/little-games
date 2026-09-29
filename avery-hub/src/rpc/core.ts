@@ -6,6 +6,7 @@ import { hashPresented, mintSecret, safeEqual, sha256Hex } from '../crypto';
 import { checkRoomPassRow, createGameSession, forTeacher, openDb, resolveGameSession, teacherExists, type TeacherScope } from '../db';
 import { now } from '../clock';
 import { takeToken } from '../auth/tokens';
+import { ALERT_TAG } from '../alert';
 
 export interface Caller {
   gameId: string;
@@ -100,7 +101,10 @@ export const hub = {
     // `ratelimits` block in wrangler.jsonc). Cloudflare rate limits are
     // per location and approximate, so this is a cost bound, not a security
     // boundary. A missing binding fails closed.
-    if (!env.REDEEM_LIMITER || !env.REDEEM_GAME_LIMITER) return fail('unavailable');
+    if (!env.REDEEM_LIMITER || !env.REDEEM_GAME_LIMITER) {
+      console.error(`${ALERT_TAG} redeemHandoff: a rate-limit binding is missing; redemption is refused`);
+      return fail('unavailable');
+    }
     if (!(await env.REDEEM_GAME_LIMITER.limit({ key: `game:${g.gameId}` })).success) return fail('rate_limited');
     if (!(await env.REDEEM_LIMITER.limit({ key: `${g.gameId}:${bindHash}` })).success) return fail('rate_limited');
     const presented = await hashPresented(env, token);

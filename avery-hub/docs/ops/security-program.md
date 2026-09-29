@@ -9,7 +9,7 @@ any incident; the date of the last review goes at the bottom.
 | Data | Where | Whose | Kept until |
 |---|---|---|---|
 | Teacher Google id (`sub`), email, display name | D1 `teachers` (`avery_hub`, staging `avery_hub_staging`) | teachers only | account deletion (tombstone keeps only id, Stripe customer id, deletion time) |
-| Hub sessions and game sessions (HMAC of the id, browser label such as "Chrome on Mac", timestamps) | D1 `sessions`, `game_sessions` | teachers | sign-out, expiry (30 days idle, 90 days max; game 4 h idle, 12 h max), or deletion |
+| Hub sessions and game sessions (HMAC of the id, browser label such as "Chrome on Mac", timestamps) | D1 `sessions`, `game_sessions` | teachers | deleted at sign-out, sign-out everywhere, device limit, JJ's revoke or account deletion. An EXPIRED session (30 days idle or 90 days max; game 4 h idle or 12 h max) is refused at once but its row stays until a later-slice clean-up deletes expired rows `[later slice]` |
 | Saved lists, classes, class codes, round history (game, mode, time, player-count band) | D1 `lists`, `classes`, `round_history` | teachers | deletion |
 | School seat grants (school roster email, school reference, end date) | D1 `seat_grants` | the school's purchase record | seat end plus `SEAT_GRANT_RETENTION_DAYS` (400), removed by the daily clean-up |
 | Room passes (HMAC of the pass id, game, room code, allowed modes) | D1 `room_passes` | teachers (no personal data) | expiry clean-up `[later slice]` |
@@ -40,10 +40,10 @@ Each game holds its own `HUB_GAME_KEY`; the hub keeps only its SHA-256. Rotation
 
 | Rule | How it holds today |
 |---|---|
-| Log no personal data | the hub logs three things only: `hub error <message>` on an unexpected error, `AVERY_ALERT HubService.<method> internal error: <message>`, and the clean-up counts. No email, name, cookie, token or IP is logged by our code |
-| No raw client address anywhere | the sign-in abuse bucket uses HMAC(`RATE_KEY`, address) and only inside Cloudflare's rate limiter |
-| No logs or analytics on kid screens | the hub serves no kid screen; every game must keep kid screens free of analytics and logging of kid input (plan rule; checked in each game's review) |
-| Log retention | Workers observability is on for the hub `[JJ: confirm the Cloudflare plan's log retention and keep it at the shortest window]` |
+| What our code logs | exactly three lines: `hub error <message>` on an unexpected route error; `AVERY_ALERT ...` for an internal HubService error, a missing rate-limit binding, or a failed clean-up; and `cleanup {"seatGrants":N}`. Our code never logs an email, name, cookie, token or client address |
+| What Cloudflare logs anyway | Workers observability is ON for the hub (`observability.enabled` in `wrangler.jsonc`). Its invocation logs record request metadata our code does not control, which can include the client IP and the full request URL, for example `/auth/callback?state=...&code=...` (the Google code is single use and useless without the client secret, but it is still in the log) `[JJ: confirm the retention of these logs on the account's plan and keep it at the shortest window; decide who may read them]` |
+| Client address in our own state | never stored; the sign-in abuse bucket keys on HMAC(`RATE_KEY`, address) inside Cloudflare's rate limiter only |
+| No logs on kid screens | the hub serves no kid screen. Observability is a PER-WORKER setting: each game Worker that serves children's screens must set `observability.enabled` to false (or strip request details) and must send no analytics from kid screens `[JJ: confirm per game before the games go live with accounts]` |
 
 ## 5. Breach response
 
