@@ -144,7 +144,7 @@ def write_round(k, t, code, log, tag, expected_round, fail_word=None, shots=None
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="https://dictation-dash.joyd-ai-2026.workers.dev")
+    ap.add_argument("--url", default="https://dictation-dash.averystudio.org")
     ap.add_argument("--record", action="store_true")
     args = ap.parse_args()
     base = args.url.rstrip("/")

@@ -4,7 +4,7 @@
 // writes it stroke by stroke, sending real points (the stroke medians from the
 // site's proxy) at a human-ish pace, with a few honest backwards strokes.
 //
-//   node agent/play.mjs --url https://dictation-dash.joyd-ai-2026.workers.dev --room ABCD --name "Robo"
+//   node agent/play.mjs --url https://dictation-dash.averystudio.org --room ABCD --name "Robo"
 //   DICTATION_DASH_URL=... node agent/play.mjs --room ABCD --pace-ms 900 --mistakes 0.15
 //
 // Options (all config, no literals in the loop):

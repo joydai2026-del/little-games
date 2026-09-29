@@ -5,6 +5,7 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-09-07",
   "workers_dev": true,
+  "routes": [{ "pattern": "tianzige.averystudio.org", "custom_domain": true }],
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",

@@ -3,11 +3,11 @@
 // request, status, and the fields that prove each claim) for
 // docs/evidence/. Makes no sound, needs no browser.
 //
-//   node scripts/live-gate.mjs [--url https://trace-race.joyd-ai-2026.workers.dev]
+//   node scripts/live-gate.mjs [--url https://trace-race.averystudio.org]
 import { createHash } from 'node:crypto';
 
 const argUrl = process.argv.indexOf('--url');
-const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://trace-race.joyd-ai-2026.workers.dev').replace(/\/+$/, '');
+const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://trace-race.averystudio.org').replace(/\/+$/, '');
 const receipt = {
   url: U,
   deployedVersion: process.env.TRACE_RACE_VERSION ?? null,

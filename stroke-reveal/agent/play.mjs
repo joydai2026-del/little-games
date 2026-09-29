@@ -3,7 +3,7 @@
 // the phones use, watches Momo draw (GET /drawing), and taps the word card
 // that matches, after a human-ish wait, with a few honest mistakes.
 //
-//   node agent/play.mjs --url https://stroke-reveal.joyd-ai-2026.workers.dev --room ABCD --name "Robo"
+//   node agent/play.mjs --url https://stroke-reveal.averystudio.org --room ABCD --name "Robo"
 //   STROKE_REVEAL_URL=... node agent/play.mjs --room ABCD --patience 0.6 --mistakes 0.2
 //
 // Options (all config, no literals in the loop):

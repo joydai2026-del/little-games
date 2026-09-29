@@ -96,7 +96,7 @@ def encode_demo(kid_webm, board_webm, log):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="https://trace-race.joyd-ai-2026.workers.dev")
+    ap.add_argument("--url", default="https://trace-race.averystudio.org")
     ap.add_argument("--blip", action="store_true")
     ap.add_argument("--cut", choices=["abort", "hang"], default="abort",
                     help="abort: sends fail at once; hang: sends never answer (the phone's timeout must fire)")

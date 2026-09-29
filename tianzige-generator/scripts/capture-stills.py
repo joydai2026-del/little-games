@@ -19,7 +19,7 @@ import tempfile
 
 from playwright.sync_api import sync_playwright
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige-generator.joyd-ai-2026.workers.dev"
+URL = sys.argv[1] if len(sys.argv) > 1 else "https://tianzige.averystudio.org"
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "docs", "demo")
 

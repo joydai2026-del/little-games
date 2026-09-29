@@ -3,7 +3,9 @@
 An Avery Studio classroom tool for Mandarin immersion K-5. A teacher pastes characters (messy is
 fine), sees the practice sheet right away, and prints it.
 
-**Live:** https://tianzige-generator.joyd-ai-2026.workers.dev
+**Live:** https://tianzige.averystudio.org
+
+The old address https://tianzige-generator.joyd-ai-2026.workers.dev still works and serves the same tool.
 
 ## Demo
 
@@ -63,7 +65,7 @@ one word; a longer run (一二三四五六七) is treated as single characters.
 ## For AI agents (same output over HTTP)
 
 ```bash
-curl -s -X POST https://tianzige-generator.joyd-ai-2026.workers.dev/api/sheet \
+curl -s -X POST https://tianzige.averystudio.org/api/sheet \
   -H 'Content-Type: application/json' \
   -d '{"chars": "1. 大 dà big\n2. 学校 xuéxiào", "options": {"grid": "tian", "trace": 2, "perRow": 8, "paper": "letter"}}' \
   -o sheet.html
@@ -106,7 +108,7 @@ npm run typecheck
 npm run check:xss   # no raw-markup APIs in client or shared code
 npm run dev         # vite, UI only
 npm run cf:dev      # build + wrangler dev, UI and API
-npm run deploy      # build + deploy to workers.dev
+npm run deploy      # build + deploy (workers.dev + tianzige.averystudio.org)
 python3 scripts/capture-stills.py   # re-capture docs/demo stills from the live site
 python3 scripts/record-demo.py      # re-record the demo mp4 + gif from the live site
 python3 scripts/live-receipt.py     # live checks -> docs/evidence/<date>-live-receipt.md

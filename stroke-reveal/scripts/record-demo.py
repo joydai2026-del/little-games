@@ -62,7 +62,7 @@ def encode_demo(kid_webm, board_webm, log):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="https://stroke-reveal.joyd-ai-2026.workers.dev")
+    ap.add_argument("--url", default="https://stroke-reveal.averystudio.org")
     ap.add_argument("--words", type=int, default=3, help="words per round")
     ap.add_argument("--no-video", action="store_true")
     args = ap.parse_args()

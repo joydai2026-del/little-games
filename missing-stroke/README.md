@@ -1,6 +1,8 @@
 # Missing Stroke 补一笔
 
-Live at: **https://missing-stroke.joyd-ai-2026.workers.dev**
+Live at: **https://missing-stroke.averystudio.org**
+
+The old address https://missing-stroke.joyd-ai-2026.workers.dev still works and serves the same game.
 
 An Avery Studio classroom game for Mandarin immersion K-5. Momo forgot one stroke, and kids race
 to draw it in the right spot. Each character from the teacher's list shows up in ink with exactly
@@ -81,7 +83,7 @@ when the room's 200 stored seats are used up, so joins that go quiet can never l
 An agent plays through the same HTTP API the phones use. No npm install, Node 18+:
 
 ```
-node missing-stroke/agent/play.mjs --url https://missing-stroke.joyd-ai-2026.workers.dev --room ABCD --name Robo
+node missing-stroke/agent/play.mjs --url https://missing-stroke.averystudio.org --room ABCD --name Robo
 ```
 
 The agent DRAWS: it reads the character (the full character from `/api/strokes/:char`, minus the
@@ -126,7 +128,7 @@ resend). After a right answer, more answers for that character get 409. `state.r
 timing number, so an agent never hardcodes them.
 
 ```
-U=https://missing-stroke.joyd-ai-2026.workers.dev
+U=https://missing-stroke.averystudio.org
 # teacher makes a room
 curl -s -X POST $U/api/rooms -H 'content-type: application/json' \
   -d '{"text":"1. 山 shān\n2. 水 shuǐ\n3. 火 huǒ","options":{"level":"big"}}'
@@ -205,7 +207,7 @@ npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
 npm run check:palette # colours only from public/theme.css (Avery kit) and src/client/game.css
 npm run check:brand   # theme.css + Momo PNGs identical to avery-brand/, title/favicon/header/footer present
-npm run deploy        # build + wrangler deploy (workers.dev only)
+npm run deploy        # build + wrangler deploy (workers.dev + missing-stroke.averystudio.org)
 node scripts/live-gate.mjs            # live API gate, prints a JSON receipt
 python3 scripts/live-run.py           # live headless class run (--record: demo mp4 + gif, --solo: solo mode)
 ```

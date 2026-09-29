@@ -4,13 +4,13 @@
 // sound: word clips are saved to docs/evidence/_audio/ (git-ignored), never
 // played. Needs no browser.
 //
-//   node scripts/live-gate.mjs [--url https://dictation-dash.joyd-ai-2026.workers.dev]
+//   node scripts/live-gate.mjs [--url https://dictation-dash.averystudio.org]
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createClient, playRound, seededRandom } from '../agent/lib.mjs';
 
 const argUrl = process.argv.indexOf('--url');
-const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://dictation-dash.joyd-ai-2026.workers.dev').replace(/\/+$/, '');
+const U = (argUrl > 0 ? process.argv[argUrl + 1] : 'https://dictation-dash.averystudio.org').replace(/\/+$/, '');
 const AUDIO_DIR = new URL('../docs/evidence/_audio/', import.meta.url);
 const receipt = { url: U, deployedVersion: process.env.DD_VERSION ?? null, deployedCommit: process.env.DD_COMMIT ?? null, startedAt: new Date().toISOString(), checks: [] };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

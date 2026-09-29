@@ -1,6 +1,8 @@
 # Trace Race 笔顺比赛
 
-Live at: **https://trace-race.joyd-ai-2026.workers.dev**
+Live at: **https://trace-race.averystudio.org**
+
+The old address https://trace-race.joyd-ai-2026.workers.dev still works and serves the same game.
 
 An Avery Studio classroom game for Mandarin immersion K-5. The teacher pastes a character list,
 kids join on their phones, and everyone races to trace each character stroke by stroke, in the
@@ -59,7 +61,7 @@ Settings on the teacher screen: seconds per character, characters per race, stro
 An agent plays through the same HTTP API the phones use. No npm install, Node 18+:
 
 ```
-node trace-race/agent/play.mjs --url https://trace-race.joyd-ai-2026.workers.dev --room ABCD --name Robo
+node trace-race/agent/play.mjs --url https://trace-race.averystudio.org --room ABCD --name Robo
 ```
 
 Flags: `--pace-ms 700` (wait between strokes), `--mistakes 0.1` (chance of a miss, 0 to 0.9),
@@ -92,7 +94,7 @@ correct strokes faster than the pace floor get 429 (wait and resend). Stroke cou
 `state.list.strokeCounts`.
 
 ```
-U=https://trace-race.joyd-ai-2026.workers.dev
+U=https://trace-race.averystudio.org
 # teacher makes a room
 curl -s -X POST $U/api/rooms -H 'content-type: application/json' \
   -d '{"text":"1. 山 shān\n2. 水 shuǐ\n3. 火 huǒ"}'
@@ -151,7 +153,7 @@ npm run typecheck
 npm run check:xss     # no raw HTML from user text in src/client
 npm run check:palette # colours only from public/theme.css (Avery kit) and src/client/game.css (static files may repeat a token value)
 npm run check:brand   # theme.css + Momo PNGs identical to avery-brand/, no retired colours or ink-drop file, title/favicon/header/footer present
-npm run deploy        # build + wrangler deploy (workers.dev only)
+npm run deploy        # build + wrangler deploy (workers.dev + trace-race.averystudio.org)
 node scripts/live-gate.mjs    # live API gate, prints a JSON receipt
 python3 scripts/live-run.py   # live headless run (--blip: network cut, --record: demo mp4 + gif)
 ```
