@@ -1,12 +1,12 @@
-# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 4)
+# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 4, Codex addendum)
 
 **What this is:** the grades 3 to 5 listening game JJ approved today. Momo says a word, kids write
 it from memory stroke by stroke, the fastest correct writer wins. Two levels on two big buttons
 (Easy = faint outline, Hard = blank box). Review round 1 (Codex RETHINK, Claude FIX-FIRST) moved
 every rule that matters onto the server.
 
-Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `3605e343-a2f5-4211-a9f4-695b05071ed0`
-(commit `cbb4294`), workers.dev only. The live gate passes 42 of 42 on 3605e343. The demo and the kid-run receipt are from eafdbf49: rounds 3 and 4 changed only one kid-facing line of text.
+Live: https://dictation-dash.joyd-ai-2026.workers.dev, version `0162ea09-5a8c-4718-810a-ef7e4073e6b0`
+(commit `324627f`), workers.dev only. The live gate passes 42 of 42 on 0162ea09. The demo and the kid-run receipt are from eafdbf49: rounds 3 and 4 changed only one kid-facing line of text.
 
 Grades: **A** = seen on the live deployed version above, in this session, with a stored receipt.
 **B** = source, unit tests or a local run. **C** = assumed, not checked.
@@ -43,6 +43,7 @@ Grades: **A** = seen on the live deployed version above, in this session, with a
 | Room budget reserved without an await: two different new words, one slot, exactly one model call | B | `tests/tts.test.ts` |
 | Per-IP daily cap below the global cap; readback | A (readback) / B (cap reached) | live gate; tests |
 | Joins: 40/min per room and 40/min per IP (a class of 30 behind one school Wi-Fi gets in), checked before fullness (the 41st gets 429). 8/min per IP was tried in round 3 and locked a class out | B | `tests/room-do.test.ts` |
+| Per-IP join counts survive a Durable Object restart (stored as salted hashes, pruned to one minute) | B | restart test in `tests/room-do.test.ts` (cap set to 2 via `JOINS_PER_IP_PER_MINUTE`) |
 | Done-screen "Show words" works; pad shows "Checking..." while a stroke is graded | B | source; the demo run exercised the done screen but not the toggle |
 | Demo: kid writes Easy then Hard (tapped in the real UI), Try again path | A | `docs/evidence/2026-09-28-live-run.json` on eafdbf49 |
 | Crafted strokes cannot freeze the room | B | cost test |
