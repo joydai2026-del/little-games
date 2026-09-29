@@ -74,7 +74,10 @@ export async function authStart(req: Request, env: Env): Promise<Response> {
   const t = readTarget(url, p);
   if (t === 'bad') return badLink(p);
   if (env.AUTH_START_LIMITER) {
-    const { success } = await env.AUTH_START_LIMITER.limit({ key: `${t.gameId ?? 'hub'}:${t.bindHash ?? 'none'}` });
+    // Keyed by game and binding hash (plan). A hub-only sign-in has neither, so it
+    // is keyed by the connecting address; the limiter keeps that in memory only.
+    const key = t.gameId ? `${t.gameId}:${t.bindHash}` : `hub:${req.headers.get('CF-Connecting-IP') ?? 'unknown'}`;
+    const { success } = await env.AUTH_START_LIMITER.limit({ key });
     if (!success) return cantSignIn(p.supportEmail, 429);
   }
   if (!hashKeyReady(env, p)) return cantSignIn(p.supportEmail);
