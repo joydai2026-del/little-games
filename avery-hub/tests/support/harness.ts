@@ -104,7 +104,7 @@ export interface Hub {
   limiters: Record<string, CountingLimiter>;
   fetchLog: string[];
   /** Test control of the fake Access key endpoint. */
-  accessCerts: { fail: boolean; extra: Issuer[] };
+  accessCerts: { fail: boolean; extra: Issuer[]; body?: unknown };
 }
 
 export const METHODS = [
@@ -185,6 +185,7 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
     if (url === `${GOOGLE_ISS}/certs`) return Response.json(google.jwks());
     if (url === `${ACCESS_ISS}/cdn-cgi/access/certs`) {
       if (h.accessCerts.fail) return new Response('down', { status: 503 });
+      if (h.accessCerts.body !== undefined) return Response.json(h.accessCerts.body);
       return Response.json({ keys: [...access.jwks().keys, ...h.accessCerts.extra.flatMap((i) => i.jwks().keys)] });
     }
     if (url === `${GOOGLE_ISS}/token`) {

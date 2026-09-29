@@ -218,15 +218,23 @@ describe('8. pages', () => {
     expect(html).not.toContain('free game without');
   });
 
-  it('a stale page (CSRF from before a rotation) gets the branded "Please try again" page, not plain text', async () => {
+  it('a stale form submitted after a rotation gets the branded page AND keeps the rotated session', async () => {
     const h = await buildHub();
     const s = await signIn(h, { sub: 'g-a', email: 'a@s.org' });
-    const res = await h.fetch('/auth/signout', { method: 'POST', cookies: s.jar, headers: { Origin: HUB, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'csrf=stale' });
+    const page = await h.fetch('/me', { cookies: s.jar });
+    const csrf = /name="csrf" value="([^"]+)"/.exec(await page.text())![1];
+    h.clock.t += 8 * DAY; // past SESSION_ROTATE_DAYS: this submit rotates the session
+    const res = await h.fetch('/auth/signout', { method: 'POST', cookies: s.jar, headers: { Origin: HUB, 'Content-Type': 'application/x-www-form-urlencoded' }, body: `csrf=${encodeURIComponent(csrf)}` });
     expect(res.status).toBe(403);
     const html = await res.text();
     expect(html).toContain('Please try again');
     expect(html).toContain('avery-header');
-    expect((await h.core.resolveSession(h.env, caller(h), s.gameSessionId)).ok).toBe(true);
+    const rotated = cookiesFrom(res)['__Host-avery_hub'];
+    expect(rotated).toBeTruthy();
+    expect(rotated).not.toBe(s.jar['__Host-avery_hub']);
+    h.clock.t += 31_000; // past the overlap: only the new cookie works now
+    expect(await (await h.fetch('/me', { cookies: { '__Host-avery_hub': rotated } })).text()).toContain('a@s.org');
+    expect(await (await h.fetch('/me', { cookies: s.jar })).text()).toContain('Sign in with Google');
   });
 });
 

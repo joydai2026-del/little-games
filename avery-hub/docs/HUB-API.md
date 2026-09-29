@@ -124,3 +124,5 @@ stored mode list and expiry; if the hub answers, also call `checkRoomPass` and d
 | `${HUB_ORIGIN}/auth/start?game=...&bind=...` | sign in (step 1 above) |
 
 Support address shown on every hub page: hello@averystudio.org.
+
+Policies page line (S0b): school seat emails are kept until the seat expires plus 400 days (`SEAT_GRANT_RETENTION_DAYS`), then deleted by the hub's daily clean-up.

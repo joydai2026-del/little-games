@@ -52,6 +52,19 @@ describe('wrangler config', () => {
     expect(new Set(staging.ratelimits.map((x: any) => x.namespace_id)).size).toBe(staging.ratelimits.length);
   });
 
+  it('both environments declare every limiter binding the code needs', () => {
+    const names = ['AUTH_ADDRESS_LIMITER', 'AUTH_START_LIMITER', 'REDEEM_GAME_LIMITER', 'REDEEM_LIMITER'];
+    expect(top.ratelimits.map((x: any) => x.name).sort()).toEqual(names);
+    expect(staging.ratelimits.map((x: any) => x.name).sort()).toEqual(names);
+    expect(top.ratelimits.find((x: any) => x.name === 'REDEEM_GAME_LIMITER').simple).toEqual({ limit: 600, period: 60 });
+  });
+
+  it('both environments run the daily clean-up cron', () => {
+    expect(top.triggers.crons.length).toBe(1);
+    expect(staging.triggers).toEqual(top.triggers);
+    expect(top.vars.SEAT_GRANT_RETENTION_DAYS).toBe('400');
+  });
+
   it('production refuses to serve until its D1 id is real (DB_READY false with the placeholder)', () => {
     expect(top.d1_databases[0].database_id).toBe('REPLACE_WITH_PRODUCTION_D1_ID');
     expect(top.vars.DB_READY).toBe('false');

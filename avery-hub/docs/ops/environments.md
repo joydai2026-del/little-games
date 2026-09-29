@@ -30,6 +30,13 @@ JWKS (Google and Access keys): `JWKS_NEGATIVE_CACHE_SECONDS` (60, per unknown ki
 Sign-in rate limits (thresholds live in the `ratelimits` blocks, the only place Cloudflare reads them): 20 a minute per
 game and binding (`AUTH_START_LIMITER`), 60 new sign-ins a minute per connecting address (`AUTH_ADDRESS_LIMITER`), applied only when there is no valid hub session and only to requests that came through Cloudflare's edge, so teachers already signed in are never blocked by others on a shared school address, 20 a minute per game and binding for redemption.
 
+School seat emails: kept until the seat expires plus `SEAT_GRANT_RETENTION_DAYS` (400), then deleted by the daily cron
+(`triggers.crons` in both envs, `src/cleanup.ts`). The averystudio.org policies page must state this.
+
+Redemption: 20 a minute per game and binding (`REDEEM_LIMITER`, a cost bound per client) and 600 a minute per game
+(`REDEEM_GAME_LIMITER`, the DoS ceiling). Token guessing is stopped by the 256-bit single-use token, not by these limits.
+Every limiter binding missing = fail closed. Security program: `security-program.md`.
+
 ## Release steps
 
 | Step | Command |
