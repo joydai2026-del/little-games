@@ -13,14 +13,18 @@
 //            (a restricted key; sk_live_ is refused). Read only from AVERY_STRIPE_KEY.
 //   account  GET /v1/account must return STRIPE_ACCOUNT_ID from wrangler.jsonc (both modes).
 //   origin   --hub-origin must equal HUB_ORIGIN for that environment in wrangler.jsonc.
-//   tax      --live needs --tax-gate-receipt: a file under avery-hub/docs/ops/ with a line
-//            `approved: YYYY-MM-DD` (a real date, not in the future), AND Stripe Tax
-//            settings `status: active`.
-//   webhook  creating the endpoint needs --inventory-receipt: the completed
-//            docs/ops/stripe-webhook-inventory.md with `inventory_completed: YYYY-MM-DD`
-//            and no `TODO` left.
-//   objects  discovery includes archived / inactive objects; an archived Avery
-//            price, product or portal is reported with a fix, never duplicated.
+//   tax      --live needs --tax-gate-receipt: a file under avery-hub/docs/ops/ with every
+//            field filled (approved date, approved_by, home_state, taxable, product_tax_code,
+//            registrations), Stripe Tax settings `status: active`, and when taxable,
+//            at least one active Stripe Tax registration.
+//   webhook  ANY write to the webhook endpoint (create, events, re-enable) needs
+//            --inventory-receipt: docs/ops/stripe-webhook-inventory.md with the fields for
+//            THIS mode (test_mode_* or live_mode_*): a real date, the verified account id,
+//            and the current count of non-Avery endpoints. A test receipt never authorises live.
+//   objects  discovery lists active AND inactive objects (Stripe lists only active prices
+//            by default); archived Avery objects are reported with a fix, never duplicated.
+//            Legacy app=avery objects without the avery_object tag are matched on exact
+//            attributes, refused when ambiguous, and tagged on a confirmed match.
 // After the writes, every object is read back; ANY mismatch exits non-zero.
 //
 // The Stripe account is Ownly Network LLC's, shared with Agent Company. The
@@ -70,8 +74,16 @@ export interface ExpectedTarget {
 }
 
 /** Results of the file checks main() does before calling runSetup. */
+export interface InventoryGate {
+  ok: boolean;
+  reason: string;
+  accountId?: string;
+  endpointCount?: number;
+}
 export interface Gates {
-  inventory: { ok: boolean; reason: string };
+  inventory: InventoryGate;
+  /** Live runs only: what the tax receipt says about taxability. */
+  tax?: { taxable: boolean };
 }
 
 export class SetupRefused extends Error {
@@ -160,7 +172,12 @@ export function readWranglerTarget(jsoncText: string, env: SetupEnv): ExpectedTa
   const accountId = vars?.STRIPE_ACCOUNT_ID;
   if (typeof hubOrigin !== 'string' || !hubOrigin) throw new SetupRefused(`wrangler.jsonc has no HUB_ORIGIN for ${env}`);
   if (typeof accountId !== 'string' || !/^acct_[A-Za-z0-9]+$/.test(accountId)) {
-    throw new SetupRefused(`wrangler.jsonc has no valid STRIPE_ACCOUNT_ID for ${env} (the Ownly Network LLC account id, acct_...)`);
+    const block = env === 'production' ? 'the top-level "vars" block' : `the "env" > "${env}" > "vars" block`;
+    throw new SetupRefused(
+      `wrangler.jsonc has no valid STRIPE_ACCOUNT_ID for ${env}. The owner reads it in the Stripe Dashboard: ` +
+        `Settings, Business, Account details (the id that starts with acct_). Add the line ` +
+        `"STRIPE_ACCOUNT_ID": "acct_..." to ${block} of avery-hub/wrangler.jsonc, next to HUB_ORIGIN.`,
+    );
   }
   return { hubOrigin, accountId };
 }
@@ -180,15 +197,71 @@ function datedLine(text: string, label: string, today: string): { ok: boolean; r
   return { ok: true, reason: `${label} ${m[1]}` };
 }
 
-export function checkTaxReceipt(text: string, today: string): { ok: boolean; reason: string } {
-  return datedLine(text, 'approved', today);
+/** The value of a `name: value` line, or null when missing, blank or TODO. */
+function field(text: string, name: string): string | null {
+  const m = text.match(new RegExp(`^${name}:[ \\t]*(.*?)[ \\t]*$`, 'm'));
+  const v = m?.[1] ?? '';
+  return v === '' || /TODO|YYYY/.test(v) ? null : v;
 }
 
-export function checkInventoryReceipt(text: string, today: string): { ok: boolean; reason: string } {
-  const dated = datedLine(text, 'inventory_completed', today);
+/** Every field of docs/ops/tax-gate-receipt.template.md must be filled. */
+export function checkTaxReceipt(text: string, today: string): { ok: boolean; reason: string; taxable?: boolean } {
+  const dated = datedLine(text, 'approved', today);
   if (!dated.ok) return dated;
-  if (/TODO/.test(text)) return { ok: false, reason: 'the inventory still contains TODO' };
-  return dated;
+  for (const name of ['approved_by', 'home_state', 'taxable', 'product_tax_code', 'registrations']) {
+    if (field(text, name) === null) return { ok: false, reason: `field "${name}" is blank` };
+  }
+  const taxable = field(text, 'taxable')!.toLowerCase();
+  if (taxable !== 'yes' && taxable !== 'no') return { ok: false, reason: 'field "taxable" must be yes or no' };
+  if (!/^txcd_\d+$/.test(field(text, 'product_tax_code')!)) return { ok: false, reason: 'field "product_tax_code" must be a Stripe tax code (txcd_...)' };
+  if (taxable === 'yes' && field(text, 'registrations')!.toLowerCase() === 'none') {
+    return { ok: false, reason: 'taxable is yes but registrations is none' };
+  }
+  return { ok: true, reason: dated.reason, taxable: taxable === 'yes' };
+}
+
+/** Per-mode fields of docs/ops/stripe-webhook-inventory.md. */
+export function checkInventoryReceipt(text: string, mode: 'test' | 'live', today: string): InventoryGate {
+  const prefix = `${mode}_mode`;
+  const dated = datedLine(text, `${prefix}_completed`, today);
+  if (!dated.ok) return dated;
+  const accountId = field(text, `${prefix}_account_id`);
+  if (!accountId || !/^acct_[A-Za-z0-9]+$/.test(accountId)) return { ok: false, reason: `field "${prefix}_account_id" must be the acct_ id` };
+  const count = field(text, `${prefix}_endpoint_count`);
+  if (!count || !/^\d+$/.test(count)) return { ok: false, reason: `field "${prefix}_endpoint_count" must be a whole number` };
+  return { ok: true, reason: dated.reason, accountId, endpointCount: Number(count) };
+}
+
+/** File system calls main() needs; injected so the receipt wiring is testable. */
+export interface ReceiptFs {
+  existsSync(p: string): boolean;
+  realpathSync(p: string): string;
+  readFileSync(p: string, enc: 'utf8'): string;
+  resolve(...p: string[]): string;
+}
+
+/** Reads and checks the receipts named on the command line (the part of main() that touches files). */
+export function loadGates(fsx: ReceiptFs, args: SetupArgs, opts: { cwd: string; opsDir: string; today: string }): Gates {
+  const read = (p: string, label: string) => {
+    const abs = fsx.resolve(opts.cwd, p);
+    if (!fsx.existsSync(abs)) throw new SetupRefused(`${label} ${p} does not exist`);
+    const real = fsx.realpathSync(abs);
+    if (!isUnderOpsDir(real, opts.opsDir)) throw new SetupRefused(`${label} must be a file under avery-hub/docs/ops/`);
+    return { real, text: fsx.readFileSync(real, 'utf8') };
+  };
+  const gates: Gates = { inventory: { ok: false, reason: '--inventory-receipt not given' } };
+  if (args.live) {
+    const tax = checkTaxReceipt(read(args.taxGateReceipt!, '--tax-gate-receipt').text, opts.today);
+    if (!tax.ok) throw new SetupRefused(`tax gate receipt: ${tax.reason}`);
+    gates.tax = { taxable: tax.taxable! };
+  }
+  if (args.inventoryReceipt) {
+    const r = read(args.inventoryReceipt, '--inventory-receipt');
+    gates.inventory = r.real.endsWith(`/${AVERY_STRIPE_SETUP.inventoryFile}`)
+      ? checkInventoryReceipt(r.text, args.live ? 'live' : 'test', opts.today)
+      : { ok: false, reason: `the receipt must be docs/ops/${AVERY_STRIPE_SETUP.inventoryFile}` };
+  }
+  return gates;
 }
 
 // ---------- provisioning ----------
@@ -236,6 +309,8 @@ export async function runSetup(opts: {
   apiVersion: string;
   webhookEvents: readonly string[];
   out?: (line: string) => void;
+  /** One id per run (default random). Mixed into update keys: see below. */
+  runId?: string;
 }): Promise<Readback> {
   const { client, args, expected } = opts;
   const S = AVERY_STRIPE_SETUP;
@@ -243,11 +318,16 @@ export async function runSetup(opts: {
   const counts = { created: 0, updated: 0, unchanged: 0 };
   const warnings: string[] = [];
   const mode = args.live ? 'live' : 'test';
+  const runId = opts.runId ?? crypto.randomUUID();
   const createKey = (object: string, params: FormParams) => `setup:${args.env}:${mode}:${object}:create:${fnv1a(JSON.stringify(params))}`;
-  // Update keys hash the OBSERVED state plus the change: a new drift gets a new
-  // key, while a retry of the same repair (same observed state) reuses it.
+  // Update keys hash the OBSERVED state, the change AND this run's id. Inside a
+  // run, the client's retries reuse the key (no double apply). A later run gets
+  // a new key even when the same drift comes back within Stripe's ~24 h key
+  // retention (a webhook endpoint has no `updated` field to tell two drifts
+  // apart). Updates are convergent (they set the target values), so a new key
+  // on a re-run is always safe.
   const updateKey = (object: string, id: string, observed: unknown, change: FormParams) =>
-    `setup:${args.env}:${mode}:${object}:update-${id}:${fnv1a(JSON.stringify({ observed, change }))}`;
+    `setup:${args.env}:${mode}:${object}:update-${id}:${fnv1a(JSON.stringify({ observed, change, runId }))}`;
 
   // ---- Phase 1: read-only checks. Every refusal happens here, before any write. ----
   if (args.hubOrigin !== expected.hubOrigin) {
@@ -263,28 +343,66 @@ export async function runSetup(opts: {
   if (args.live) {
     const tax = await client.get('/v1/tax/settings');
     if (tax.status !== 'active') throw new SetupRefused(`Stripe Tax settings status is "${String(tax.status)}", not active. Finish the tax gate first.`);
+    if (!opts.gates.tax) throw new SetupRefused('live run without a checked tax gate receipt');
+    if (opts.gates.tax.taxable) {
+      const regs = (await client.get('/v1/tax/registrations', { status: 'active', limit: 100 })).data as StripeObject[];
+      if (!regs.length) throw new SetupRefused('the tax receipt says taxable, but Stripe Tax has no active registration. Add it in Stripe Tax first.');
+    }
   }
   const wrongMode = (o: StripeObject, what: string) => {
     if (typeof o.livemode === 'boolean' && o.livemode !== args.live) throw new SetupRefused(`${what} ${String(o.id)} is ${o.livemode ? 'live' : 'test'} mode, run is ${mode}`);
   };
+  /** Stripe lists only active objects for some types by default: ask for both, explicitly. */
+  const listBoth = async (path: string, query: FormParams = {}) => {
+    const seen = new Map<string, StripeObject>();
+    for (const active of [true, false]) {
+      for (const o of await client.listAll(path, { ...query, active })) seen.set(String(o.id), o);
+    }
+    return [...seen.values()];
+  };
+  const tagged = (o: StripeObject, tag: string) => meta(o).app === S.app && meta(o).avery_object === tag;
+  const legacy = (o: StripeObject) => meta(o).app === S.app && meta(o).avery_object === undefined;
 
-  // Product (all, archived included).
-  const avProducts = (await client.listAll('/v1/products')).filter((p) => meta(p).app === S.app && meta(p).avery_object === S.product.tag);
+  // Prices first (active and inactive, by lookup key): they also identify the product.
+  const allPrices = await listBoth('/v1/prices', { lookup_keys: S.prices.map((p) => p.lookupKey) });
+  const pricesByKey = new Map<string, StripeObject>();
+  for (const want of S.prices) {
+    const matches = allPrices.filter((p) => p.lookup_key === want.lookupKey);
+    if (matches.length > 1) throw new SetupRefused(`${matches.length} prices share lookup key ${want.lookupKey}; archive the extras and clear their lookup keys`);
+    if (matches[0]) pricesByKey.set(want.lookupKey, matches[0]);
+  }
+
+  // Product: tagged ones first; else a legacy app=avery product matched on exact attributes.
+  const allProducts = await listBoth('/v1/products');
+  const avProducts = allProducts.filter((p) => tagged(p, S.product.tag));
   const activeProducts = avProducts.filter((p) => p.active !== false);
   if (activeProducts.length > 1) throw new SetupRefused(`found ${activeProducts.length} active Avery products; archive the extras in the Dashboard first`);
   if (activeProducts.length === 0 && avProducts.length > 0) {
     throw new SetupRefused(`the Avery product ${String(avProducts[0]!.id)} is archived. Fix: unarchive it in the Stripe Dashboard, then re-run.`);
   }
-  const existingProduct = activeProducts[0];
+  let existingProduct = activeProducts[0];
+  let backfillProduct = false;
+  if (!existingProduct) {
+    const priceProducts = new Set([...pricesByKey.values()].map(productIdOf));
+    const candidates = allProducts.filter(
+      (p) => p.active !== false && legacy(p) && (p.name === S.product.name || priceProducts.has(String(p.id))),
+    );
+    if (candidates.length > 1) {
+      throw new SetupRefused(
+        `${candidates.length} untagged app=avery products look like the Avery product (${candidates.map((c) => String(c.id)).join(', ')}). Fix: archive the wrong ones, then re-run.`,
+      );
+    }
+    if (candidates[0]) {
+      existingProduct = candidates[0];
+      backfillProduct = true;
+    }
+  }
   if (existingProduct) wrongMode(existingProduct, 'product');
 
-  // Prices (active and inactive, by lookup key).
-  const allPrices = (await client.get('/v1/prices', { lookup_keys: S.prices.map((p) => p.lookupKey), limit: 100 })).data as StripeObject[];
+  // Prices: must match exactly and be active.
   const foundPrices = new Map<string, StripeObject>();
   for (const want of S.prices) {
-    const matches = allPrices.filter((p) => p.lookup_key === want.lookupKey);
-    if (matches.length > 1) throw new SetupRefused(`${matches.length} prices share lookup key ${want.lookupKey}; archive the extras and clear their lookup keys`);
-    const have = matches[0];
+    const have = pricesByKey.get(want.lookupKey);
     if (!have) continue;
     if (have.active === false) {
       throw new SetupRefused(`price ${want.lookupKey} (${String(have.id)}) is archived. Fix: reactivate it in the Stripe Dashboard if it is right, or remove its lookup key, then re-run.`);
@@ -306,21 +424,37 @@ export async function runSetup(opts: {
   }
 
   // Portal configuration (inactive included). The account's default portal is never touched.
-  const avPortals = (await client.listAll('/v1/billing_portal/configurations')).filter((c) => meta(c).app === S.app && meta(c).avery_object === S.portal.tag);
+  const allPortals = await listBoth('/v1/billing_portal/configurations');
+  const avPortals = allPortals.filter((c) => tagged(c, S.portal.tag));
   const activePortals = avPortals.filter((c) => c.active !== false);
   if (activePortals.length > 1) throw new SetupRefused(`found ${activePortals.length} active Avery portal configurations; deactivate the extras first`);
   if (activePortals.length === 0 && avPortals.length > 0) {
     throw new SetupRefused(`the Avery portal configuration ${String(avPortals[0]!.id)} is inactive. Fix: reactivate it in the Stripe Dashboard, then re-run.`);
   }
-  const existingPortal = activePortals[0];
+  let existingPortal = activePortals[0];
+  let backfillPortal = false;
+  if (!existingPortal) {
+    const candidates = allPortals.filter((c) => c.active !== false && legacy(c) && portalDrift(c).length === 0);
+    if (candidates.length > 1) {
+      throw new SetupRefused(
+        `${candidates.length} untagged app=avery portal configurations match the Avery features (${candidates.map((c) => String(c.id)).join(', ')}). Fix: deactivate the wrong ones, then re-run.`,
+      );
+    }
+    if (candidates[0]) {
+      existingPortal = candidates[0];
+      backfillPortal = true;
+    }
+  }
   if (existingPortal) wrongMode(existingPortal, 'portal configuration');
 
-  // Webhook endpoint (exact URL).
+  // Webhook endpoint (exact URL), and whether any write to it is needed.
   const url = `${args.hubOrigin}${S.webhook.path}`;
   const wantEvents = [...opts.webhookEvents].sort();
-  const endpoints = (await client.listAll('/v1/webhook_endpoints')).filter((w) => w.url === url);
+  const allHooks = await client.listAll('/v1/webhook_endpoints');
+  const endpoints = allHooks.filter((w) => w.url === url);
   if (endpoints.length > 1) throw new SetupRefused(`found ${endpoints.length} webhook endpoints for ${url}; remove the extras first`);
   const existingHook = endpoints[0];
+  const hookChange: FormParams = {};
   if (existingHook) {
     if (meta(existingHook).app !== S.app) throw new SetupRefused(`a webhook endpoint for ${url} exists but is not tagged app=${S.app}; check it by hand`);
     wrongMode(existingHook, 'webhook endpoint');
@@ -329,10 +463,22 @@ export async function runSetup(opts: {
         `webhook ${String(existingHook.id)} sends API version ${String(existingHook.api_version)}, code expects ${opts.apiVersion}. Stripe cannot change it in place. Fix (JJ approves): delete the endpoint, re-run, set the new signing secret.`,
       );
     }
-  } else if (!opts.gates.inventory.ok) {
-    throw new SetupRefused(
-      `creating the webhook endpoint needs a completed inventory receipt (--inventory-receipt docs/ops/${S.inventoryFile}): ${opts.gates.inventory.reason}`,
-    );
+    const haveEvents = [...((existingHook.enabled_events ?? []) as string[])].sort();
+    if (haveEvents.join(',') !== wantEvents.join(',')) hookChange.enabled_events = wantEvents;
+    if (existingHook.status !== 'enabled') hookChange.disabled = false;
+    if (meta(existingHook).avery_object !== S.webhook.tag) hookChange.metadata = { avery_object: S.webhook.tag };
+  }
+  const hookWrite = !existingHook || Object.keys(hookChange).length > 0;
+  if (hookWrite) {
+    // Any webhook write (create, events, re-enable) needs a current inventory for THIS mode and account.
+    const inv = opts.gates.inventory;
+    const others = allHooks.filter((w) => meta(w).app !== S.app).length;
+    const need = `a completed ${mode}-mode inventory receipt (--inventory-receipt docs/ops/${S.inventoryFile})`;
+    if (!inv.ok) throw new SetupRefused(`changing the webhook endpoint needs ${need}: ${inv.reason}`);
+    if (inv.accountId !== account.id) throw new SetupRefused(`the inventory receipt is for ${String(inv.accountId)}, not this account ${String(account.id)}`);
+    if (inv.endpointCount !== others) {
+      throw new SetupRefused(`the inventory is stale: it lists ${String(inv.endpointCount)} other endpoints, Stripe now has ${others}. Re-run the inventory.`);
+    }
   }
 
   // ---- Phase 2: writes. ----
@@ -342,10 +488,11 @@ export async function runSetup(opts: {
     const params = { ...productParams, metadata: { app: S.app, avery_object: S.product.tag } };
     product = await client.post('/v1/products', params, { idempotencyKey: createKey('product', params) });
     counts.created++;
-  } else if (existingProduct.name !== S.product.name || existingProduct.statement_descriptor !== S.product.statementDescriptor) {
-    const observed = { name: existingProduct.name, statement_descriptor: existingProduct.statement_descriptor, updated: existingProduct.updated };
-    product = await client.post(`/v1/products/${String(existingProduct.id)}`, productParams, {
-      idempotencyKey: updateKey('product', String(existingProduct.id), observed, productParams),
+  } else if (backfillProduct || existingProduct.name !== S.product.name || existingProduct.statement_descriptor !== S.product.statementDescriptor) {
+    const change: FormParams = { ...productParams, ...(backfillProduct ? { metadata: { avery_object: S.product.tag } } : {}) };
+    const observed = { name: existingProduct.name, statement_descriptor: existingProduct.statement_descriptor, metadata: existingProduct.metadata, updated: existingProduct.updated };
+    product = await client.post(`/v1/products/${String(existingProduct.id)}`, change, {
+      idempotencyKey: updateKey('product', String(existingProduct.id), observed, change),
     });
     counts.updated++;
   } else {
@@ -380,11 +527,11 @@ export async function runSetup(opts: {
     const params: FormParams = { name: S.portal.name, features: PORTAL_FEATURES, metadata: { app: S.app, avery_object: S.portal.tag } };
     portalId = String((await client.post('/v1/billing_portal/configurations', params, { idempotencyKey: createKey('portal', params) })).id);
     counts.created++;
-  } else if (portalDrift(existingPortal).length) {
+  } else if (backfillPortal || portalDrift(existingPortal).length) {
     portalId = String(existingPortal.id);
-    const params: FormParams = { features: PORTAL_FEATURES };
-    await client.post(`/v1/billing_portal/configurations/${portalId}`, params, {
-      idempotencyKey: updateKey('portal', portalId, { features: existingPortal.features, updated: existingPortal.updated }, params),
+    const change: FormParams = { features: PORTAL_FEATURES, ...(backfillPortal ? { metadata: { avery_object: S.portal.tag } } : {}) };
+    await client.post(`/v1/billing_portal/configurations/${portalId}`, change, {
+      idempotencyKey: updateKey('portal', portalId, { features: existingPortal.features, metadata: existingPortal.metadata, updated: existingPortal.updated }, change),
     });
     counts.updated++;
   } else {
@@ -407,14 +554,9 @@ export async function runSetup(opts: {
     warnings.push('New webhook endpoint: reveal its signing secret in the Stripe Dashboard and set STRIPE_WEBHOOK_SECRET with wrangler (JJ step).');
   } else {
     hookId = String(existingHook.id);
-    const haveEvents = [...((existingHook.enabled_events ?? []) as string[])].sort();
-    const change: FormParams = {};
-    if (haveEvents.join(',') !== wantEvents.join(',')) change.enabled_events = wantEvents;
-    if (existingHook.status !== 'enabled') change.disabled = false;
-    if (Object.keys(change).length) {
-      await client.post(`/v1/webhook_endpoints/${hookId}`, change, {
-        idempotencyKey: updateKey('webhook', hookId, { enabled_events: haveEvents, status: existingHook.status }, change),
-      });
+    if (hookWrite) {
+      const observed = { enabled_events: existingHook.enabled_events, status: existingHook.status, metadata: existingHook.metadata };
+      await client.post(`/v1/webhook_endpoints/${hookId}`, hookChange, { idempotencyKey: updateKey('webhook', hookId, observed, hookChange) });
       counts.updated++;
     } else counts.unchanged++;
   }
@@ -496,11 +638,7 @@ function describePortal(portal: StripeObject): string {
 // `import.meta.url` exists on Node ESM; the Workers type set does not declare it.
 const HERE = (import.meta as unknown as { url?: string }).url ?? '';
 
-interface NodeFs {
-  readFileSync(p: string, enc: 'utf8'): string;
-  realpathSync(p: string): string;
-  existsSync(p: string): boolean;
-}
+type NodeFs = Omit<ReceiptFs, 'resolve'>;
 
 async function main(): Promise<void> {
   try {
@@ -515,26 +653,7 @@ async function main(): Promise<void> {
     const hubDir = fileURLToPath(new URL('..', HERE).href);
     const opsDir = fs.realpathSync(path.resolve(hubDir, 'docs/ops'));
     const today = new Date().toISOString().slice(0, 10);
-
-    const readReceipt = (p: string, label: string): { real: string; text: string } => {
-      const abs = path.resolve(process.cwd(), p);
-      if (!fs.existsSync(abs)) throw new SetupRefused(`${label} ${p} does not exist`);
-      const real = fs.realpathSync(abs);
-      if (!isUnderOpsDir(real, opsDir)) throw new SetupRefused(`${label} must be a file under avery-hub/docs/ops/`);
-      return { real, text: fs.readFileSync(real, 'utf8') };
-    };
-
-    if (args.live) {
-      const tax = checkTaxReceipt(readReceipt(args.taxGateReceipt!, '--tax-gate-receipt').text, today);
-      if (!tax.ok) throw new SetupRefused(`tax gate receipt: ${tax.reason}`);
-    }
-    let inventory = { ok: false, reason: '--inventory-receipt not given' };
-    if (args.inventoryReceipt) {
-      const r = readReceipt(args.inventoryReceipt, '--inventory-receipt');
-      inventory = r.real.endsWith(`/${AVERY_STRIPE_SETUP.inventoryFile}`)
-        ? checkInventoryReceipt(r.text, today)
-        : { ok: false, reason: `the receipt must be docs/ops/${AVERY_STRIPE_SETUP.inventoryFile}` };
-    }
+    const gates = loadGates({ ...fs, resolve: path.resolve }, args, { cwd: process.cwd(), opsDir, today });
 
     const expected = readWranglerTarget(fs.readFileSync(path.resolve(hubDir, 'wrangler.jsonc'), 'utf8'), args.env);
     const clientMod = (await import(new URL('../src/stripe/client.ts', HERE).href)) as typeof import('../src/stripe/client');
@@ -544,7 +663,7 @@ async function main(): Promise<void> {
       client,
       args,
       expected,
-      gates: { inventory },
+      gates,
       apiVersion: clientMod.STRIPE_API_VERSION,
       webhookEvents: eventsMod.HANDLED_EVENTS,
       out: (l) => console.log(l),

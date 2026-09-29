@@ -22,6 +22,8 @@ import {
   checkKeyMode,
   checkTaxReceipt,
   descriptorProblem,
+  loadGates,
+  type ReceiptFs,
   isUnderOpsDir,
   keyFromEnv,
   parseArgs,
@@ -77,6 +79,7 @@ class FakeStripe {
   idem = new Map<string, StripeObject>();
   accountId = ACCOUNT;
   taxStatus = 'active';
+  registrations: StripeObject[] = [{ id: 'taxreg_1', object: 'tax.registration', status: 'active', country: 'US' }];
   livemode = false;
   /** Fail the next POST whose path matches, with a 500, WITHOUT applying it. */
   failNextPost: RegExp | null = null;
@@ -97,8 +100,9 @@ class FakeStripe {
     return { object: 'list', data: items, has_more: false };
   }
 
-  private byActive(items: StripeObject[], q: URLSearchParams) {
-    const a = q.get('active');
+  /** Stripe: `active` filters; when absent, prices list ONLY active ones (API reference, read 2026-09-29). */
+  private byActive(items: StripeObject[], q: URLSearchParams, defaultActiveOnly = false) {
+    const a = q.get('active') ?? (defaultActiveOnly ? 'true' : null);
     return a === null ? items : items.filter((o) => (a === 'true') === (o.active !== false));
   }
 
@@ -123,12 +127,13 @@ class FakeStripe {
     const byId = (items: StripeObject[], id: string) => items.find((o) => o.id === id);
     let m: RegExpMatchArray | null;
     if (p === '/v1/account') return { status: 200, body: { id: this.accountId, object: 'account' } };
+    if (p === '/v1/tax/registrations') return { status: 200, body: this.list(this.registrations.filter((r) => q.get('status') === null || r.status === q.get('status'))) };
     if (p === '/v1/tax/settings') return { status: 200, body: { object: 'tax.settings', status: this.taxStatus, livemode: this.livemode } };
     if (p === '/v1/products') return { status: 200, body: this.list(this.byActive(this.store.products, q)) };
     if ((m = p.match(/^\/v1\/products\/(.+)$/))) return this.found(byId(this.store.products, m[1]!));
     if (p === '/v1/prices') {
       const keys = [...q.entries()].filter(([k]) => k.startsWith('lookup_keys')).map(([, v]) => v);
-      return { status: 200, body: this.list(this.byActive(this.store.prices, q).filter((o) => keys.includes(String(o.lookup_key)))) };
+      return { status: 200, body: this.list(this.byActive(this.store.prices, q, true).filter((o) => keys.includes(String(o.lookup_key)))) };
     }
     if ((m = p.match(/^\/v1\/prices\/(.+)$/))) return this.found(byId(this.store.prices, m[1]!));
     if (p === '/v1/billing_portal/configurations') return { status: 200, body: this.list(this.byActive(this.store.portals, q)) };
@@ -147,6 +152,14 @@ class FakeStripe {
     return o ? { status: 200, body: o } : { status: 404, body: { error: { type: 'invalid_request_error', message: 'No such object' } } };
   }
 
+  /** Stripe merges metadata keys on update; other fields are replaced. */
+  private merge(o: StripeObject, form: Record<string, unknown>): StripeObject {
+    const { metadata, ...rest } = form;
+    Object.assign(o, rest, { updated: ++this.n });
+    if (metadata) o.metadata = { ...(o.metadata as object), ...(metadata as object) };
+    return o;
+  }
+
   private err(message: string): StripeObject {
     return { error: { type: 'invalid_request_error', message } };
   }
@@ -162,7 +175,7 @@ class FakeStripe {
     }
     if ((m = p.match(/^\/v1\/products\/(.+)$/))) {
       const o = this.store.products.find((x) => x.id === m![1]);
-      return Object.assign(o!, form, { updated: ++this.n });
+      return this.merge(o!, form);
     }
     if (p === '/v1/prices') {
       if (this.store.prices.some((x) => x.active !== false && x.lookup_key === form.lookup_key)) {
@@ -183,7 +196,7 @@ class FakeStripe {
     }
     if ((m = p.match(/^\/v1\/billing_portal\/configurations\/(.+)$/))) {
       const o = this.store.portals.find((x) => x.id === m![1]);
-      return Object.assign(o!, form, { updated: ++this.n });
+      return this.merge(o!, form);
     }
     const badEvent = ((form.enabled_events ?? []) as string[]).find((e) => !STRIPE_EVENT_NAMES.has(e));
     if (badEvent) return this.err(`Invalid event: ${badEvent}`);
@@ -195,7 +208,7 @@ class FakeStripe {
     if ((m = p.match(/^\/v1\/webhook_endpoints\/(.+)$/))) {
       const o = this.store.webhooks.find((x) => x.id === m![1])!;
       const { disabled, ...rest } = form;
-      Object.assign(o, rest);
+      this.merge(o, rest);
       if (disabled === false) o.status = 'enabled';
       if (disabled === true) o.status = 'disabled';
       return o;
@@ -217,7 +230,8 @@ class FakeStripe {
 
 const ARGS: SetupArgs = { env: 'staging', live: false, hubOrigin: ORIGIN };
 const EXPECTED: ExpectedTarget = { hubOrigin: ORIGIN, accountId: ACCOUNT };
-const GATES_OK: Gates = { inventory: { ok: true, reason: 'inventory_completed 2026-09-29' } };
+/** The fake starts with ONE non-Avery endpoint (Agent Company). */
+const GATES_OK: Gates = { inventory: { ok: true, reason: 'test_mode_completed 2026-09-29', accountId: ACCOUNT, endpointCount: 1 }, tax: { taxable: true } };
 
 async function setup(fake: FakeStripe, o: { args?: SetupArgs; expected?: ExpectedTarget; gates?: Gates } = {}) {
   const lines: string[] = [];
@@ -425,12 +439,19 @@ describe('stripe-setup against a fake Stripe', () => {
     ['currency', (p: StripeObject) => (p.currency = 'eur')],
     ['interval_count', (p: StripeObject) => ((p.recurring as Record<string, unknown>).interval_count = 2)],
     ['livemode', (p: StripeObject) => (p.livemode = true)],
+    ['interval', (p: StripeObject) => ((p.recurring as Record<string, unknown>).interval = 'month')],
+    ['product', (p: StripeObject) => (p.product = 'prod_agentco')],
   ] as const) {
     it(`refuses an existing price whose ${what} does not match, with a remediation`, async () => {
       const fake = new FakeStripe();
       await setup(fake);
       edit(fake.store.prices.find((p) => p.lookup_key === 'avery_yearly_v1')!);
-      await refusal(setup(fake), what === 'livemode' ? /live mode, run is test/ : /does not match: .*Fix: archive it and bump the lookup key/);
+      const re =
+        what === 'livemode' ? /live mode, run is test/
+        : what === 'product' ? /belongs to a different product.*Fix: archive it/
+        : what === 'interval' ? /interval month not year.*Fix: archive it/
+        : /does not match: .*Fix: archive it and bump the lookup key/;
+      await refusal(setup(fake), re);
     });
   }
 
@@ -459,17 +480,89 @@ describe('stripe-setup against a fake Stripe', () => {
     expect(rb.counts.created).toBe(5);
   });
 
+  it('live mode, taxable per the receipt, refuses with no active Stripe Tax registration', async () => {
+    const fake = new FakeStripe();
+    fake.livemode = true;
+    fake.registrations = [];
+    const live: SetupArgs = { env: 'production', live: true, hubOrigin: ORIGIN, taxGateReceipt: 'docs/ops/tax-gate-receipt.md' };
+    await refusal(setup(fake, { args: live }), /no active registration/);
+    const { rb } = await setup(fake, { args: live, gates: { ...GATES_OK, tax: { taxable: false } } });
+    expect(rb.counts.created).toBe(5);
+  });
+
   it('webhook creation needs a completed inventory receipt; nothing is written without it', async () => {
     const fake = new FakeStripe();
-    await refusal(setup(fake, { gates: { inventory: { ok: false, reason: 'the inventory still contains TODO' } } }), /inventory receipt.*TODO/);
+    await refusal(setup(fake, { gates: { inventory: { ok: false, reason: 'field "test_mode_completed" is blank' } } }), /inventory receipt.*test_mode_completed/);
     expect(fake.posts).toHaveLength(0);
   });
 
-  it('an existing webhook endpoint does not need the inventory receipt again', async () => {
+  it('the inventory receipt must name the verified account', async () => {
+    const fake = new FakeStripe();
+    await refusal(setup(fake, { gates: { inventory: { ...GATES_OK.inventory, accountId: 'acct_other' } } }), /receipt is for acct_other/);
+    expect(fake.posts).toHaveLength(0);
+  });
+
+  it('a stale inventory (endpoint count changed since) refuses', async () => {
+    const fake = new FakeStripe();
+    fake.store.webhooks.push({ id: 'we_new', object: 'webhook_endpoint', url: 'https://other.example/h', enabled_events: ['charge.succeeded'], status: 'enabled', livemode: false, metadata: {} });
+    await refusal(setup(fake), /inventory is stale: it lists 1 other endpoints, Stripe now has 2/);
+  });
+
+  it('an existing, correct webhook endpoint does not need the inventory receipt again', async () => {
     const fake = new FakeStripe();
     await setup(fake);
     const { rb } = await setup(fake, { gates: { inventory: { ok: false, reason: '--inventory-receipt not given' } } });
     expect(rb.counts.unchanged).toBe(5);
+  });
+
+  it('re-enabling a disabled endpoint ALSO needs the inventory receipt', async () => {
+    const fake = new FakeStripe();
+    await setup(fake);
+    fake.avery('webhooks').status = 'disabled';
+    await refusal(setup(fake, { gates: { inventory: { ok: false, reason: '--inventory-receipt not given' } } }), /changing the webhook endpoint needs/);
+    expect(fake.avery('webhooks').status).toBe('disabled');
+  });
+
+  it('a missing STRIPE_ACCOUNT_ID says where to read it and where to put it', () => {
+    let message = '';
+    try {
+      readWranglerTarget('{"vars":{"HUB_ORIGIN":"https://hub.averystudio.org"},"env":{"staging":{"vars":{"HUB_ORIGIN":"https://s.example"}}}}', 'staging');
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain('Settings, Business, Account details');
+    expect(message).toContain('acct_');
+    expect(message).toContain('"env" > "staging" > "vars" block of avery-hub/wrangler.jsonc');
+    expect(() => readWranglerTarget('{"vars":{"HUB_ORIGIN":"https://hub.averystudio.org"}}', 'production')).toThrow(/top-level "vars" block/);
+  });
+
+  it('a legacy app=avery product and portal WITHOUT the avery_object tag are found, reused and tagged', async () => {
+    const fake = new FakeStripe();
+    fake.store.products.push({ id: 'prod_legacy', object: 'product', active: true, livemode: false, name: 'Avery Classroom Games', statement_descriptor: 'AVERY STUDIO', metadata: { app: 'avery' } });
+    fake.store.portals.push({
+      id: 'bpc_legacy', object: 'billing_portal.configuration', active: true, livemode: false, metadata: { app: 'avery' },
+      features: JSON.parse(JSON.stringify({
+        customer_update: { enabled: false }, invoice_history: { enabled: true }, payment_method_update: { enabled: true },
+        subscription_cancel: { enabled: true, mode: 'at_period_end', proration_behavior: 'none' }, subscription_update: { enabled: false },
+      })),
+    });
+    const { rb } = await setup(fake);
+    expect(rb.config.STRIPE_PRODUCT_ID).toBe('prod_legacy');
+    expect(rb.config.STRIPE_PORTAL_CONFIG_ID).toBe('bpc_legacy');
+    expect(fake.store.products.filter((p) => (p.metadata as Record<string, string>).app === 'avery')).toHaveLength(1);
+    expect((fake.store.products.find((p) => p.id === 'prod_legacy')!.metadata as Record<string, string>).avery_object).toBe('classroom_product');
+    expect((fake.store.portals.find((p) => p.id === 'bpc_legacy')!.metadata as Record<string, string>).avery_object).toBe('portal');
+    // The second run sees tagged objects and changes nothing.
+    expect((await setup(fake)).rb.counts).toEqual({ created: 0, updated: 0, unchanged: 5 });
+  });
+
+  it('two ambiguous legacy candidates are refused with a remediation, nothing written', async () => {
+    const fake = new FakeStripe();
+    for (const id of ['prod_legacy_a', 'prod_legacy_b']) {
+      fake.store.products.push({ id, object: 'product', active: true, livemode: false, name: 'Avery Classroom Games', metadata: { app: 'avery' } });
+    }
+    await refusal(setup(fake), /2 untagged app=avery products .* Fix: archive the wrong ones/);
+    expect(fake.posts).toHaveLength(0);
   });
 
   it('the fake itself rejects what Stripe rejects (bad event, long descriptor, duplicate lookup key)', async () => {
@@ -565,27 +658,83 @@ describe('stripe-setup key, flag and config checks', () => {
     expect(isUnderOpsDir('/tmp/t.md', '/r/avery-hub/docs/ops')).toBe(false);
   });
 
-  it('tax receipt needs a real approved date not in the future', () => {
+  const TAX_OK = 'approved: 2026-09-20\napproved_by: JJ and accountant\nhome_state: NY\ntaxable: yes\nproduct_tax_code: txcd_10000000\nregistrations: NY\n';
+
+  it('tax receipt needs every field filled, a real approved date not in the future', () => {
     const today = '2026-09-29';
-    expect(checkTaxReceipt('approved: 2026-09-20\n', today).ok).toBe(true);
-    expect(checkTaxReceipt('approved: YYYY-MM-DD\n', today).ok).toBe(false);
-    expect(checkTaxReceipt('approved: 2026-02-30\n', today).reason).toMatch(/not a real date/);
-    expect(checkTaxReceipt('approved: 2026-10-01\n', today).reason).toMatch(/future/);
+    expect(checkTaxReceipt(TAX_OK, today)).toEqual({ ok: true, reason: 'approved 2026-09-20', taxable: true });
+    expect(checkTaxReceipt(TAX_OK.replace('2026-09-20', 'YYYY-MM-DD'), today).ok).toBe(false);
+    expect(checkTaxReceipt(TAX_OK.replace('2026-09-20', '2026-02-30'), today).reason).toMatch(/not a real date/);
+    expect(checkTaxReceipt(TAX_OK.replace('2026-09-20', '2026-10-01'), today).reason).toMatch(/future/);
+    expect(checkTaxReceipt(TAX_OK.replace('JJ and accountant', ''), today).reason).toMatch(/approved_by/);
+    expect(checkTaxReceipt(TAX_OK.replace('home_state: NY', 'home_state: TODO'), today).reason).toMatch(/home_state/);
+    expect(checkTaxReceipt(TAX_OK.replace('taxable: yes', 'taxable: maybe'), today).reason).toMatch(/yes or no/);
+    expect(checkTaxReceipt(TAX_OK.replace('txcd_10000000', 'digital'), today).reason).toMatch(/txcd_/);
+    expect(checkTaxReceipt(TAX_OK.replace('registrations: NY', 'registrations: none'), today).reason).toMatch(/taxable is yes/);
+    expect(checkTaxReceipt(TAX_OK.replace('taxable: yes', 'taxable: no').replace('registrations: NY', 'registrations: none'), today)).toMatchObject({ ok: true, taxable: false });
     expect(checkTaxReceipt('I have read it\n', today).ok).toBe(false);
   });
 
-  it('inventory receipt needs a completed date and no TODO', () => {
+  const INV = 'test_mode_completed: 2026-09-29\ntest_mode_account_id: acct_ownlytest123\ntest_mode_endpoint_count: 1\nlive_mode_completed: TODO\nlive_mode_account_id:\nlive_mode_endpoint_count:\n';
+
+  it('inventory receipt: per-mode fields; the other mode being unfinished does not block', () => {
     const today = '2026-09-29';
-    expect(checkInventoryReceipt('inventory_completed: 2026-09-29\nall rows filled\n', today).ok).toBe(true);
-    expect(checkInventoryReceipt('inventory_completed: 2026-09-29\n| TODO |\n', today).reason).toMatch(/TODO/);
-    expect(checkInventoryReceipt('inventory_completed: TODO\n', today).ok).toBe(false);
+    expect(checkInventoryReceipt(INV, 'test', today)).toEqual({ ok: true, reason: 'test_mode_completed 2026-09-29', accountId: 'acct_ownlytest123', endpointCount: 1 });
+    expect(checkInventoryReceipt(INV.replace('acct_ownlytest123', ''), 'test', today).reason).toMatch(/account_id/);
+    expect(checkInventoryReceipt(INV.replace('count: 1', 'count: TODO'), 'test', today).reason).toMatch(/endpoint_count/);
+  });
+
+  it('a test-mode inventory receipt never authorises live', () => {
+    expect(checkInventoryReceipt(INV, 'live', '2026-09-29').ok).toBe(false);
+  });
+
+  // An in-memory file system for the receipt wiring main() uses.
+  function memFs(files: Record<string, string>, links: Record<string, string> = {}): ReceiptFs {
+    const real = (p: string) => links[p] ?? p;
+    return {
+      existsSync: (p) => real(p) in files,
+      realpathSync: (p) => real(p),
+      readFileSync: (p) => files[p]!,
+      resolve: (...parts) => parts.reduce((acc, part) => (part.startsWith('/') ? part : `${acc}/${part}`)),
+    };
+  }
+  const OPS = '/r/avery-hub/docs/ops';
+  const CWD = '/r/avery-hub';
+  const today = '2026-09-29';
+
+  it('loadGates: an inventory receipt under docs/ops with the right name passes', () => {
+    const fsx = memFs({ [`${OPS}/stripe-webhook-inventory.md`]: INV });
+    const g = loadGates(fsx, { env: 'staging', live: false, hubOrigin: ORIGIN, inventoryReceipt: 'docs/ops/stripe-webhook-inventory.md' }, { cwd: CWD, opsDir: OPS, today });
+    expect(g.inventory.ok).toBe(true);
+  });
+
+  it('loadGates: a symlink that escapes docs/ops is refused', () => {
+    const fsx = memFs({ '/tmp/fake-inventory.md': INV }, { [`${OPS}/stripe-webhook-inventory.md`]: '/tmp/fake-inventory.md' });
+    expect(() =>
+      loadGates(fsx, { env: 'staging', live: false, hubOrigin: ORIGIN, inventoryReceipt: 'docs/ops/stripe-webhook-inventory.md' }, { cwd: CWD, opsDir: OPS, today }),
+    ).toThrow(/must be a file under avery-hub\/docs\/ops/);
+  });
+
+  it('loadGates: a receipt with the wrong file name does not open the webhook gate', () => {
+    const fsx = memFs({ [`${OPS}/notes.md`]: INV });
+    const g = loadGates(fsx, { env: 'staging', live: false, hubOrigin: ORIGIN, inventoryReceipt: 'docs/ops/notes.md' }, { cwd: CWD, opsDir: OPS, today });
+    expect(g.inventory).toEqual({ ok: false, reason: 'the receipt must be docs/ops/stripe-webhook-inventory.md' });
+  });
+
+  it('loadGates: live needs a filled tax receipt; a missing file is refused', () => {
+    const live: SetupArgs = { env: 'production', live: true, hubOrigin: ORIGIN, taxGateReceipt: 'docs/ops/tax-gate-receipt.md' };
+    expect(() => loadGates(memFs({}), live, { cwd: CWD, opsDir: OPS, today })).toThrow(/does not exist/);
+    const g = loadGates(memFs({ [`${OPS}/tax-gate-receipt.md`]: TAX_OK }), live, { cwd: CWD, opsDir: OPS, today });
+    expect(g.tax).toEqual({ taxable: true });
+    expect(() => loadGates(memFs({ [`${OPS}/tax-gate-receipt.md`]: 'approved: 2026-09-20\n' }), live, { cwd: CWD, opsDir: OPS, today })).toThrow(/approved_by/);
   });
 
   it('the shipped templates do NOT pass their own gates', () => {
     // Guards against someone "completing" a gate by committing the template.
-    expect(inventoryTemplate).toContain('inventory_completed:');
+    expect(inventoryTemplate).toContain('test_mode_completed:');
     expect(taxReceiptTemplate).toContain('approved:');
-    expect(checkInventoryReceipt(inventoryTemplate as string, '2026-09-29').ok).toBe(false);
+    expect(checkInventoryReceipt(inventoryTemplate as string, 'test', '2026-09-29').ok).toBe(false);
+    expect(checkInventoryReceipt(inventoryTemplate as string, 'live', '2026-09-29').ok).toBe(false);
     expect(checkTaxReceipt(taxReceiptTemplate as string, '2026-09-29').ok).toBe(false);
   });
 });

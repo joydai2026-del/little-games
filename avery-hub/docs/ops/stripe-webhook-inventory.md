@@ -4,11 +4,21 @@ Status: **TEMPLATE, NOT YET RUN.** No agent has Stripe access yet. The coordinat
 fills this in once JJ issues a read-capable restricted key, and **before** the
 Avery endpoint is added by `scripts/stripe-setup.ts`.
 
-This file is also the setup script's gate: it will not create the Avery webhook
-endpoint unless it is passed `--inventory-receipt docs/ops/stripe-webhook-inventory.md`
-and this file has a real date on the line below and no `TODO` left anywhere.
+This file is also the setup script's gate: it will not create, change or
+re-enable the Avery webhook endpoint unless it is passed
+`--inventory-receipt docs/ops/stripe-webhook-inventory.md` and the three lines
+for the mode it runs in (test or live) are filled: a real date, the account id
+the key belongs to, and the number of NON-Avery endpoints found. A test-mode
+receipt never authorises a live run. If the endpoint count changes later, the
+script refuses until the inventory is re-run.
 
-inventory_completed: TODO
+test_mode_completed: TODO
+test_mode_account_id: TODO
+test_mode_endpoint_count: TODO
+
+live_mode_completed: TODO
+live_mode_account_id: TODO
+live_mode_endpoint_count: TODO
 
 ## Why this exists
 
