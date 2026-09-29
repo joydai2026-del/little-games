@@ -77,7 +77,7 @@ function refresh(url: string, nowMs: number, jp: JwksPolicy): Promise<void> {
       st.fetchedAt = nowMs;
       st.failures = 0;
       st.retryAt = 0;
-      st.unknownKids.clear();
+      for (const k of st.keys) if (k.kid) st.unknownKids.delete(k.kid);
     } catch {
       st.failures += 1;
       st.retryAt = nowMs + Math.min(jp.backoffMs * 2 ** (st.failures - 1), jp.backoffMaxMs);

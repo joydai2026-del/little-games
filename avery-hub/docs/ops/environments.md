@@ -25,9 +25,10 @@ Environments inherit `routes` but not bindings or vars, so `env.staging` repeats
 | Rate-limit namespace ids | 2111, 2112, 2113 | 2101, 2102, 2103 | keep them different (same id = shared counters across Workers) |
 | `FREE_TIER_ENABLED` | `"false"` | `"false"` | JJ decision 2026-09-29: no free tier |
 
+JWKS (Google and Access keys): `JWKS_NEGATIVE_CACHE_SECONDS` (60, per unknown kid), `JWKS_MIN_REFRESH_SECONDS` (10, spacing of unknown-kid refreshes), `JWKS_RETRY_BACKOFF_SECONDS` (30, doubling) up to `JWKS_RETRY_BACKOFF_MAX_SECONDS` (600). Keys already held keep verifying while a refresh fails.
+
 Sign-in rate limits (thresholds live in the `ratelimits` blocks, the only place Cloudflare reads them): 20 a minute per
-game and binding (`AUTH_START_LIMITER`), 60 a minute per connecting address (`AUTH_ADDRESS_LIMITER`, school-friendly:
-a whole class behind one school address can still sign in), 20 a minute per game and binding for redemption.
+game and binding (`AUTH_START_LIMITER`), 60 new sign-ins a minute per connecting address (`AUTH_ADDRESS_LIMITER`), applied only when there is no valid hub session and only to requests that came through Cloudflare's edge, so teachers already signed in are never blocked by others on a shared school address, 20 a minute per game and binding for redemption.
 
 ## Release steps
 

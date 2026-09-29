@@ -103,6 +103,8 @@ export interface Hub {
   core: typeof hub;
   limiters: Record<string, CountingLimiter>;
   fetchLog: string[];
+  /** Test control of the fake Access key endpoint. */
+  accessCerts: { fail: boolean; extra: Issuer[] };
 }
 
 export const METHODS = [
@@ -181,7 +183,10 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
     const url = String(input instanceof Request ? input.url : input);
     fetchLog.push(url);
     if (url === `${GOOGLE_ISS}/certs`) return Response.json(google.jwks());
-    if (url === `${ACCESS_ISS}/cdn-cgi/access/certs`) return Response.json(access.jwks());
+    if (url === `${ACCESS_ISS}/cdn-cgi/access/certs`) {
+      if (h.accessCerts.fail) return new Response('down', { status: 503 });
+      return Response.json({ keys: [...access.jwks().keys, ...h.accessCerts.extra.flatMap((i) => i.jwks().keys)] });
+    }
     if (url === `${GOOGLE_ISS}/token`) {
       const form = new URLSearchParams(String(init?.body ?? ''));
       const entry = codes.get(form.get('code') ?? '');
@@ -204,7 +209,7 @@ export async function buildHub(opts: { vars?: Record<string, unknown>; methods?:
   });
 
   const h: Hub = {
-    env, db, google, access, clock, gameKeys, codes, tokenStorage, core: hub, limiters, fetchLog,
+    env, db, google, access, clock, gameKeys, codes, tokenStorage, core: hub, limiters, fetchLog, accessCerts: { fail: false, extra: [] },
     async fetch(path, init = {}) {
       const headers = new Headers(init.headers);
       if (init.cookies) headers.set('Cookie', Object.entries(init.cookies).map(([k, v]) => `${k}=${v}`).join('; '));

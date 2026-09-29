@@ -79,7 +79,25 @@ game (`signed_out`), an ended one (`signed_out`), and a bad caller (`refused`).
 | `checkRoomPass(caller, passId)` | `{ valid: true, roomCode, allowedModes, expiresAt }` or `{ valid: false, reason: "unknown"\|"expired"\|"revoked" }`. Any `valid: false` means: drop the room's paid modes. Refund, revoke, account deletion and account moves all give `revoked` | |
 | `signOut(caller, gs)` | `{}`. Ends this browser's hub session and every game session made from it (this device leaves every Avery game, not only this one) | |
 
-Every method may also return `{ ok: false, error: "unavailable" }` (hub misconfigured or an internal error); the hub never throws across RPC. A new hand-off for the same game in the same browser ends that game's previous session (one live game session per game per browser).
+Every method may also return `{ ok: false, error: "unavailable" }`: an internal hub error (logged with the tag
+`AVERY_ALERT` so it reaches JJ's alerts) or the hub not configured. The hub never throws across RPC; a THROWN RPC call
+means the hub was unreachable. A new hand-off for the same game in the same browser ends that game's previous session
+(one live game session per game per browser).
+
+How a game must treat `unavailable` (and a thrown call), per method:
+
+| Method | Treat as |
+|---|---|
+| `redeemHandoff` | sign-in failed: "Can't sign in right now. You can still play one free round of each game." Keep the bind cookie; she can tap Sign in again |
+| `resolveSession`, `entitlement` | not signed in / not subscribed for this page view; do NOT clear the game cookie (the next call may work) |
+| `authorizeRound`, `useTaste`, `switchFreeMode`, `mintRoomPass` | refused: no paid action starts |
+| `listLists`, `getList` | "Can't reach your lists right now"; show nothing saved |
+| `saveList`, `deleteList`, `saveClass`, `deleteClass`, `listClasses` | "Can't reach your lists right now. Your list is still here; try again in a minute." Nothing was written |
+| `checkRoomPass` | same as the hub not answering: the stored pass decides until it expires (`ROOM_PASS_HOURS`). An internal error here is alert-tagged because a persistent one would delay revocation |
+| `signOut` | clear the game cookie anyway and show "signed out"; tell the teacher to use "Sign out everywhere" on her account page if she is worried |
+
+Same-zone note: requests our own Workers send to the hub's public hostname are our code, never teacher traffic; they
+carry no `request.cf`, so the hub skips the per-address bucket for them and keeps the per-binding one.
 
 Item ids are the hub's. `items` is any JSON array the game defines (up to `LIST_MAX_ITEMS` and `LIST_MAX_BYTES`).
 

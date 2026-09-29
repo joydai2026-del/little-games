@@ -86,9 +86,9 @@ describe('migrations', () => {
     seedTeacher(db, 'b');
     db.raw.exec(`UPDATE teachers SET stripe_customer_id = 'cus_a', analytics_id = 'an_a', free_game = 'vocab:race' WHERE id = 'a'`);
     db.raw.exec(`INSERT INTO subscriptions (stripe_subscription_id, teacher_id, status) VALUES ('sub_1', 'a', 'canceled')`);
-    await forTeacher(db, 'a').tombstone(NOW);
+    await forTeacher(db, 'a').tombstone(NOW + 5); // seeded at NOW, so the overwrite is visible
     expect(db.raw.prepare(`SELECT * FROM teachers WHERE id = 'a'`).get()).toMatchObject({
-      id: 'a', stripe_customer_id: 'cus_a', google_sub: null, email: null, display_name: null, analytics_id: null, free_game: null, deleted_at: NOW,
+      id: 'a', stripe_customer_id: 'cus_a', google_sub: null, email: null, display_name: null, analytics_id: null, free_game: null, deleted_at: NOW + 5,
     });
     for (const t of ['sessions', 'game_sessions', 'lists', 'classes', 'round_history', 'checkout_codes']) {
       expect(count(db, t, `teacher_id = 'a'`), t).toBe(0);
@@ -98,6 +98,6 @@ describe('migrations', () => {
     expect(count(db, 'room_passes', `teacher_id = 'a'`)).toBe(1);
     expect(count(db, 'subscriptions', `teacher_id = 'a'`)).toBe(1);
     // No personal timestamps left on the tombstone.
-    expect(db.raw.prepare(`SELECT created_at, last_seen_at FROM teachers WHERE id = 'a'`).get()).toEqual({ created_at: NOW, last_seen_at: NOW });
+    expect(db.raw.prepare(`SELECT created_at, last_seen_at FROM teachers WHERE id = 'a'`).get()).toEqual({ created_at: NOW + 5, last_seen_at: NOW + 5 });
   });
 });
