@@ -7,7 +7,7 @@ passes it to `HubService` methods over a Cloudflare **service binding** (RPC). T
 
 Anonymous free play never needs the hub and must keep working when the hub is down.
 
-**No free tier (JJ, 2026-09-29).** A teacher gets ONE free round per game on her device without signing in. The GAME
+**No free tier (the owner, 2026-09-29).** A teacher gets ONE free round per game on her device without signing in. The GAME
 Worker enforces that (the hub is not involved). After that she signs in and subscribes ($29 a year or $4.99 a month).
 In the hub this is `FREE_TIER_ENABLED` = `"false"` (the default): `useTaste` and `switchFreeMode` return
 `{ ok: false, error: "disabled" }`, `entitlement` returns only `{ plan, accessUntil }`, and lists, classes and room
@@ -80,7 +80,7 @@ game (`signed_out`), an ended one (`signed_out`), and a bad caller (`refused`).
 | `signOut(caller, gs)` | `{}`. Ends this browser's hub session and every game session made from it (this device leaves every Avery game, not only this one) | |
 
 Every method may also return `{ ok: false, error: "unavailable" }`: an internal hub error (logged with the tag
-`AVERY_ALERT` so it reaches JJ's alerts) or the hub not configured. The hub never throws across RPC; a THROWN RPC call
+`AVERY_ALERT` so it reaches the owner's alerts) or the hub not configured. The hub never throws across RPC; a THROWN RPC call
 means the hub was unreachable. A new hand-off for the same game in the same browser ends that game's previous session
 (one live game session per game per browser).
 

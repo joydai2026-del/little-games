@@ -10,7 +10,7 @@ Game-side wiring: [`docs/HUB-API.md`](docs/HUB-API.md).
 | `src/db/` | the only code that touches the database |
 | `src/auth/` | Google sign-in, hub sessions, the hand-off token |
 | `src/rpc/` | `HubService`, the only door games use |
-| `src/admin/` | JJ's tools behind Cloudflare Access |
+| `src/admin/` | the owner's admin tools behind Cloudflare Access |
 | `migrations/` | numbered, additive D1 migrations |
 | `public/` | brand kit copies (theme, Momo) |
 | `tests/` | vitest, run with `npm test` |

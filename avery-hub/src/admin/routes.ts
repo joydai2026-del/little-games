@@ -1,4 +1,4 @@
-// JJ's tools. Reachable only as /admin/* with a Cloudflare Access token the hub
+// The owner's admin tools. Reachable only as /admin/* with a Cloudflare Access token the hub
 // verifies itself; every action is written to admin_log. Agent-callable with
 // an Access service token (JSON in, JSON out). Nothing teacher-facing imports
 // this module (tests/structure.test.ts).

@@ -1,5 +1,5 @@
 // Everything the hub Worker is bound to. Vars come from wrangler.jsonc; the
-// secrets (names only here) are set by JJ with `wrangler secret put`.
+// secrets (names only here) are set by the owner with `wrangler secret put`.
 import type { TokenDO } from './do/token-do';
 import type { BillingDO } from './do/billing-do';
 

@@ -132,7 +132,7 @@ export function policy(env: Env): Policy {
     oauthStateMs: num(env, 'OAUTH_STATE_SECONDS', 600) * 1000,
     maxDevices: num(env, 'MAX_TEACHER_DEVICES', 3),
     roomPassMs: num(env, 'ROOM_PASS_HOURS', 4) * HOUR,
-    // JJ 2026-09-29: no free tier (one free round per game lives in each game).
+    // Owner decision 2026-09-29: no free tier (one free round per game lives in each game).
     freeTierEnabled: str(env, 'FREE_TIER_ENABLED', 'false') === 'true',
     // Production ships with a placeholder D1 id and DB_READY "false"; the Worker refuses to serve until both are set.
     dbReady: str(env, 'DB_READY', 'false') === 'true',

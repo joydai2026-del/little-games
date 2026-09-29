@@ -51,7 +51,7 @@ async function entitlementFor(p: Policy, gameId: string, scope: TeacherScope) {
   if (!profile) return null;
   const plan = paid ? ('paid' as const) : ('free' as const);
   const until = paid ? accessUntil : null;
-  // No free tier (JJ 2026-09-29): the game only needs "paid or not, and until when".
+  // No free tier (owner decision 2026-09-29): the game only needs "paid or not, and until when".
   if (!p.freeTierEnabled) return { plan, accessUntil: until };
   const today = utcDay(t);
   const used = profile.taste_day === today ? profile.taste_used : 0;

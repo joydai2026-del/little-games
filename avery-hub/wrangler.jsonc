@@ -2,7 +2,7 @@
     // avery-hub: sign-in, the teacher database and the free/paid gate for every Avery game.
   // Environments inherit routes but NOT bindings or vars, so env.staging repeats
   // every binding (tests/wrangler-env.test.ts guards the copy). Secrets are set
-  // with `wrangler secret put` by JJ, never here (see docs/ops/rotation.md).
+  // with `wrangler secret put` by the owner, never here (see docs/ops/rotation.md).
   // Rate-limit namespace ids differ per environment (same id = shared counters).
   // DB_READY is "false" in production until the real D1 id replaces the placeholder.
   // Daily clean-up cron (src/cleanup.ts).

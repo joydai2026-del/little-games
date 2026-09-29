@@ -2,7 +2,7 @@
 
 | Item | Staging | Production |
 |---|---|---|
-| Worker | `avery-hub-staging` (`wrangler deploy --env staging`) | `avery-hub` (`wrangler deploy`), JJ-approved release only |
+| Worker | `avery-hub-staging` (`wrangler deploy --env staging`) | `avery-hub` (`wrangler deploy`), the owner-approved release only |
 | Address | `https://avery-hub-staging.joyd-ai-2026.workers.dev` | `https://hub.averystudio.org` (custom domain; `workers_dev: false`, `preview_urls: false`) |
 | D1 database | `avery_hub_staging` (id `b287b7d8-bec3-437b-805c-d0a41987ebde`) | `avery_hub` (not created yet; replace `REPLACE_WITH_PRODUCTION_D1_ID` in `wrangler.jsonc` when it is) |
 | Google project and OAuth client | staging project, consent screen in Testing (listed test users only, up to 100) | production project, consent screen Published |
@@ -23,7 +23,7 @@ Environments inherit `routes` but not bindings or vars, so `env.staging` repeats
 |---|---|---|---|
 | `DB_READY` var | `"true"` | `"false"`: every route answers 503 `database_not_configured` and every HubService call `unavailable` | create `avery_hub`, put its id in place of `REPLACE_WITH_PRODUCTION_D1_ID`, then set `"true"` |
 | Rate-limit namespace ids | 2111, 2112, 2113 | 2101, 2102, 2103 | keep them different (same id = shared counters across Workers) |
-| `FREE_TIER_ENABLED` | `"false"` | `"false"` | JJ decision 2026-09-29: no free tier |
+| `FREE_TIER_ENABLED` | `"false"` | `"false"` | the owner decision 2026-09-29: no free tier |
 
 JWKS (Google and Access keys): `JWKS_NEGATIVE_CACHE_SECONDS` (60, per unknown kid), `JWKS_MIN_REFRESH_SECONDS` (10, spacing of unknown-kid refreshes), `JWKS_RETRY_BACKOFF_SECONDS` (30, doubling) up to `JWKS_RETRY_BACKOFF_MAX_SECONDS` (600). Keys already held keep verifying while a refresh fails.
 
@@ -53,10 +53,10 @@ Every limiter binding missing = fail closed. Security program: `security-program
 - D1 Time Travel: `wrangler d1 time-travel info avery_hub_staging --env staging` prints the current bookmark;
   `wrangler d1 time-travel restore avery_hub_staging --env staging --bookmark=<id>` restores. The info step was run on
   staging on 2026-09-29; a full restore rehearsal is still to do (it rewinds the whole database, so do it on an empty
-  staging database or with JJ's go-ahead).
+  staging database or with the owner's go-ahead).
 - Weekly `wrangler d1 export avery_hub --remote --output <private path>`, kept in private storage, never in git.
 
-## Secrets (names only; JJ sets values with `wrangler secret put <NAME> [--env staging]`)
+## Secrets (names only; the owner sets values with `wrangler secret put <NAME> [--env staging]`)
 
 | Name | Needed for |
 |---|---|

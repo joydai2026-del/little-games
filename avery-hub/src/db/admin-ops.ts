@@ -1,4 +1,4 @@
-// SQL for JJ's admin tools. Lives in src/db (the only place allowed to touch
+// SQL for the owner's admin tools. Lives in src/db (the only place allowed to touch
 // the database) but is imported ONLY by src/admin/ (tests/structure.test.ts).
 import type { Db } from './index';
 
