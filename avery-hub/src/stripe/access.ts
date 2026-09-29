@@ -63,6 +63,8 @@ export interface SubscriptionLike {
 
 export interface ChargeLike {
   id: string;
+  /** Unix seconds. Used to tell whether the CURRENT period has been paid. */
+  created?: number | null;
   paid?: boolean | null;
   refunded?: boolean | null;
   amount?: number | null;
@@ -73,8 +75,15 @@ export interface ChargeLike {
 export interface DisputeLike {
   id: string;
   status: string;
-  /** The disputed charge id. A dispute counts only if this is the subscription's charge. */
-  charge: string;
+  /** The disputed charge id (informational). */
+  charge?: string | null;
+  /**
+   * The subscription the disputed charge paid for. S2b resolves it from the
+   * charge's invoice (`invoice.parent.subscription_details.subscription` on
+   * dahlia). A dispute on ANY charge of this subscription counts, not only the
+   * latest one. `null` means it could not be resolved: that fails closed.
+   */
+  subscriptionId: string | null;
 }
 
 /** Rows from billing_ops (S2b). Only full-refund ops matter here. */
@@ -91,13 +100,25 @@ const MAX_SECONDS = 1e11;
 
 /** Stripe dispute statuses that mean "still open". `warning_*` are inquiries. */
 const OPEN_DISPUTE = new Set(['needs_response', 'under_review', 'warning_needs_response', 'warning_under_review']);
-/** Closed statuses that give access back to the subscription. */
-const RESTORING_DISPUTE = new Set(['won', 'warning_closed']);
+/** Closed statuses that give access back to the subscription. `prevented` is
+ * "prevented from becoming a formal chargeback" (Stripe dispute object, read
+ * 2026-09-29), so the charge stands. */
+const RESTORING_DISPUTE = new Set(['won', 'warning_closed', 'prevented']);
+
+/** Hard upper bounds, so a typo cannot grant years of access or accept years-old webhooks. */
+export const POLICY_LIMITS = {
+  ACCESS_END_GRACE_DAYS: 30,
+  PAST_DUE_GRACE_DAYS: 30,
+  TRIAL_DAYS: 90,
+  STRIPE_SIGNATURE_TOLERANCE_SECONDS: 3600,
+} as const;
 
 function assertPolicy(policy: AccessPolicy): void {
   for (const k of ['ACCESS_END_GRACE_DAYS', 'PAST_DUE_GRACE_DAYS', 'TRIAL_DAYS'] as const) {
     const v = policy[k];
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new AccessInputError(`policy ${k} must be a finite number >= 0`);
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > POLICY_LIMITS[k]) {
+      throw new AccessInputError(`policy ${k} must be a whole number from 0 to ${POLICY_LIMITS[k]}`);
+    }
   }
   if (policy.DISPUTE_ACTION !== 'pause' && policy.DISPUTE_ACTION !== 'ignore') {
     throw new AccessInputError('policy DISPUTE_ACTION must be pause or ignore');
@@ -143,24 +164,29 @@ export function accessFor(
   refundOps: readonly RefundOpLike[],
   now: number,
   policy: AccessPolicy,
+  /**
+   * End (Unix seconds) of the last period Stripe was actually PAID for. S2b
+   * derives it from the latest paid invoice's line period end. null = unknown.
+   */
+  lastPaidPeriodEnd: number | null,
 ): Access {
   assertNow(now);
   assertPolicy(policy);
+  if (lastPaidPeriodEnd !== null && (!Number.isFinite(lastPaidPeriodEnd) || lastPaidPeriodEnd > MAX_SECONDS)) {
+    throw new AccessInputError('lastPaidPeriodEnd must be Unix seconds or null');
+  }
   if (!subscription) return free('no_subscription');
 
   const opsForSub = refundOps.filter((op) => op.kind === 'refund_full' && op.subscription_id === subscription.id);
 
-  // A dispute counts only when it is on this subscription's charge: the latest
-  // paid charge, or a charge a refund op recorded for this subscription. A lost
-  // dispute on last year's charge does not touch a new subscription.
-  const ownCharges = new Set<string>([
-    ...(latestCharge ? [latestCharge.id] : []),
-    ...opsForSub.map((op) => op.charge_id).filter((c): c is string => typeof c === 'string'),
-  ]);
-  if (dispute && ownCharges.has(dispute.charge)) {
-    if (dispute.status === 'lost') return free('dispute_lost');
+  // A dispute counts when its charge paid for THIS subscription (any of its
+  // charges, not only the latest), or when that cannot be resolved (fail
+  // closed). It is ignored only when it provably belongs to another subscription.
+  if (dispute && (dispute.subscriptionId === subscription.id || dispute.subscriptionId === null)) {
+    const unresolved = dispute.subscriptionId === null;
+    if (dispute.status === 'lost') return free(unresolved ? 'dispute_unresolved' : 'dispute_lost');
     if (OPEN_DISPUTE.has(dispute.status)) {
-      if (policy.DISPUTE_ACTION === 'pause') return free('dispute_open');
+      if (policy.DISPUTE_ACTION === 'pause') return free(unresolved ? 'dispute_unresolved' : 'dispute_open');
     } else if (!RESTORING_DISPUTE.has(dispute.status)) {
       // Fail closed on a status this code does not know; the caller alerts.
       return free(`unknown_dispute_status:${dispute.status}`);
@@ -177,9 +203,25 @@ export function accessFor(
       return paidUntil(typeof subscription.trial_end === 'number' ? subscription.trial_end : null, now, 'trialing');
     case 'active': {
       const end = periodEnd(subscription);
-      // Dashboard "pause payment collection": status stays active, but no money
-      // comes in. Paid to the end of the period already paid for, no grace.
-      if (subscription.pause_collection) return paidUntil(end, now, 'collection_paused');
+      const start = periodStart(subscription);
+      // DECISION (coordinator, fix round 2): nobody keeps access for time that
+      // was not paid for. Stripe keeps advancing the period while collection is
+      // paused (renewal invoices are voided, status stays active), so with
+      // `pause_collection` access ends at the last PAID period end, no grace. A
+      // goodwill pause is JJ's manual grant in the hub, not a Stripe pause.
+      if (subscription.pause_collection) return paidUntil(lastPaidPeriodEnd, now, 'collection_paused');
+      const chargeBeforePeriod =
+        typeof latestCharge?.created === 'number' && start !== null && latestCharge.created < start;
+      const paidThroughCurrent = lastPaidPeriodEnd !== null && end !== null && lastPaidPeriodEnd >= end;
+      if (!paidThroughCurrent || chargeBeforePeriod) {
+        // The current period's payment is unproven. This is also the normal
+        // state for the hour or so between a renewal and its charge, so the
+        // teacher gets PAST_DUE_GRACE_DAYS from the last paid period end (the
+        // same grace a failed renewal gets once Stripe marks it past_due),
+        // never the current period. With no paid period known at all: free.
+        if (lastPaidPeriodEnd === null) return free('no_paid_period');
+        return paidUntil(lastPaidPeriodEnd + policy.PAST_DUE_GRACE_DAYS * DAY, now, 'renewal_payment_pending');
+      }
       return paidUntil(end === null ? null : end + grace, now, subscription.cancel_at_period_end ? 'active_canceling' : 'active');
     }
     case 'past_due': {
@@ -193,12 +235,15 @@ export function accessFor(
       // REQUEST time in that case, so the end is judged by `ended_at`. A
       // cancel-now (refund, lost dispute, account deletion) ends before the
       // period end and gets no grace.
-      const end = periodEnd(subscription);
+      const periodEndAt = periodEnd(subscription);
+      // Never past the last paid period, even inside the grace.
+      const end = periodEndAt === null || lastPaidPeriodEnd === null ? null : Math.min(periodEndAt, lastPaidPeriodEnd);
       const ranToEnd =
         subscription.cancellation_details?.reason === 'cancellation_requested' &&
         end !== null &&
         typeof subscription.ended_at === 'number' &&
-        subscription.ended_at >= end;
+        periodEndAt !== null &&
+        subscription.ended_at >= periodEndAt;
       return ranToEnd ? paidUntil(end + grace, now, 'canceled_grace') : free('canceled');
     }
     case 'incomplete':
@@ -226,11 +271,11 @@ export interface StripePolicyConfig {
   toleranceSeconds: number;
 }
 
-function numVar(env: Record<string, unknown>, name: string, fallback: number, min: number): number {
+function numVar(env: Record<string, unknown>, name: string, fallback: number, min: number, max: number): number {
   const raw = env[name];
   if (raw === undefined || raw === null || raw === '') return fallback;
-  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(raw) ? Number(raw) : Number.NaN;
-  if (!Number.isFinite(n) || n < min) throw new AccessInputError(`config ${name} must be a number >= ${min}`);
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\s*\d+\s*$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isInteger(n) || n < min || n > max) throw new AccessInputError(`config ${name} must be a whole number from ${min} to ${max}`);
   return n;
 }
 
@@ -239,12 +284,18 @@ export function policyFromEnv(env: Record<string, unknown>): StripePolicyConfig 
   const dispute = disputeRaw === undefined || disputeRaw === '' ? POLICY_DEFAULTS.DISPUTE_ACTION : disputeRaw;
   if (dispute !== 'pause' && dispute !== 'ignore') throw new AccessInputError('config DISPUTE_ACTION must be pause or ignore');
   const policy: AccessPolicy = {
-    ACCESS_END_GRACE_DAYS: numVar(env, 'ACCESS_END_GRACE_DAYS', POLICY_DEFAULTS.ACCESS_END_GRACE_DAYS, 0),
-    PAST_DUE_GRACE_DAYS: numVar(env, 'PAST_DUE_GRACE_DAYS', POLICY_DEFAULTS.PAST_DUE_GRACE_DAYS, 0),
-    TRIAL_DAYS: numVar(env, 'TRIAL_DAYS', POLICY_DEFAULTS.TRIAL_DAYS, 0),
+    ACCESS_END_GRACE_DAYS: numVar(env, 'ACCESS_END_GRACE_DAYS', POLICY_DEFAULTS.ACCESS_END_GRACE_DAYS, 0, POLICY_LIMITS.ACCESS_END_GRACE_DAYS),
+    PAST_DUE_GRACE_DAYS: numVar(env, 'PAST_DUE_GRACE_DAYS', POLICY_DEFAULTS.PAST_DUE_GRACE_DAYS, 0, POLICY_LIMITS.PAST_DUE_GRACE_DAYS),
+    TRIAL_DAYS: numVar(env, 'TRIAL_DAYS', POLICY_DEFAULTS.TRIAL_DAYS, 0, POLICY_LIMITS.TRIAL_DAYS),
     DISPUTE_ACTION: dispute,
   };
   assertPolicy(policy);
-  const toleranceSeconds = numVar(env, 'STRIPE_SIGNATURE_TOLERANCE_SECONDS', POLICY_DEFAULTS.STRIPE_SIGNATURE_TOLERANCE_SECONDS, 1);
+  const toleranceSeconds = numVar(
+    env,
+    'STRIPE_SIGNATURE_TOLERANCE_SECONDS',
+    POLICY_DEFAULTS.STRIPE_SIGNATURE_TOLERANCE_SECONDS,
+    1,
+    POLICY_LIMITS.STRIPE_SIGNATURE_TOLERANCE_SECONDS,
+  );
   return { policy, toleranceSeconds };
 }

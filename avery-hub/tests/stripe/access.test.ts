@@ -27,9 +27,29 @@ const CANCELED_AT_END: Partial<SubscriptionLike> = {
   ended_at: END,
   cancellation_details: { reason: 'cancellation_requested' },
 };
-const paidCharge = { id: 'ch_1', paid: true, refunded: false, amount: 3900, amount_captured: 3900, amount_refunded: 0 };
-const run = (s: SubscriptionLike | null, opts: { charge?: typeof paidCharge | null; dispute?: { id: string; status: string; charge: string } | null; now?: number; policy?: AccessPolicy; ops?: Parameters<typeof accessFor>[3] } = {}) =>
-  accessFor(s, opts.charge === undefined ? paidCharge : opts.charge, opts.dispute ?? null, opts.ops ?? [], opts.now ?? NOW, opts.policy ?? POLICY);
+/** The charge that paid the CURRENT period (created just after the period start). */
+const paidCharge = { id: 'ch_1', created: START + 3600, paid: true, refunded: false, amount: 3900, amount_captured: 3900, amount_refunded: 0 };
+type DisputeOpt = { id: string; status: string; charge?: string; subscriptionId?: string | null };
+interface RunOpts {
+  charge?: typeof paidCharge | null;
+  /** Defaults to a dispute on this subscription (`subscriptionId: 'sub_1'`). */
+  dispute?: DisputeOpt | null;
+  now?: number;
+  policy?: AccessPolicy;
+  ops?: Parameters<typeof accessFor>[3];
+  /** Defaults to END: the current period is paid. */
+  lastPaid?: number | null;
+}
+const run = (s: SubscriptionLike | null, opts: RunOpts = {}) =>
+  accessFor(
+    s,
+    opts.charge === undefined ? paidCharge : opts.charge,
+    opts.dispute ? { subscriptionId: 'sub_1', ...opts.dispute } : null,
+    opts.ops ?? [],
+    opts.now ?? NOW,
+    opts.policy ?? POLICY,
+    opts.lastPaid === undefined ? END : opts.lastPaid,
+  );
 
 describe('accessFor: one test per plan table row', () => {
   it('incomplete: free', () => {
@@ -190,36 +210,125 @@ describe('accessFor: extra cases from the S2a brief', () => {
 });
 
 describe('accessFor: dispute scoping and unknown statuses', () => {
-  it('a lost dispute on an OLD charge does not touch a new subscription', () => {
-    expect(run(sub('active'), { dispute: { id: 'dp_old', status: 'lost', charge: 'ch_last_year' } })).toEqual(run(sub('active')));
+  const MONTHLY: Partial<SubscriptionLike> = { id: 'sub_m', items: { data: [{ current_period_start: NOW - 5 * DAY, current_period_end: NOW + 25 * DAY }] } };
+  const month3 = { ...paidCharge, id: 'ch_month3', created: NOW - 5 * DAY + 3600 };
+
+  it('a dispute on an OLDER monthly charge of the same subscription counts (open and lost)', () => {
+    const s = sub('active', MONTHLY);
+    const base = { charge: month3, lastPaid: NOW + 25 * DAY };
+    expect(run(s, { ...base, dispute: { id: 'dp_m1', status: 'needs_response', charge: 'ch_month1', subscriptionId: 'sub_m' } }).reason).toBe('dispute_open');
+    expect(run(s, { ...base, dispute: { id: 'dp_m1', status: 'lost', charge: 'ch_month1', subscriptionId: 'sub_m' } }).reason).toBe('dispute_lost');
   });
 
-  it('a dispute on a charge recorded in a refund op for this subscription counts', () => {
-    const ops = [{ kind: 'refund_full' as const, subscription_id: 'sub_1', charge_id: 'ch_prev', done: false }];
-    expect(run(sub('active'), { ops, dispute: { id: 'dp_2', status: 'lost', charge: 'ch_prev' } }).reason).toBe('dispute_lost');
+  it('a dispute that cannot be tied to a subscription fails closed', () => {
+    expect(run(sub('active'), { dispute: { id: 'dp_x', status: 'needs_response', subscriptionId: null } })).toEqual({ plan: 'free', until: null, reason: 'dispute_unresolved' });
+    expect(run(sub('active'), { dispute: { id: 'dp_x', status: 'lost', subscriptionId: null } }).reason).toBe('dispute_unresolved');
+    expect(run(sub('active'), { dispute: { id: 'dp_x', status: 'won', subscriptionId: null } }).plan).toBe('paid');
   });
 
-  it('warning_closed restores access', () => {
-    expect(run(sub('active'), { dispute: { id: 'dp_1', status: 'warning_closed', charge: 'ch_1' } }).plan).toBe('paid');
+  it("a dispute on ANOTHER subscription's charge is ignored (a lost dispute last year does not lock a new subscription)", () => {
+    expect(run(sub('active'), { dispute: { id: 'dp_old', status: 'lost', charge: 'ch_last_year', subscriptionId: 'sub_old' } })).toEqual(run(sub('active')));
   });
 
-  it('an unknown dispute status fails closed with an alertable reason', () => {
-    const r = run(sub('active'), { dispute: { id: 'dp_1', status: 'new_open_status', charge: 'ch_1' } });
+  it('warning_closed and prevented restore access', () => {
+    expect(run(sub('active'), { dispute: { id: 'dp_1', status: 'warning_closed' } }).plan).toBe('paid');
+    expect(run(sub('active'), { dispute: { id: 'dp_1', status: 'prevented' } }).plan).toBe('paid');
+  });
+
+  it('an unknown dispute status fails closed with an alertable reason, even with DISPUTE_ACTION ignore', () => {
+    const r = run(sub('active'), { dispute: { id: 'dp_1', status: 'new_open_status' } });
     expect(r).toEqual({ plan: 'free', until: null, reason: 'unknown_dispute_status:new_open_status' });
-    // Even with DISPUTE_ACTION ignore.
-    expect(run(sub('active'), { dispute: { id: 'dp_1', status: 'prevented', charge: 'ch_1' }, policy: { ...POLICY, DISPUTE_ACTION: 'ignore' } }).plan).toBe('free');
+    expect(run(sub('active'), { dispute: { id: 'dp_1', status: 'new_open_status' }, policy: { ...POLICY, DISPUTE_ACTION: 'ignore' } }).plan).toBe('free');
   });
 });
 
-describe('accessFor: pause', () => {
-  it('pause_collection keeps paid to the period end with no grace, then free', () => {
+describe('accessFor: paid-through rule (no access for time not paid for)', () => {
+  it('pause_collection: access ends at the last PAID period end, no grace, even after two advanced periods', () => {
+    // Paid period ended 60 days ago; Stripe has since advanced two monthly periods with voided invoices.
+    const lastPaid = NOW - 60 * DAY;
+    const s = sub('active', { pause_collection: { behavior: 'void' }, items: { data: [{ current_period_start: NOW - 2 * DAY, current_period_end: NOW + 28 * DAY }] } });
+    expect(run(s, { lastPaid, charge: { ...paidCharge, created: lastPaid - 30 * DAY } })).toEqual({ plan: 'free', until: null, reason: 'collection_paused_ended' });
+  });
+
+  it('pause_collection inside the paid period: paid to the paid end, then free', () => {
     const s = sub('active', { pause_collection: { behavior: 'void' } });
     expect(run(s)).toEqual({ plan: 'paid', until: END, reason: 'collection_paused' });
     expect(run(s, { now: END }).plan).toBe('free');
   });
 
+  it('current period unproven (latest charge older than the period start): last paid end plus PAST_DUE_GRACE_DAYS, never the new period', () => {
+    const s = sub('active', { items: { data: [{ current_period_start: NOW - 3600, current_period_end: NOW + 365 * DAY }] } });
+    const oldCharge = { ...paidCharge, created: NOW - 365 * DAY };
+    const r = run(s, { charge: oldCharge, lastPaid: NOW - 3600 });
+    expect(r).toEqual({ plan: 'paid', until: NOW - 3600 + 7 * DAY, reason: 'renewal_payment_pending' });
+    expect(run(s, { charge: oldCharge, lastPaid: NOW - 3600, now: NOW + 8 * DAY }).plan).toBe('free');
+  });
+
+  it('a stale lastPaidPeriodEnd alone also makes the period unproven', () => {
+    // Paid through yesterday only, although Stripe's current period runs to END.
+    expect(run(sub('active'), { lastPaid: NOW - DAY })).toEqual({ plan: 'paid', until: NOW + 6 * DAY, reason: 'renewal_payment_pending' });
+    expect(run(sub('active'), { lastPaid: START }).plan).toBe('free');
+  });
+
+  it('no paid period known: free', () => {
+    expect(run(sub('active'), { lastPaid: null }).reason).toBe('no_paid_period');
+  });
+
+  it('normal active, current period paid: period end plus grace', () => {
+    expect(run(sub('active'))).toEqual({ plan: 'paid', until: END + 7 * DAY, reason: 'active' });
+  });
+
+  it('canceled at period end never grants past the last paid period', () => {
+    const s = sub('canceled', { cancel_at_period_end: true, ended_at: END, cancellation_details: { reason: 'cancellation_requested' } });
+    expect(run(s, { now: END + DAY, lastPaid: END - 30 * DAY }).plan).toBe('free');
+  });
+
   it('status paused stays free', () => {
     expect(run(sub('paused', { pause_collection: null })).reason).toBe('paused');
+  });
+});
+
+describe('accessFor: combinations (ported from the coverage review scratch run)', () => {
+  it('past_due + cancel_at_period_end: past-due grace applies', () => {
+    const s = sub('past_due', { cancel_at_period_end: true, items: { data: [{ current_period_start: NOW - 2 * DAY, current_period_end: NOW + 28 * DAY }] } });
+    expect(run(s).plan).toBe('paid');
+    expect(run(s, { now: NOW + 6 * DAY }).plan).toBe('free');
+  });
+
+  it('active + open dispute + full refund: free; with the dispute won it stays free (refunded)', () => {
+    const refunded = { ...paidCharge, refunded: true, amount_refunded: 3900 };
+    expect(run(sub('active'), { charge: refunded, dispute: { id: 'dp', status: 'needs_response' } }).plan).toBe('free');
+    expect(run(sub('active'), { charge: refunded, dispute: { id: 'dp', status: 'won' } }).reason).toBe('refunded_full');
+  });
+
+  it('paused then resumed (active with a new paid period): paid', () => {
+    expect(run(sub('paused')).plan).toBe('free');
+    expect(run(sub('active')).plan).toBe('paid');
+  });
+
+  it('partial then full refund: unchanged, then free', () => {
+    expect(run(sub('active'), { charge: { ...paidCharge, amount_refunded: 1000 } }).plan).toBe('paid');
+    expect(run(sub('active'), { charge: { ...paidCharge, amount_refunded: 3900 } }).reason).toBe('refunded_full');
+  });
+
+  it('dispute lost after the period end: free (active-stale and canceled)', () => {
+    expect(run(sub('active'), { now: END + DAY, dispute: { id: 'dp', status: 'lost' } }).reason).toBe('dispute_lost');
+    expect(run(sub('canceled'), { now: END + DAY, dispute: { id: 'dp', status: 'lost' } }).reason).toBe('dispute_lost');
+  });
+
+  it('canceled with a later refund: free', () => {
+    expect(run(sub('canceled'), { charge: { ...paidCharge, refunded: true } }).reason).toBe('refunded_full');
+  });
+
+  it('period end exactly equal to now with grace 0: free (end is exclusive)', () => {
+    expect(run(sub('active'), { now: END, policy: { ...POLICY, ACCESS_END_GRACE_DAYS: 0 } }).plan).toBe('free');
+    expect(run(sub('active'), { now: END - 1, policy: { ...POLICY, ACCESS_END_GRACE_DAYS: 0 } }).plan).toBe('paid');
+  });
+
+  it('past_due grace boundary at exactly N days', () => {
+    const s = sub('past_due', { items: { data: [{ current_period_start: NOW, current_period_end: NOW + 30 * DAY }] } });
+    expect(run(s, { now: NOW + 7 * DAY - 1 }).plan).toBe('paid');
+    expect(run(s, { now: NOW + 7 * DAY }).plan).toBe('free');
   });
 });
 
@@ -234,8 +343,8 @@ describe('accessFor: input guards', () => {
   });
 
   for (const k of ['ACCESS_END_GRACE_DAYS', 'PAST_DUE_GRACE_DAYS', 'TRIAL_DAYS'] as const) {
-    it(`throws when policy ${k} is NaN, negative or infinite`, () => {
-      for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+    it(`throws when policy ${k} is NaN, negative, infinite, fractional or above its maximum`, () => {
+      for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY, 1.5, k === 'TRIAL_DAYS' ? 91 : 31]) {
         expect(() => run(sub('active'), { policy: { ...POLICY, [k]: bad } })).toThrow(AccessInputError);
       }
     });
@@ -264,8 +373,24 @@ describe('policyFromEnv', () => {
       { TRIAL_DAYS: '1e3x' },
       { DISPUTE_ACTION: 'Pause' },
       { STRIPE_SIGNATURE_TOLERANCE_SECONDS: '0' },
+      { ACCESS_END_GRACE_DAYS: '31' },
+      { PAST_DUE_GRACE_DAYS: '999999999' },
+      { TRIAL_DAYS: '91' },
+      { STRIPE_SIGNATURE_TOLERANCE_SECONDS: '3601' },
+      { STRIPE_SIGNATURE_TOLERANCE_SECONDS: '315360000' },
+      { ACCESS_END_GRACE_DAYS: '7.5' },
     ]) {
       expect(() => policyFromEnv(env), JSON.stringify(env)).toThrow(AccessInputError);
     }
+  });
+});
+
+describe('policy maxima', () => {
+  it('accepts exactly the maxima', () => {
+    expect(policyFromEnv({ ACCESS_END_GRACE_DAYS: '30', PAST_DUE_GRACE_DAYS: '30', TRIAL_DAYS: '90', STRIPE_SIGNATURE_TOLERANCE_SECONDS: '3600' }).toleranceSeconds).toBe(3600);
+  });
+
+  it('lastPaidPeriodEnd in milliseconds is refused', () => {
+    expect(() => run(sub('active'), { lastPaid: END * 1000 })).toThrow(AccessInputError);
   });
 });
