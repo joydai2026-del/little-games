@@ -185,7 +185,7 @@ describe('hub session lifetimes and rotation', () => {
     expect(await (await h.fetch('/me', { cookies: { '__Host-avery_hub': rotated } })).text()).toContain('a@s.org');
   });
 
-  it('ends the hub session after SESSION_IDLE_DAYS without use and after SESSION_MAX_DAYS regardless', async () => {
+  it('ends the hub session after SESSION_IDLE_DAYS without use (the 90-day cap is in review-round-1.test.ts)', async () => {
     const h = await buildHub();
     const s = await signIn(h, { sub: 'g-a', email: 'a@s.org' });
     h.clock.t += 31 * 86_400_000;
