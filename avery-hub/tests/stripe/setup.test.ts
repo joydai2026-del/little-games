@@ -22,6 +22,7 @@ import {
   checkKeyMode,
   checkTaxReceipt,
   descriptorProblem,
+  inventoryDigest,
   loadGates,
   type ReceiptFs,
   isUnderOpsDir,
@@ -230,8 +231,9 @@ class FakeStripe {
 
 const ARGS: SetupArgs = { env: 'staging', live: false, hubOrigin: ORIGIN };
 const EXPECTED: ExpectedTarget = { hubOrigin: ORIGIN, accountId: ACCOUNT };
-/** The fake starts with ONE non-Avery endpoint (Agent Company). */
-const GATES_OK: Gates = { inventory: { ok: true, reason: 'test_mode_completed 2026-09-29', accountId: ACCOUNT, endpointCount: 1 }, tax: { taxable: true } };
+/** The fake starts with ONE non-Avery endpoint (Agent Company); this is its reviewed digest. */
+const AGENTCO_DIGEST = await inventoryDigest([new FakeStripe().store.webhooks[0]!]);
+const GATES_OK: Gates = { inventory: { ok: true, reason: 'test_mode_completed 2026-09-29', accountId: ACCOUNT, digest: AGENTCO_DIGEST }, tax: { taxable: true } };
 
 async function setup(fake: FakeStripe, o: { args?: SetupArgs; expected?: ExpectedTarget; gates?: Gates } = {}) {
   const lines: string[] = [];
@@ -502,10 +504,41 @@ describe('stripe-setup against a fake Stripe', () => {
     expect(fake.posts).toHaveLength(0);
   });
 
-  it('a stale inventory (endpoint count changed since) refuses', async () => {
+  it('a stale inventory refuses: an endpoint added', async () => {
     const fake = new FakeStripe();
     fake.store.webhooks.push({ id: 'we_new', object: 'webhook_endpoint', url: 'https://other.example/h', enabled_events: ['charge.succeeded'], status: 'enabled', livemode: false, metadata: {} });
-    await refusal(setup(fake), /inventory is stale: it lists 1 other endpoints, Stripe now has 2/);
+    await refusal(setup(fake), /inventory is stale/);
+    expect(fake.posts).toHaveLength(0);
+  });
+
+  it('a stale inventory refuses: reviewed endpoint replaced by another, SAME count', async () => {
+    const fake = new FakeStripe();
+    fake.store.webhooks[0] = { id: 'we_unreviewed', object: 'webhook_endpoint', url: 'https://new.example/h', enabled_events: ['*'], status: 'enabled', livemode: false, metadata: {} };
+    await refusal(setup(fake), /inventory is stale/);
+  });
+
+  it('a stale inventory refuses: events or status of a reviewed endpoint changed', async () => {
+    const f1 = new FakeStripe();
+    f1.store.webhooks[0]!.enabled_events = ['charge.refunded'];
+    await refusal(setup(f1), /inventory is stale/);
+    const f2 = new FakeStripe();
+    f2.store.webhooks[0]!.status = 'disabled';
+    await refusal(setup(f2), /inventory is stale/);
+  });
+
+  it('the refusal prints the current digest so the owner can record it after review', async () => {
+    const fake = new FakeStripe();
+    await refusal(setup(fake, { gates: { inventory: { ok: false, reason: '--inventory-receipt not given' } } }), new RegExp(`test_mode_endpoints_digest after review: ${AGENTCO_DIGEST}`));
+  });
+
+  it('the digest ignores order and the Avery endpoint itself', async () => {
+    const a = { id: 'we_a', url: 'https://a', status: 'enabled', enabled_events: ['x', 'y'] };
+    const b = { id: 'we_b', url: 'https://b', status: 'enabled', enabled_events: ['z'] };
+    expect(await inventoryDigest([a, b])).toBe(await inventoryDigest([b, { ...a, enabled_events: ['y', 'x'] }]));
+    const fake = new FakeStripe();
+    await setup(fake); // adds the Avery endpoint
+    const { output } = await setup(fake);
+    expect(output).toContain(`test_mode_endpoints_digest | ${AGENTCO_DIGEST}`);
   });
 
   it('an existing, correct webhook endpoint does not need the inventory receipt again', async () => {
@@ -559,10 +592,63 @@ describe('stripe-setup against a fake Stripe', () => {
   it('two ambiguous legacy candidates are refused with a remediation, nothing written', async () => {
     const fake = new FakeStripe();
     for (const id of ['prod_legacy_a', 'prod_legacy_b']) {
-      fake.store.products.push({ id, object: 'product', active: true, livemode: false, name: 'Avery Classroom Games', metadata: { app: 'avery' } });
+      fake.store.products.push({ id, object: 'product', active: true, livemode: false, name: 'Avery Classroom Games', statement_descriptor: 'AVERY STUDIO', metadata: { app: 'avery' } });
     }
     await refusal(setup(fake), /2 untagged app=avery products .* Fix: archive the wrong ones/);
     expect(fake.posts).toHaveLength(0);
+  });
+
+  it('an INACTIVE legacy Avery product is reported with a fix, not duplicated', async () => {
+    const fake = new FakeStripe();
+    fake.store.products.push({ id: 'prod_legacy_old', object: 'product', active: false, livemode: false, name: 'Avery Classroom Games', statement_descriptor: 'AVERY STUDIO', metadata: { app: 'avery' } });
+    await refusal(setup(fake), /untagged Avery product prod_legacy_old is archived\. Fix: unarchive/);
+    expect(fake.posts).toHaveLength(0);
+  });
+
+  it('an INACTIVE legacy portal with the Avery features is reported, not duplicated', async () => {
+    const fake = new FakeStripe();
+    fake.store.portals.push({
+      id: 'bpc_legacy_old', object: 'billing_portal.configuration', active: false, livemode: false, metadata: { app: 'avery' },
+      features: {
+        customer_update: { enabled: false }, invoice_history: { enabled: true }, payment_method_update: { enabled: true },
+        subscription_cancel: { enabled: true, mode: 'at_period_end', proration_behavior: 'none' }, subscription_update: { enabled: false },
+      },
+    });
+    await refusal(setup(fake), /bpc_legacy_old is inactive\. Fix: reactivate/);
+  });
+
+  it('an active legacy product with the Avery name but a different descriptor is refused, not claimed', async () => {
+    const fake = new FakeStripe();
+    fake.store.products.push({ id: 'prod_namesake', object: 'product', active: true, livemode: false, name: 'Avery Classroom Games', statement_descriptor: 'OWNLY', metadata: { app: 'avery' } });
+    await refusal(setup(fake), /prod_namesake has the Avery name but not the full identity/);
+    expect(fake.posts).toHaveLength(0);
+  });
+
+  it('an active legacy portal WITHOUT the Avery features is refused', async () => {
+    const fake = new FakeStripe();
+    fake.store.portals.push({ id: 'bpc_odd', object: 'billing_portal.configuration', active: true, livemode: false, metadata: { app: 'avery' }, features: { subscription_update: { enabled: true } } });
+    await refusal(setup(fake), /bpc_odd does not have the Avery features/);
+  });
+
+  it('a legacy (untagged) Avery webhook at our URL with different events is refused', async () => {
+    const fake = new FakeStripe();
+    await setup(fake);
+    const hook = fake.avery('webhooks');
+    hook.metadata = { app: 'avery' };
+    hook.enabled_events = ['charge.refunded'];
+    await refusal(setup(fake), /untagged app=avery webhook .* has different events/);
+  });
+
+  it('readback: a missing avery_object tag after the writes is fatal', async () => {
+    const fake = new FakeStripe();
+    const realFetch = fake.fetch;
+    fake.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const res = await realFetch(input, init);
+      const w = fake.store.webhooks.find((x) => (x.metadata as Record<string, string>)?.app === 'avery');
+      if (w) delete (w.metadata as Record<string, string>).avery_object; // Stripe "forgot" the tag
+      return res;
+    }) as typeof fetch;
+    await refusal(setup(fake), /readback does not match.*webhook metadata avery_object/);
   });
 
   it('the fake itself rejects what Stripe rejects (bad event, long descriptor, duplicate lookup key)', async () => {
@@ -675,13 +761,23 @@ describe('stripe-setup key, flag and config checks', () => {
     expect(checkTaxReceipt('I have read it\n', today).ok).toBe(false);
   });
 
-  const INV = 'test_mode_completed: 2026-09-29\ntest_mode_account_id: acct_ownlytest123\ntest_mode_endpoint_count: 1\nlive_mode_completed: TODO\nlive_mode_account_id:\nlive_mode_endpoint_count:\n';
+  const INV =
+    `test_mode_completed: 2026-09-29\ntest_mode_account_id: acct_ownlytest123\ntest_mode_endpoints_digest: ${AGENTCO_DIGEST}\n` +
+    'live_mode_completed: TODO\nlive_mode_account_id: TODO\nlive_mode_endpoints_digest: TODO\n\n' +
+    '| Mode | Endpoint id |\n|---|---|\n| test | we_agentco, ignores Avery by customer id |\n| live | TODO |\n';
 
   it('inventory receipt: per-mode fields; the other mode being unfinished does not block', () => {
     const today = '2026-09-29';
-    expect(checkInventoryReceipt(INV, 'test', today)).toEqual({ ok: true, reason: 'test_mode_completed 2026-09-29', accountId: 'acct_ownlytest123', endpointCount: 1 });
+    expect(checkInventoryReceipt(INV, 'test', today)).toEqual({ ok: true, reason: 'test_mode_completed 2026-09-29', accountId: 'acct_ownlytest123', digest: AGENTCO_DIGEST });
     expect(checkInventoryReceipt(INV.replace('acct_ownlytest123', ''), 'test', today).reason).toMatch(/account_id/);
-    expect(checkInventoryReceipt(INV.replace('count: 1', 'count: TODO'), 'test', today).reason).toMatch(/endpoint_count/);
+    expect(checkInventoryReceipt(INV.replace(AGENTCO_DIGEST, 'TODO'), 'test', today).reason).toMatch(/endpoints_digest/);
+    expect(checkInventoryReceipt(INV.replace(AGENTCO_DIGEST, 'abc'), 'test', today).reason).toMatch(/64-hex/);
+  });
+
+  it('inventory receipt: a TODO in a review row of this mode, or no row at all, refuses', () => {
+    const today = '2026-09-29';
+    expect(checkInventoryReceipt(INV.replace('we_agentco, ignores Avery by customer id', 'TODO'), 'test', today).reason).toMatch(/row still contains TODO/);
+    expect(checkInventoryReceipt(INV.replace(/\| test \|.*\n/, ''), 'test', today).reason).toMatch(/no reviewed/);
   });
 
   it('a test-mode inventory receipt never authorises live', () => {
@@ -713,6 +809,12 @@ describe('stripe-setup key, flag and config checks', () => {
     expect(() =>
       loadGates(fsx, { env: 'staging', live: false, hubOrigin: ORIGIN, inventoryReceipt: 'docs/ops/stripe-webhook-inventory.md' }, { cwd: CWD, opsDir: OPS, today }),
     ).toThrow(/must be a file under avery-hub\/docs\/ops/);
+  });
+
+  it('loadGates: a nested archive copy with the canonical name does not count', () => {
+    const fsx = memFs({ [`${OPS}/archive/stripe-webhook-inventory.md`]: INV });
+    const g = loadGates(fsx, { env: 'staging', live: false, hubOrigin: ORIGIN, inventoryReceipt: 'docs/ops/archive/stripe-webhook-inventory.md' }, { cwd: CWD, opsDir: OPS, today });
+    expect(g.inventory).toEqual({ ok: false, reason: 'the receipt must be docs/ops/stripe-webhook-inventory.md' });
   });
 
   it('loadGates: a receipt with the wrong file name does not open the webhook gate', () => {

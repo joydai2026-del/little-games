@@ -6,19 +6,27 @@ Avery endpoint is added by `scripts/stripe-setup.ts`.
 
 This file is also the setup script's gate: it will not create, change or
 re-enable the Avery webhook endpoint unless it is passed
-`--inventory-receipt docs/ops/stripe-webhook-inventory.md` and the three lines
-for the mode it runs in (test or live) are filled: a real date, the account id
-the key belongs to, and the number of NON-Avery endpoints found. A test-mode
-receipt never authorises a live run. If the endpoint count changes later, the
-script refuses until the inventory is re-run.
+`--inventory-receipt docs/ops/stripe-webhook-inventory.md` (this exact file, not
+a copy) and, for the mode it runs in (test or live):
+
+- the three lines below are filled: a real date, the account id the key belongs
+  to, and the endpoints digest;
+- the result table has at least one reviewed row for that mode and none of its
+  rows says TODO.
+
+The digest is a sha256 over the non-Avery endpoints (id, url, status, events).
+The setup script prints the current value when it refuses, and in its readback;
+copy it here only after reviewing every row. If any endpoint is added, removed or
+changed later, the digest no longer matches and the script refuses until the
+inventory is reviewed again. A test-mode receipt never authorises a live run.
 
 test_mode_completed: TODO
 test_mode_account_id: TODO
-test_mode_endpoint_count: TODO
+test_mode_endpoints_digest: TODO
 
 live_mode_completed: TODO
 live_mode_account_id: TODO
-live_mode_endpoint_count: TODO
+live_mode_endpoints_digest: TODO
 
 ## Why this exists
 

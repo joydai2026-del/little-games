@@ -20,7 +20,9 @@
 //   webhook  ANY write to the webhook endpoint (create, events, re-enable) needs
 //            --inventory-receipt: docs/ops/stripe-webhook-inventory.md with the fields for
 //            THIS mode (test_mode_* or live_mode_*): a real date, the verified account id,
-//            and the current count of non-Avery endpoints. A test receipt never authorises live.
+//            and the sha256 digest of the current non-Avery endpoints (ids, urls, statuses,
+//            events; the script prints it), plus reviewed table rows for that mode with no
+//            TODO. A test receipt never authorises live.
 //   objects  discovery lists active AND inactive objects (Stripe lists only active prices
 //            by default); archived Avery objects are reported with a fix, never duplicated.
 //            Legacy app=avery objects without the avery_object tag are matched on exact
@@ -78,7 +80,8 @@ export interface InventoryGate {
   ok: boolean;
   reason: string;
   accountId?: string;
-  endpointCount?: number;
+  /** sha256 hex of the reviewed non-Avery endpoints (see inventoryDigest). */
+  digest?: string;
 }
 export interface Gates {
   inventory: InventoryGate;
@@ -220,16 +223,29 @@ export function checkTaxReceipt(text: string, today: string): { ok: boolean; rea
   return { ok: true, reason: dated.reason, taxable: taxable === 'yes' };
 }
 
-/** Per-mode fields of docs/ops/stripe-webhook-inventory.md. */
+/** Per-mode fields and review rows of docs/ops/stripe-webhook-inventory.md. */
 export function checkInventoryReceipt(text: string, mode: 'test' | 'live', today: string): InventoryGate {
   const prefix = `${mode}_mode`;
   const dated = datedLine(text, `${prefix}_completed`, today);
   if (!dated.ok) return dated;
   const accountId = field(text, `${prefix}_account_id`);
   if (!accountId || !/^acct_[A-Za-z0-9]+$/.test(accountId)) return { ok: false, reason: `field "${prefix}_account_id" must be the acct_ id` };
-  const count = field(text, `${prefix}_endpoint_count`);
-  if (!count || !/^\d+$/.test(count)) return { ok: false, reason: `field "${prefix}_endpoint_count" must be a whole number` };
-  return { ok: true, reason: dated.reason, accountId, endpointCount: Number(count) };
+  const digest = field(text, `${prefix}_endpoints_digest`);
+  if (!digest || !/^[0-9a-f]{64}$/.test(digest)) return { ok: false, reason: `field "${prefix}_endpoints_digest" must be the 64-hex digest the script prints` };
+  const rows = text.split('\n').filter((l) => new RegExp(`^\\|\\s*${mode}\\s*\\|`).test(l));
+  if (rows.length === 0) return { ok: false, reason: `no reviewed "| ${mode} |" rows in the result table` };
+  if (rows.some((r) => /TODO/.test(r))) return { ok: false, reason: `a "| ${mode} |" row still contains TODO` };
+  return { ok: true, reason: dated.reason, accountId, digest };
+}
+
+/** sha256 over the sorted non-Avery endpoints: id, url, status, sorted events. */
+export async function inventoryDigest(endpoints: readonly StripeObject[]): Promise<string> {
+  const rows = endpoints
+    .map((w) => [String(w.id), String(w.url), String(w.status), [...((w.enabled_events ?? []) as string[])].sort()])
+    .sort((a, b) => (a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0));
+  const bytes = new TextEncoder().encode(JSON.stringify(rows));
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** File system calls main() needs; injected so the receipt wiring is testable. */
@@ -257,7 +273,9 @@ export function loadGates(fsx: ReceiptFs, args: SetupArgs, opts: { cwd: string; 
   }
   if (args.inventoryReceipt) {
     const r = read(args.inventoryReceipt, '--inventory-receipt');
-    gates.inventory = r.real.endsWith(`/${AVERY_STRIPE_SETUP.inventoryFile}`)
+    // The exact canonical file, not any file with that name (an archive copy must not count).
+    const canonical = `${opts.opsDir.replace(/\/+$/, '')}/${AVERY_STRIPE_SETUP.inventoryFile}`;
+    gates.inventory = r.real === canonical
       ? checkInventoryReceipt(r.text, args.live ? 'live' : 'test', opts.today)
       : { ok: false, reason: `the receipt must be docs/ops/${AVERY_STRIPE_SETUP.inventoryFile}` };
   }
@@ -383,16 +401,31 @@ export async function runSetup(opts: {
   let existingProduct = activeProducts[0];
   let backfillProduct = false;
   if (!existingProduct) {
+    // Legacy objects (app=avery, no avery_object tag), active AND archived. A
+    // confirmed match needs the full identity (name + descriptor + app) or an
+    // authoritative binding (an Avery lookup-key price points at it). Anything
+    // that only looks like it is refused, never guessed. All before any write.
     const priceProducts = new Set([...pricesByKey.values()].map(productIdOf));
-    const candidates = allProducts.filter(
-      (p) => p.active !== false && legacy(p) && (p.name === S.product.name || priceProducts.has(String(p.id))),
-    );
+    const legacyProducts = allProducts.filter(legacy);
+    const bound = (p: StripeObject) => priceProducts.has(String(p.id));
+    const exact = (p: StripeObject) => bound(p) || (p.name === S.product.name && p.statement_descriptor === S.product.statementDescriptor);
+    const near = legacyProducts.filter((p) => p.name === S.product.name || bound(p));
+    const partial = near.filter((p) => !exact(p) && p.active !== false);
+    if (partial.length) {
+      throw new SetupRefused(
+        `untagged app=avery product ${partial.map((c) => String(c.id)).join(', ')} has the Avery name but not the full identity (statement descriptor differs). Fix by hand: correct it and add metadata avery_object=${S.product.tag}, or archive it, then re-run.`,
+      );
+    }
+    const candidates = legacyProducts.filter(exact);
     if (candidates.length > 1) {
       throw new SetupRefused(
-        `${candidates.length} untagged app=avery products look like the Avery product (${candidates.map((c) => String(c.id)).join(', ')}). Fix: archive the wrong ones, then re-run.`,
+        `${candidates.length} untagged app=avery products match the Avery product (${candidates.map((c) => String(c.id)).join(', ')}). Fix: archive the wrong ones, then re-run.`,
       );
     }
     if (candidates[0]) {
+      if (candidates[0].active === false) {
+        throw new SetupRefused(`the untagged Avery product ${String(candidates[0].id)} is archived. Fix: unarchive it in the Stripe Dashboard, then re-run.`);
+      }
       existingProduct = candidates[0];
       backfillProduct = true;
     }
@@ -434,13 +467,24 @@ export async function runSetup(opts: {
   let existingPortal = activePortals[0];
   let backfillPortal = false;
   if (!existingPortal) {
-    const candidates = allPortals.filter((c) => c.active !== false && legacy(c) && portalDrift(c).length === 0);
+    // Legacy portals, active AND inactive: a match needs EVERY feature flag.
+    const legacyPortals = allPortals.filter(legacy);
+    const partial = legacyPortals.filter((c) => c.active !== false && portalDrift(c).length > 0);
+    if (partial.length) {
+      throw new SetupRefused(
+        `untagged app=avery portal configuration ${partial.map((c) => String(c.id)).join(', ')} does not have the Avery features. Fix by hand: deactivate it, or correct it and add metadata avery_object=${S.portal.tag}, then re-run.`,
+      );
+    }
+    const candidates = legacyPortals.filter((c) => portalDrift(c).length === 0);
     if (candidates.length > 1) {
       throw new SetupRefused(
         `${candidates.length} untagged app=avery portal configurations match the Avery features (${candidates.map((c) => String(c.id)).join(', ')}). Fix: deactivate the wrong ones, then re-run.`,
       );
     }
     if (candidates[0]) {
+      if (candidates[0].active === false) {
+        throw new SetupRefused(`the untagged Avery portal configuration ${String(candidates[0].id)} is inactive. Fix: reactivate it in the Stripe Dashboard, then re-run.`);
+      }
       existingPortal = candidates[0];
       backfillPortal = true;
     }
@@ -451,6 +495,7 @@ export async function runSetup(opts: {
   const url = `${args.hubOrigin}${S.webhook.path}`;
   const wantEvents = [...opts.webhookEvents].sort();
   const allHooks = await client.listAll('/v1/webhook_endpoints');
+  const currentDigest = await inventoryDigest(allHooks.filter((w) => meta(w).app !== S.app));
   const endpoints = allHooks.filter((w) => w.url === url);
   if (endpoints.length > 1) throw new SetupRefused(`found ${endpoints.length} webhook endpoints for ${url}; remove the extras first`);
   const existingHook = endpoints[0];
@@ -464,6 +509,11 @@ export async function runSetup(opts: {
       );
     }
     const haveEvents = [...((existingHook.enabled_events ?? []) as string[])].sort();
+    if (legacy(existingHook) && haveEvents.join(',') !== wantEvents.join(',')) {
+      throw new SetupRefused(
+        `untagged app=avery webhook ${String(existingHook.id)} at ${url} has different events. Fix by hand: correct its events and add metadata avery_object=${S.webhook.tag}, or delete it (JJ approves), then re-run.`,
+      );
+    }
     if (haveEvents.join(',') !== wantEvents.join(',')) hookChange.enabled_events = wantEvents;
     if (existingHook.status !== 'enabled') hookChange.disabled = false;
     if (meta(existingHook).avery_object !== S.webhook.tag) hookChange.metadata = { avery_object: S.webhook.tag };
@@ -472,12 +522,12 @@ export async function runSetup(opts: {
   if (hookWrite) {
     // Any webhook write (create, events, re-enable) needs a current inventory for THIS mode and account.
     const inv = opts.gates.inventory;
-    const others = allHooks.filter((w) => meta(w).app !== S.app).length;
     const need = `a completed ${mode}-mode inventory receipt (--inventory-receipt docs/ops/${S.inventoryFile})`;
-    if (!inv.ok) throw new SetupRefused(`changing the webhook endpoint needs ${need}: ${inv.reason}`);
+    const hint = ` Current ${mode}_mode_endpoints_digest after review: ${currentDigest}`;
+    if (!inv.ok) throw new SetupRefused(`changing the webhook endpoint needs ${need}: ${inv.reason}.${hint}`);
     if (inv.accountId !== account.id) throw new SetupRefused(`the inventory receipt is for ${String(inv.accountId)}, not this account ${String(account.id)}`);
-    if (inv.endpointCount !== others) {
-      throw new SetupRefused(`the inventory is stale: it lists ${String(inv.endpointCount)} other endpoints, Stripe now has ${others}. Re-run the inventory.`);
+    if (inv.digest !== currentDigest) {
+      throw new SetupRefused(`the inventory is stale: the other endpoints changed since it was reviewed. Re-review them and update the receipt.${hint}`);
     }
   }
 
@@ -577,6 +627,11 @@ export async function runSetup(opts: {
   check(rb.product.name === S.product.name, 'product name');
   check(rb.product.statement_descriptor === S.product.statementDescriptor, 'product statement descriptor');
   check(meta(rb.product).app === S.app, 'product metadata app');
+  check(meta(rb.product).avery_object === S.product.tag, 'product metadata avery_object');
+  check(meta(rb.portal).app === S.app, 'portal metadata app');
+  check(meta(rb.portal).avery_object === S.portal.tag, 'portal metadata avery_object');
+  check(meta(rb.webhook).app === S.app, 'webhook metadata app');
+  check(meta(rb.webhook).avery_object === S.webhook.tag, 'webhook metadata avery_object');
   check(rb.product.livemode === args.live, 'product livemode');
   S.prices.forEach((want, i) => {
     const p = rb.prices[i]!;
@@ -604,6 +659,7 @@ export async function runSetup(opts: {
     ['portal', `${String(rb.portal.id)}  ${describePortal(rb.portal)}`],
     ['webhook', `${String(rb.webhook.id)}  ${String(rb.webhook.url)}  status=${String(rb.webhook.status)}  api=${String(rb.webhook.api_version)}`],
     ['webhook events', ((rb.webhook.enabled_events ?? []) as string[]).join(', ')],
+    [`${mode}_mode_endpoints_digest`, currentDigest],
     ['result', `created ${counts.created}, updated ${counts.updated}, unchanged ${counts.unchanged}`],
   ];
   const width = Math.max(...rows.map(([k]) => k.length));
