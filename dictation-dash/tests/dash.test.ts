@@ -212,18 +212,27 @@ describe('help and hints', () => {
       expect(publicView(s, 'k1', GO + 6100, GEOM).me!.hint).toBeNull();
     }
   });
-  it('pacing: a per-stroke gap (right or wrong), and the grader stops after maxMissesPerWord misses on one word', () => {
+  it('pacing: a per-stroke gap (right or wrong), and the grader stops a STROKE after maxMissesPerStroke misses (hint included)', () => {
     let s = heard();
     s = stroke(s, 'k1', backwards('人', 0), GO + 1000).state;
     expect(stroke(s, 'k1', right('人', 0), GO + 1000 + GAME.minStrokeGapMs - 1).status).toBe(429);
     expect(stroke(s, 'k1', right('人', 0), GO + 1000 + GAME.minStrokeGapMs).verdict).toBe('correct');
+    expect(GAME.maxMissesPerStroke).toBeGreaterThan(GAME.hintAfterMisses); // tries are left after the hint shows
     let t = heard();
-    for (let i = 0; i < GAME.maxMissesPerWord; i++) t = stroke(t, 'k1', backwards('人', 0), GO + 1000 + i * GAME.minStrokeGapMs).state;
-    expect(publicView(t, 'k1', GO + 9000, GEOM).me!.missesLeft).toBe(0);
-    expect(stroke(t, 'k1', right('人', 0), GO + 9000).error).toBe('no more tries on this word, tap Skip');
-    // Skip still works, and the next word starts fresh.
-    t = skipWord(t, 'k1', { race: 1, seq: t.progress.k1.seq + 1, wordIndex: 0 }, GO + 9100).state;
-    expect(t.progress.k1.wordMisses).toBe(0);
+    let at = GO + 1000;
+    const miss = () => (t = stroke(t, 'k1', backwards('人', 0), (at += GAME.minStrokeGapMs)).state);
+    // Misses on stroke 1, then a right stroke: the count starts again for stroke 2.
+    for (let i = 0; i < GAME.maxMissesPerStroke - 1; i++) miss();
+    expect(publicView(t, 'k1', at, GEOM).me!.missesLeft).toBe(1);
+    t = stroke(t, 'k1', right('人', 0), (at += GAME.minStrokeGapMs)).state;
+    expect(publicView(t, 'k1', at, GEOM).me!.missesLeft).toBe(GAME.maxMissesPerStroke);
+    const miss2 = () => (t = stroke(t, 'k1', backwards('人', 1), (at += GAME.minStrokeGapMs)).state);
+    for (let i = 0; i < GAME.maxMissesPerStroke; i++) miss2();
+    expect(publicView(t, 'k1', at, GEOM).me!.missesLeft).toBe(0);
+    expect(stroke(t, 'k1', right('人', 1), (at += GAME.minStrokeGapMs)).error).toBe('no more tries on this word, tap Skip');
+    // Skip still works; a skipped word scores 0 (its earned stroke is taken back), and the next word starts fresh.
+    t = skipWord(t, 'k1', { race: 1, seq: t.progress.k1.seq + 1, wordIndex: 0 }, at + 100).state;
+    expect(t.progress.k1).toMatchObject({ strokeMisses: 0, scoreStrokes: 0, wordIndex: 1 });
   });
 });
 
@@ -331,12 +340,14 @@ describe('rounds, lists and settings', () => {
     const done = advanceIfDue(s, s.endsAt!);
     expect(done.phase).toBe('done');
   });
-  it('join rate limit per room fires before the room is full (429), and a minute later joins work again', () => {
-    expect(GAME.joinsPerMinute).toBeLessThan(GAME.maxKids);
+  it('the room join rate is at least the seat count: a whole class of 30 joins in one minute', () => {
+    expect(GAME.joinsPerMinute).toBeGreaterThanOrEqual(GAME.maxKids);
     let s = createRoom('ABCD', { id: 't', name: 'T' }, 'class', {}, LIST, T0);
-    for (let i = 0; i < GAME.joinsPerMinute; i++) s = join(s, { id: `k${i}`, name: `K${i}` }, T0 + i).state;
-    expect(join(s, { id: 'x', name: 'X' }, T0 + 100).status).toBe(429);
-    expect(join(s, { id: 'x', name: 'X' }, T0 + 61_000).error).toBeUndefined();
+    for (let i = 0; i < 30; i++) {
+      const r = join(s, { id: `k${i}`, name: `K${i}` }, T0 + i);
+      expect(r.error).toBeUndefined();
+      s = r.state;
+    }
   });
   it('what may be spoken: only words of a started round', () => {
     expect(wordToSay(lobby(), 0)).toBeNull();

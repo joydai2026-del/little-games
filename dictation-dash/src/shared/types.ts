@@ -34,8 +34,6 @@ export interface Progress {
   strokeMisses: number;
   /** Strokes accepted only after the hint on Hard (they score less). */
   helped: number;
-  /** Wrong strokes on the word in progress (capped by GAME.maxMissesPerWord). */
-  wordMisses: number;
   /** When this player's last stroke was graded (the per-stroke gap). */
   lastGradedAt: number | null;
   /** The kid's OWN accepted drawing for the word in progress: per character, per stroke, [x, y] points (thinned). */
@@ -155,7 +153,7 @@ export interface MyRound {
   finishedAt: number | null;
   /** This player's closed words, with how each ended. The word text only once that word is closed for EVERYONE in the round. */
   closed: { word: string | null; result: 'written' | 'skipped' }[];
-  /** Wrong strokes left on this word before the room stops grading it. */
+  /** Wrong strokes left on the current stroke before the room stops grading it. */
   missesLeft: number;
 }
 

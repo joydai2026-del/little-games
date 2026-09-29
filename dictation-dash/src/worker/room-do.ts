@@ -66,6 +66,8 @@ export class RoomDO implements DurableObject {
   private room: RoomState | null = null;
   private secrets: Record<string, string> = {};
   private lastSeenWrittenAt = 0;
+  /** Recent join times per IP (memory only, never stored): the per-IP anti-flood control. */
+  private readonly joinsByIp = new Map<string, number[]>();
   private geom: Record<string, CharGeom> = {};
   /** This room's paid speech calls today, held in memory so a reservation never awaits (persisted on every change). */
   private ttsDay: { day: string; used: number } = { day: '', used: 0 };
@@ -176,10 +178,15 @@ export class RoomDO implements DurableObject {
 
     if (path === 'join') {
       await this.settle(now);
+      // Per-IP flood control first (before the room's rate and fullness): one device cannot take many seats.
+      const ip = request.headers.get('x-client-ip') ?? 'no-ip';
+      const recent = (this.joinsByIp.get(ip) ?? []).filter((t) => now - t < 60_000);
+      if (recent.length >= GAME.joinsPerIpPerMinute) return json({ error: 'too many joins from this device, wait a minute and try again' }, 429);
       const b = await body(request);
       const playerId = newPlayerId();
       const result = join(this.room, { id: playerId, name: String(b.name ?? ''), agent: b.agent === true }, now);
       if (result.error) return json({ error: result.error }, result.status ?? 409);
+      this.joinsByIp.set(ip, [...recent, now]);
       this.room = result.state;
       const secret = crypto.randomUUID();
       this.secrets = { ...this.secrets, [playerId]: secret };

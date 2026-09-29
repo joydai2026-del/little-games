@@ -1,4 +1,4 @@
-# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 2)
+# Dictation Dash 听写赛跑: build report (2026-09-28, after review round 3)
 
 **What this is:** the grades 3 to 5 listening game JJ approved today. Momo says a word, kids write
 it from memory stroke by stroke, the fastest correct writer wins. Two levels on two big buttons
@@ -39,10 +39,10 @@ Grades: **A** = seen on the live deployed version above, in this session, with a
 | No skip before hearing; a skipped word is not named while another kid is on it | A | live gate "sacrificial kid" check |
 | A sacrificial kid learns nothing mid-word (all paths); accepted strokes echoed as own points | B | `tests/dash.test.ts` |
 | Word clock by strokes, bucketed; a stroke after it is refused and the word closes as skipped | A (live solo room) / B (idiom 聚精会神, 43 strokes) | live gate; tests |
-| Per-stroke gap 200 ms; grader stops after 15 misses per word | B | tests |
+| Per-stroke gap 200 ms; the room stops grading a stroke after 6 tries (the hint shows after 4), per stroke so long idioms are not punished | B | tests |
 | Room budget reserved without an await: two different new words, one slot, exactly one model call | B | `tests/tts.test.ts` |
 | Per-IP daily cap below the global cap; readback | A (readback) / B (cap reached) | live gate; tests |
-| Join rate 20/min, below the 40 seats, checked first (429) | B | tests |
+| Joins: 40/min per room (a whole class of 30 gets in), 8/min per device checked before fullness (the 9th gets 429) | B | `tests/room-do.test.ts` |
 | Done-screen "Show words" works; pad shows "Checking..." while a stroke is graded | B | source; the demo run exercised the done screen but not the toggle |
 | Demo: kid writes Easy then Hard (tapped in the real UI), Try again path | A | `docs/evidence/2026-09-28-live-run.json` on eafdbf49 |
 | Crafted strokes cannot freeze the room | B | cost test |

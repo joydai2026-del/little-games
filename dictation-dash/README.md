@@ -68,9 +68,10 @@ and [`docs/evidence/2026-09-28-live-run.json`](docs/evidence/2026-09-28-live-run
 Scoring: most words written wins, then most scoring strokes, then who got there first. Wrong
 strokes are never scored. A skipped (or timed-out) word scores 0: correct strokes already earned
 on it are taken back, so skipping never helps. On Hard, a stroke that is only right after the
-hint counts as "helped" and scores half. After 15 wrong strokes on one word the room stops
-grading it (tap Skip), and strokes closer than 200 ms apart are refused (`GAME.maxMissesPerWord`,
-`GAME.minStrokeGapMs`). A kid can skip a word only after the room served its sound (or tried and
+hint counts as "helped" and scores half. After 6 wrong tries on one stroke (the hint shows after
+4) the room stops grading that stroke (tap Skip), and strokes closer than 200 ms apart are refused
+(`GAME.maxMissesPerStroke`, `GAME.minStrokeGapMs`). A room takes up to 40 joins a minute (a whole
+class) but only 8 a minute from one device (`GAME.joinsPerIpPerMinute`, checked first). A kid can skip a word only after the room served its sound (or tried and
 failed), and a closed word is named to a kid only once every kid has closed it (`GAME.strokeScore`), shown as a small "helped" mark on
 the board; on Easy it scores in full. Equal results share a place.
 

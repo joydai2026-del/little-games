@@ -35,7 +35,7 @@ export const LEVEL_RULES: Record<Level, { showOutline: boolean; label: string; b
 /**
  * The word clock (Claude review round 2): base seconds (the teacher's
  * "Seconds per word") + seconds per stroke of the whole word, per level, so a
- * 4-character idiom (聚精会神, 49 strokes) gets time for every stroke. The
+ * 4-character idiom (聚精会神, 43 strokes in the committed counts) gets time for every stroke. The
  * total is rounded UP to a whole bucket, so the clock a kid sees tells little
  * about how many strokes the word has.
  */
@@ -79,10 +79,17 @@ export const GAME = {
    * 2026-09-28); on Easy the outline is there anyway, so full credit.
    */
   strokeScore: { easy: { plain: 1, helped: 1 }, hard: { plain: 1, helped: 0.5 } },
-  /** Joins one room accepts per minute. Kept BELOW maxKids and checked first, so a script cannot fill every seat at once. */
-  joinsPerMinute: 20,
-  /** Wrong strokes one player may make on one word; after that the room stops grading it (tap Skip). Stops using the grader as an answer oracle. */
-  maxMissesPerWord: 15,
+  /** Joins one room accepts per minute: at least the seat count, so a whole class can join together. */
+  joinsPerMinute: 40,
+  /** Joins one IP may make into one room per minute: the anti-flood control, checked before fullness. */
+  joinsPerIpPerMinute: 8,
+  /**
+   * Wrong strokes one player may make on ONE stroke; after that the room stops
+   * grading that stroke (tap Skip). Every miss counts, hint or not: the hint
+   * (after GAME.hintAfterMisses) is the teaching moment, this cap is the
+   * anti-probe guard. Per stroke, so a long idiom is not punished for its length.
+   */
+  maxMissesPerStroke: 6,
   /** Least time between two graded strokes (right or wrong) from one player, in ms, on the server clock. */
   minStrokeGapMs: 200,
   /** Points kept per accepted stroke when the room echoes the kid's own drawing back. */

@@ -62,7 +62,6 @@ export function freshProgress(): Progress {
     mistakes: 0,
     strokeMisses: 0,
     helped: 0,
-    wordMisses: 0,
     lastGradedAt: null,
     drawn: [],
     serveFailed: false,
@@ -229,7 +228,6 @@ function closeWord(state: RoomState, prog: Progress, now: number, written: boole
     charIndex: 0,
     strokeIndex: 0,
     strokeMisses: 0,
-    wordMisses: 0,
     drawn: [],
     serveFailed: false,
     heardAt: null,
@@ -361,7 +359,7 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
   if (prog.heardAt == null) return fail(state, 'listen to the word first', 409);
   if (prog.deadlineAt != null && now >= prog.deadlineAt) return fail(state, 'time is up for that word', 409);
   if (input.charIndex !== prog.charIndex) return fail(state, 'that is not the character you are on', 409);
-  if (prog.wordMisses >= GAME.maxMissesPerWord) return fail(state, 'no more tries on this word, tap Skip', 409);
+  if (prog.strokeMisses >= GAME.maxMissesPerStroke) return fail(state, 'no more tries on this word, tap Skip', 409);
   if (prog.lastGradedAt != null && now - prog.lastGradedAt < GAME.minStrokeGapMs) return fail(state, 'too fast, slow down a little', 429);
   const char = [...state.roundWords[prog.wordIndex]][prog.charIndex];
   const data = geom[char];
@@ -371,7 +369,7 @@ export function submitStroke(state: RoomState, playerId: string, input: StrokeIn
     return commit(
       state,
       playerId,
-      { ...prog, mistakes: prog.mistakes + 1, strokeMisses: prog.strokeMisses + 1, wordMisses: prog.wordMisses + 1, lastGradedAt: now, seq: input.seq },
+      { ...prog, mistakes: prog.mistakes + 1, strokeMisses: prog.strokeMisses + 1, lastGradedAt: now, seq: input.seq },
       now,
       'mistake'
     );
@@ -473,7 +471,7 @@ export function myRound(state: RoomState, playerId: string, geom: Record<string,
     seq: p.seq,
     finishedAt: p.finishedAt,
     closed: p.results.map((result, i) => ({ word: closedForAll(state, i) ? state.roundWords[i] : null, result })),
-    missesLeft: Math.max(0, GAME.maxMissesPerWord - p.wordMisses),
+    missesLeft: Math.max(0, GAME.maxMissesPerStroke - p.strokeMisses),
   };
 }
 
