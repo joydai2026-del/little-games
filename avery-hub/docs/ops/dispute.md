@@ -36,7 +36,10 @@ JJ); they contain a teacher's personal data, so not in this repo.
 | `charge.dispute.closed`, **won** | Access goes back to whatever the subscription says | same |
 | `charge.dispute.closed`, **lost** | Access goes to free, and the subscription is cancelled so Stripe does not charge her again, key `cancel:<subscription_id>:dispute_lost:<op_id>` | same; the cancel call is S2b |
 | Dispute on a customer who is not an Avery teacher (Agent Company) | Recorded as `not_avery`, answered 200, nothing else | `resolveCustomer` |
-| Dispute on an OLD charge (not this subscription's latest paid charge) | No effect on her current subscription | `accessFor` |
+| Dispute on ANY charge of her current subscription (for example month 1 of a monthly plan while month 3 is the latest) | Counts: pause while open, free when lost | `accessFor` (S2b resolves the disputed charge's invoice to its subscription) |
+| Dispute on a charge of an EARLIER, finished subscription | No effect on her current subscription | `accessFor` |
+| Dispute whose subscription cannot be worked out | Access goes to free with reason `dispute_unresolved` (fails closed); JJ checks it | `accessFor` |
+| Dispute status `prevented`, `won` or `warning_closed` | Access goes back to what the subscription says | `accessFor` |
 | A dispute status Stripe adds later that the code does not know | Access goes to free with reason `unknown_dispute_status:<status>`; S2b raises an alert so JJ checks it | `accessFor` |
 
 ## Test
