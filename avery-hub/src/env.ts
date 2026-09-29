@@ -15,6 +15,7 @@ export interface Env {
   AUTH_START_LIMITER?: RateLimiter;
   REDEEM_LIMITER?: RateLimiter;
   AUTH_ADDRESS_LIMITER?: RateLimiter;
+  REDEEM_GAME_LIMITER?: RateLimiter;
 
   // Secrets (never in config).
   GOOGLE_CLIENT_SECRET?: string;

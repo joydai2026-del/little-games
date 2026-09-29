@@ -90,7 +90,9 @@ export async function authStart(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const t = readTarget(url, p);
   if (t === 'bad') return badLink(p);
-  if (t.gameId && env.AUTH_START_LIMITER && !(await env.AUTH_START_LIMITER.limit({ key: `${t.gameId}:${t.bindHash}` })).success) {
+  // A missing limiter binding is a broken deploy: fail closed, never open.
+  if (!env.AUTH_START_LIMITER || !env.AUTH_ADDRESS_LIMITER) return cantSignIn(p.supportEmail);
+  if (t.gameId && !(await env.AUTH_START_LIMITER.limit({ key: `${t.gameId}:${t.bindHash}` })).success) {
     return cantSignIn(p.supportEmail, 429);
   }
   if (!hashKeyReady(env, p)) return cantSignIn(p.supportEmail);
@@ -103,7 +105,7 @@ export async function authStart(req: Request, env: Env): Promise<Response> {
   // the raw address is never a key, stored or logged.
   const addr = await addressKey(env, req);
   if (addr === 'unavailable') return cantSignIn(p.supportEmail);
-  if (addr && env.AUTH_ADDRESS_LIMITER && !(await env.AUTH_ADDRESS_LIMITER.limit({ key: addr })).success) return cantSignIn(p.supportEmail, 429);
+  if (addr && !(await env.AUTH_ADDRESS_LIMITER.limit({ key: addr })).success) return cantSignIn(p.supportEmail, 429);
   if (!googleReady(env, p)) return cantSignIn(p.supportEmail);
 
   // "v<N>.<random>": the key version travels with the value, so a key
@@ -216,7 +218,9 @@ async function signedInPost(req: Request, env: Env) {
         'Please try again',
         `<h1>Please try again</h1><div class="card"><p>This page was open for a while, so we could not be sure it was you. Please go back to your account page and tap the button again.</p></div>
 <a class="btn-primary" href="/me">Go to my account</a>`,
-        { status: 403, supportEmail: p.supportEmail },
+        // If this request rotated the session, the browser must keep the NEW
+        // cookie, or it is signed out once the overlap window ends.
+        { status: 403, supportEmail: p.supportEmail, headers: hub.setCookie ? { 'Set-Cookie': hub.setCookie } : undefined },
       ),
     } as const;
   }

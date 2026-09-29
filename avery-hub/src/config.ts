@@ -22,7 +22,7 @@ export interface Policy {
   accessJwksUrl: string;
   accessIssuer: string;
   accessAud: string;
-  jwks: { negativeMs: number; backoffMs: number; backoffMaxMs: number; minRefreshMs: number };
+  jwks: { negativeMs: number; backoffMs: number; backoffMaxMs: number; minRefreshMs: number; negativeMax: number };
   hashKeyCurrent: number;
   sessionIdleMs: number;
   sessionMaxMs: number;
@@ -100,11 +100,13 @@ export function policy(env: Env): Policy {
     accessJwksUrl: str(env, 'ACCESS_JWKS_URL'),
     accessIssuer: str(env, 'ACCESS_ISSUER'),
     accessAud: str(env, 'ACCESS_AUD'),
+    // Floors so a zero or negative value cannot switch the protections off.
     jwks: {
-      negativeMs: num(env, 'JWKS_NEGATIVE_CACHE_SECONDS', 60) * 1000,
-      backoffMs: num(env, 'JWKS_RETRY_BACKOFF_SECONDS', 30) * 1000,
-      backoffMaxMs: num(env, 'JWKS_RETRY_BACKOFF_MAX_SECONDS', 600) * 1000,
-      minRefreshMs: num(env, 'JWKS_MIN_REFRESH_SECONDS', 10) * 1000,
+      negativeMs: Math.max(1, num(env, 'JWKS_NEGATIVE_CACHE_SECONDS', 60)) * 1000,
+      backoffMs: Math.max(1, num(env, 'JWKS_RETRY_BACKOFF_SECONDS', 30)) * 1000,
+      backoffMaxMs: Math.max(1, num(env, 'JWKS_RETRY_BACKOFF_MAX_SECONDS', 600)) * 1000,
+      minRefreshMs: Math.max(1, num(env, 'JWKS_MIN_REFRESH_SECONDS', 10)) * 1000,
+      negativeMax: Math.max(1, num(env, 'JWKS_NEGATIVE_CACHE_MAX', 256)),
     },
     hashKeyCurrent: num(env, 'SESSION_HASH_KEY_CURRENT', 1),
     sessionIdleMs: num(env, 'SESSION_IDLE_DAYS', 30) * DAY,

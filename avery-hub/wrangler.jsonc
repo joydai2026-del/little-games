@@ -5,6 +5,7 @@
   // with `wrangler secret put` by JJ, never here (see docs/ops/rotation.md).
   // Rate-limit namespace ids differ per environment (same id = shared counters).
   // DB_READY is "false" in production until the real D1 id replaces the placeholder.
+  // Daily clean-up cron (src/cleanup.ts).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "avery-hub",
   "main": "src/index.ts",
@@ -70,6 +71,14 @@
         "limit": 60,
         "period": 60
       }
+    },
+    {
+      "name": "REDEEM_GAME_LIMITER",
+      "namespace_id": "2104",
+      "simple": {
+        "limit": 600,
+        "period": 60
+      }
     }
   ],
   "observability": {
@@ -96,6 +105,7 @@
     "JWKS_RETRY_BACKOFF_SECONDS": "30",
     "JWKS_RETRY_BACKOFF_MAX_SECONDS": "600",
     "JWKS_MIN_REFRESH_SECONDS": "10",
+    "JWKS_NEGATIVE_CACHE_MAX": "256",
     "SESSION_HASH_KEY_CURRENT": "1",
     "SESSION_IDLE_DAYS": "30",
     "SESSION_MAX_DAYS": "90",
@@ -122,6 +132,7 @@
     "CLASS_CODE_LENGTH": "6",
     "KEEP_AFTER_END_DAYS": "90",
     "INACTIVE_DELETE_DAYS": "400",
+    "SEAT_GRANT_RETENTION_DAYS": "400",
     "GAME_REGISTRY": {
       "vocab": {
         "keyHash": "",
@@ -354,6 +365,14 @@
             "limit": 60,
             "period": 60
           }
+        },
+        {
+          "name": "REDEEM_GAME_LIMITER",
+          "namespace_id": "2114",
+          "simple": {
+            "limit": 600,
+            "period": 60
+          }
         }
       ],
       "observability": {
@@ -376,10 +395,11 @@
         "ACCESS_JWKS_URL": "",
         "ACCESS_ISSUER": "",
         "ACCESS_AUD": "",
-    "JWKS_NEGATIVE_CACHE_SECONDS": "60",
-    "JWKS_RETRY_BACKOFF_SECONDS": "30",
-    "JWKS_RETRY_BACKOFF_MAX_SECONDS": "600",
-    "JWKS_MIN_REFRESH_SECONDS": "10",
+        "JWKS_NEGATIVE_CACHE_SECONDS": "60",
+        "JWKS_RETRY_BACKOFF_SECONDS": "30",
+        "JWKS_RETRY_BACKOFF_MAX_SECONDS": "600",
+        "JWKS_MIN_REFRESH_SECONDS": "10",
+        "JWKS_NEGATIVE_CACHE_MAX": "256",
         "SESSION_HASH_KEY_CURRENT": "1",
         "SESSION_IDLE_DAYS": "30",
         "SESSION_MAX_DAYS": "90",
@@ -406,6 +426,7 @@
         "CLASS_CODE_LENGTH": "6",
         "KEEP_AFTER_END_DAYS": "90",
         "INACTIVE_DELETE_DAYS": "400",
+        "SEAT_GRANT_RETENTION_DAYS": "400",
         "GAME_REGISTRY": {
           "vocab": {
             "keyHash": "",
@@ -584,7 +605,17 @@
             ]
           }
         }
+      },
+      "triggers": {
+        "crons": [
+          "17 3 * * *"
+        ]
       }
     }
+  },
+  "triggers": {
+    "crons": [
+      "17 3 * * *"
+    ]
   }
 }

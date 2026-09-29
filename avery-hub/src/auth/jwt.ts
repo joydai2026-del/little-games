@@ -37,7 +37,7 @@ interface UrlState {
   unknownKids: Map<string, number>; // kid -> remembered-unknown until
 }
 const states = new Map<string, UrlState>();
-const inflight = new Map<string, Promise<void>>();
+const inflight = new Map<string, Promise<boolean>>();
 
 /** Tests only. */
 export function clearJwksCache(): void {
@@ -50,8 +50,9 @@ export interface JwksPolicy {
   backoffMs: number;
   backoffMaxMs: number;
   minRefreshMs: number;
+  negativeMax: number;
 }
-const DEFAULT_JWKS: JwksPolicy = { negativeMs: 60_000, backoffMs: 30_000, backoffMaxMs: 600_000, minRefreshMs: 10_000 };
+const DEFAULT_JWKS: JwksPolicy = { negativeMs: 60_000, backoffMs: 30_000, backoffMaxMs: 600_000, minRefreshMs: 10_000, negativeMax: 256 };
 
 function stateOf(url: string): UrlState {
   let st = states.get(url);
@@ -62,25 +63,44 @@ function stateOf(url: string): UrlState {
   return st;
 }
 
-function refresh(url: string, nowMs: number, jp: JwksPolicy): Promise<void> {
+/** A usable key set: a non-empty array of objects that each carry a string `kid` and `kty`. */
+function validKeys(body: unknown): Jwk[] | null {
+  const keys = (body as { keys?: unknown } | null)?.keys;
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  for (const k of keys) {
+    if (!k || typeof k !== 'object' || typeof (k as Jwk).kid !== 'string' || typeof (k as Jwk).kty !== 'string') return null;
+  }
+  return keys as Jwk[];
+}
+
+/**
+ * Refresh the key set. Resolves true only when a fetch SUCCEEDED and returned
+ * a valid key set (so a missing kid really is missing). A failed or malformed
+ * response keeps the last good keys and starts the backoff; during backoff no
+ * fetch happens and this resolves false.
+ */
+function refresh(url: string, nowMs: number, jp: JwksPolicy): Promise<boolean> {
   const running = inflight.get(url);
   if (running) return running;
   const st = stateOf(url);
-  if (nowMs < st.retryAt) return Promise.resolve();
+  if (nowMs < st.retryAt) return Promise.resolve(false);
   st.attemptAt = nowMs;
   const p = (async () => {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`jwks fetch ${res.status}`);
-      const body = (await res.json()) as { keys?: Jwk[] };
-      st.keys = Array.isArray(body.keys) ? body.keys : [];
+      const keys = validKeys(await res.json());
+      if (!keys) throw new Error('jwks malformed');
+      st.keys = keys;
       st.fetchedAt = nowMs;
       st.failures = 0;
       st.retryAt = 0;
-      for (const k of st.keys) if (k.kid) st.unknownKids.delete(k.kid);
+      for (const k of keys) if (k.kid) st.unknownKids.delete(k.kid);
+      return true;
     } catch {
       st.failures += 1;
       st.retryAt = nowMs + Math.min(jp.backoffMs * 2 ** (st.failures - 1), jp.backoffMaxMs);
+      return false;
     } finally {
       inflight.delete(url);
     }
@@ -89,19 +109,40 @@ function refresh(url: string, nowMs: number, jp: JwksPolicy): Promise<void> {
   return p;
 }
 
+/** Drop expired entries; keep at most `max` (Map order = least recently used first). */
+function pruneUnknown(st: UrlState, nowMs: number, max: number): void {
+  for (const [kid, until] of st.unknownKids) if (until <= nowMs) st.unknownKids.delete(kid);
+  while (st.unknownKids.size > max) st.unknownKids.delete(st.unknownKids.keys().next().value as string);
+}
+
 async function keyFor(url: string, kid: string | undefined, nowMs: number, jp: JwksPolicy): Promise<Jwk | undefined> {
   const st = stateOf(url);
   if (st.fetchedAt === 0 || nowMs - st.fetchedAt >= JWKS_CACHE_MS) await refresh(url, nowMs, jp);
   const find = () => st.keys.find((k) => k.kid === kid);
   let jwk = find();
   if (jwk || !kid) return jwk;
+  pruneUnknown(st, nowMs, jp.negativeMax);
   const until = st.unknownKids.get(kid);
-  if (until !== undefined && nowMs < until) return undefined;
+  if (until !== undefined) {
+    // Still remembered as unknown: refresh its LRU position and refuse.
+    st.unknownKids.delete(kid);
+    st.unknownKids.set(kid, until);
+    return undefined;
+  }
   if (!inflight.has(url) && nowMs - st.attemptAt < jp.minRefreshMs) return undefined;
-  await refresh(url, nowMs, jp);
+  const fetched = await refresh(url, nowMs, jp);
   jwk = find();
-  if (!jwk) st.unknownKids.set(kid, nowMs + jp.negativeMs);
+  // Negative-cache ONLY after a successful fetch that lacked this kid.
+  if (!jwk && fetched) {
+    st.unknownKids.set(kid, nowMs + jp.negativeMs);
+    pruneUnknown(st, nowMs, jp.negativeMax);
+  }
   return jwk;
+}
+
+/** Tests only. */
+export function unknownKidCount(url: string): number {
+  return states.get(url)?.unknownKids.size ?? 0;
 }
 
 const dec = new TextDecoder();

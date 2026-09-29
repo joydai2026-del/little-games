@@ -9,6 +9,7 @@ import { authCallback, authDevices, authSignOut, authStart } from './auth/flow';
 import { meDelete, meExport, mePage } from './routes/me';
 import { adminRoute } from './admin/routes';
 import { cantSignIn, page } from './pages/layout';
+import { runCleanup } from './cleanup';
 
 export { TokenDO } from './do/token-do';
 export { BillingDO } from './do/billing-do';
@@ -61,5 +62,9 @@ export default {
       if (path.startsWith('/auth/')) return cantSignIn(policy(env).supportEmail);
       return new Response('Something went wrong. Please try again.', { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
+  },
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    const r = await runCleanup(env);
+    console.log('cleanup', JSON.stringify(r));
   },
 } satisfies ExportedHandler<Env>;

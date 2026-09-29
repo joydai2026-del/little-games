@@ -91,10 +91,18 @@ export const hub = {
     if ('ok' in g) return g;
     if (typeof bindValue !== 'string' || bindValue.length < 16 || bindValue.length > 200) return fail('refused');
     const bindHash = await sha256Hex(bindValue);
-    if (env.REDEEM_LIMITER) {
-      const { success } = await env.REDEEM_LIMITER.limit({ key: `${g.gameId}:${bindHash}` });
-      if (!success) return fail('rate_limited');
-    }
+    // DECIDED (review rounds 1-3, do not flip without a new reason): the defence
+    // against guessing a hand-off token is the token itself (256 random bits,
+    // single use, 60 s, bound to one game and one browser), NOT a rate limit.
+    // The per game+bind bucket only bounds cost per client; a caller choosing a
+    // fresh bind each time just gets a fresh bucket, which is fine. The DoS
+    // bound is the per-game ceiling REDEEM_GAME_LIMITER (600 a minute, the
+    // `ratelimits` block in wrangler.jsonc). Cloudflare rate limits are
+    // per location and approximate, so this is a cost bound, not a security
+    // boundary. A missing binding fails closed.
+    if (!env.REDEEM_LIMITER || !env.REDEEM_GAME_LIMITER) return fail('unavailable');
+    if (!(await env.REDEEM_GAME_LIMITER.limit({ key: `game:${g.gameId}` })).success) return fail('rate_limited');
+    if (!(await env.REDEEM_LIMITER.limit({ key: `${g.gameId}:${bindHash}` })).success) return fail('rate_limited');
     const presented = await hashPresented(env, token);
     if (!presented) return fail('refused');
     // Mint first: if the current hash key is missing this throws BEFORE the token is burnt.
