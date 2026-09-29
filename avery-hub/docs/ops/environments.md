@@ -17,6 +17,18 @@
 Environments inherit `routes` but not bindings or vars, so `env.staging` repeats every binding and sets `routes: []`.
 `tests/wrangler-env.test.ts` fails if the copy drifts.
 
+## Production safety switches
+
+| Switch | Staging | Production today | Before a production release |
+|---|---|---|---|
+| `DB_READY` var | `"true"` | `"false"`: every route answers 503 `database_not_configured` and every HubService call `unavailable` | create `avery_hub`, put its id in place of `REPLACE_WITH_PRODUCTION_D1_ID`, then set `"true"` |
+| Rate-limit namespace ids | 2111, 2112, 2113 | 2101, 2102, 2103 | keep them different (same id = shared counters across Workers) |
+| `FREE_TIER_ENABLED` | `"false"` | `"false"` | JJ decision 2026-09-29: no free tier |
+
+Sign-in rate limits (thresholds live in the `ratelimits` blocks, the only place Cloudflare reads them): 20 a minute per
+game and binding (`AUTH_START_LIMITER`), 60 a minute per connecting address (`AUTH_ADDRESS_LIMITER`, school-friendly:
+a whole class behind one school address can still sign in), 20 a minute per game and binding for redemption.
+
 ## Release steps
 
 | Step | Command |
@@ -42,6 +54,7 @@ Environments inherit `routes` but not bindings or vars, so `env.staging` repeats
 |---|---|
 | `SESSION_HASH_KEY_V1` (and `_V2` during a rotation) | every session, token and pass hash. Without it sign-in shows "Can't sign in right now" |
 | `GOOGLE_CLIENT_SECRET` | Google sign-in (with the `GOOGLE_CLIENT_ID` var) |
+| `RATE_KEY` | keys the per-address sign-in abuse bucket as HMAC(RATE_KEY, address), so no raw address is ever a key. Without it sign-in shows "Can't sign in right now" |
 | `STRIPE_*` | S2a and later |
 
 Game keys are NOT hub secrets: the hub stores only `keyHash` (sha256 hex) in `GAME_REGISTRY`; each game Worker holds its

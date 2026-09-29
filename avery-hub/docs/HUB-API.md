@@ -7,6 +7,13 @@ passes it to `HubService` methods over a Cloudflare **service binding** (RPC). T
 
 Anonymous free play never needs the hub and must keep working when the hub is down.
 
+**No free tier (JJ, 2026-09-29).** A teacher gets ONE free round per game on her device without signing in. The GAME
+Worker enforces that (the hub is not involved). After that she signs in and subscribes ($29 a year or $4.99 a month).
+In the hub this is `FREE_TIER_ENABLED` = `"false"` (the default): `useTaste` and `switchFreeMode` return
+`{ ok: false, error: "disabled" }`, `entitlement` returns only `{ plan, accessUntil }`, and lists, classes and room
+passes need paid access. The old free-tier code (free game, taste round, cooldown, one free list) is kept behind the
+flag, off.
+
 ## 1. Wire the binding (game `wrangler.jsonc`)
 
 ```jsonc
@@ -57,20 +64,22 @@ game (`signed_out`), an ended one (`signed_out`), and a bad caller (`refused`).
 |---|---|---|
 | `redeemHandoff(caller, token, bindValue)` | `{ gameSessionId, email, displayName }` | `expired`, `rate_limited` |
 | `resolveSession(caller, gs)` | `{ email, displayName, gameId }` | |
-| `entitlement(caller, gs)` | `{ plan: "free"\|"paid", freeGame: "<gameId>:<mode>"\|null, freeGameLockedUntil: ms\|null, freeGameChoices: string[], tasteRoundsLeft, listLimit, listsSaved, modesThisGame, trialDays, anonFreeRounds, email }`. For showing the screen only; never trust it for a decision | |
+| `entitlement(caller, gs)` | `{ plan: "free"\|"paid", accessUntil: ms\|null }` ("free" means not subscribed). For showing the screen only; never trust it for a decision. With `FREE_TIER_ENABLED` on it also returns `freeGame`, `freeGameLockedUntil`, `freeGameChoices`, `tasteRoundsLeft`, `listLimit`, `listsSaved`, `modesThisGame`, `trialDays`, `anonFreeRounds`, `email` | |
 | `authorizeRound(caller, ...)` | not in S1 | `not_implemented_in_s1` (S2b) |
-| `useTaste(caller, gs, mode)` | `{ grantId, tasteRoundsLeft }` (one round of a locked mode today) | `unknown_mode`, `not_needed` (paid, or it is her free game), `no_taste_left` |
-| `switchFreeMode(caller, gs, mode)` | `{ freeGame, lockedUntil }`. The free game is ONE game+mode across ALL Avery games; switching starts the cooldown (`FREE_MODE_SWITCH_COOLDOWN_DAYS`, 5) | `unknown_mode`, `not_allowed`, `already_free`, `cooldown` |
-| `listLists(caller, gs)` | `{ lists: [{ id, title, level, created_at, updated_at }] }` | |
-| `getList(caller, gs, listId)` | `{ list: { id, title, level, items, ... } }` | `not_found` |
-| `saveList(caller, gs, { id?, title, level?, items })` | `{ id }`. No `id` = new list (free teachers: up to `FREE_LIST_LIMIT`, 1); with `id` = replace one of hers | `bad_list`, `list_limit`, `not_found` |
-| `deleteList(caller, gs, listId)` | `{}` | `not_found` |
-| `listClasses(caller, gs)` | `{ classes: [{ id, name, class_code, list_id, created_at }] }` | |
+| `useTaste(caller, gs, mode)` | free tier only: `{ grantId, tasteRoundsLeft }` | `disabled` (default), `unknown_mode`, `not_needed`, `no_taste_left` |
+| `switchFreeMode(caller, gs, mode)` | free tier only: `{ freeGame, lockedUntil }` (one game+mode across all games, cooldown `FREE_MODE_SWITCH_COOLDOWN_DAYS`) | `disabled` (default), `unknown_mode`, `not_allowed`, `already_free`, `cooldown` |
+| `listLists(caller, gs)` | `{ lists: [...] }` (paid; empty when not subscribed, her lists stay stored and come back when she subscribes) | |
+| `getList(caller, gs, listId)` | `{ list: { id, title, level, items, ... } }` (paid) | `not_found` |
+| `saveList(caller, gs, { id?, title, level?, items })` | `{ id }` (paid; up to `PAID_LIST_LIMIT` lists). No `id` = new list; with `id` = replace one of hers. `items` must be plain JSON | `paid_only`, `bad_list`, `list_limit`, `not_found` |
+| `deleteList(caller, gs, listId)` | `{}` (paid) | `not_found` |
+| `listClasses(caller, gs)` | `{ classes: [...] }` (paid; empty otherwise) | |
 | `saveClass(caller, gs, { id?, name, listId? })` | `{ id, classCode? }` (paid only) | `paid_only`, `bad_class`, `not_found` |
 | `deleteClass(caller, gs, classId)` | `{}` (paid only) | `paid_only`, `not_found` |
-| `mintRoomPass(caller, gs, roomCode)` | `{ passId, allowedModes, expiresAt }`. Paid: every mode of this game. Free: her free mode if it is in this game | `bad_room`, `no_modes` |
-| `checkRoomPass(caller, passId)` | `{ valid: true, roomCode, allowedModes, expiresAt }` or `{ valid: false, reason: "unknown"\|"expired"\|"revoked" }` | |
-| `signOut(caller, gs)` | `{}`. Ends this browser's hub session and every game session made from it | |
+| `mintRoomPass(caller, gs, roomCode)` | `{ passId, allowedModes, expiresAt }` (paid: every mode of this game) | `paid_only`, `bad_room`, `revoked` (access or session changed while minting), `no_modes` |
+| `checkRoomPass(caller, passId)` | `{ valid: true, roomCode, allowedModes, expiresAt }` or `{ valid: false, reason: "unknown"\|"expired"\|"revoked" }`. Any `valid: false` means: drop the room's paid modes. Refund, revoke, account deletion and account moves all give `revoked` | |
+| `signOut(caller, gs)` | `{}`. Ends this browser's hub session and every game session made from it (this device leaves every Avery game, not only this one) | |
+
+Every method may also return `{ ok: false, error: "unavailable" }` (hub misconfigured or an internal error); the hub never throws across RPC. A new hand-off for the same game in the same browser ends that game's previous session (one live game session per game per browser).
 
 Item ids are the hub's. `items` is any JSON array the game defines (up to `LIST_MAX_ITEMS` and `LIST_MAX_BYTES`).
 

@@ -2,7 +2,7 @@
 
 ## Session hash keys (`SESSION_HASH_KEY_V<N>`)
 
-Every stored hash (hub sessions, game sessions, hand-off tokens, OAuth state, room passes) is an HMAC with a numbered
+Every stored hash (hub sessions, game sessions, hand-off tokens, OAuth state, device-picker tokens, room passes) is an HMAC with a numbered
 key, and every presented value carries its key number (`v2.<random>`). Rotation never signs anyone out.
 
 | Step | What |
@@ -15,6 +15,11 @@ key, and every presented value carries its key number (`v2.<random>`). Rotation 
 
 On a LEAK, skip the wait: after step 2, sign everyone out (`DELETE FROM sessions` on the database, which cascades to
 game sessions), then delete the old key.
+
+## Rate key (`RATE_KEY`)
+
+Only keys the sign-in abuse bucket. `wrangler secret put RATE_KEY [--env staging]` with 32 random bytes. Rotating it
+just resets the per-address counters; nothing else changes.
 
 ## Google client secret
 
