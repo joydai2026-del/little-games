@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>Avery Studio · 未来平台 Mockup (2026-09-30)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="mock-banner">MOCKUP · 设计样稿 — sample data only, nothing here is live · Avery Studio future platform, 2026-09-30</div>
+<header class="nav"><div class="wrap">
+  <img class="logo" src="assets/logo-L4.jpg" alt="Avery Studio with 墨墨 Momo">
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-go="library">资源库<small>Library</small></button>
+    <button class="tab" data-go="pack">教学包<small>Pack detail</small></button>
+    <button class="tab" data-go="request">定制教学包<small>Request a pack</small></button>
+    <button class="tab" data-go="classroom">我的教室<small>My Classroom</small></button>
+    <button class="tab" data-go="pricing">会员<small>Membership</small></button>
+  </nav>
+  <div class="nav-right">
+    <span class="season-pill" id="navSeason">本季 · 秋天 & 万圣节</span>
+    <div class="avatar" title="Sample teacher">王</div>
+  </div>
+</div></header>
+
+<main class="wrap">
+
+<!-- 1. LIBRARY -->
+<section class="screen" id="s-library">
+  <div class="hero">
+    <div class="hero-l">
+      <div class="hero-kicker"><span class="tag t-accent">本季 This season</span> 十月 October · 秋天来了，万圣节快到了</div>
+      <h1>秋天 <span class="amp">&</span> 万圣节</h1>
+      <p class="lead">适合您班级程度的中文教学包 — 每一套都经过老师和学生审核。<br><span style="color:var(--ink-soft);font-size:15px">Level-right Chinese packs for K–5 immersion, each one checked by teacher + student reviewers and signed off by a person.</span></p>
+      <div class="hero-search">
+        <input placeholder="搜一搜：南瓜、蝙蝠、笔顺…  Search packs, words, skills">
+        <button class="btn btn-ink" onclick="toast('Search is part of the mockup')">搜索 Search</button>
+      </div>
+      <div class="trust-row">
+        <div class="ti"><span class="check">✓</span>老师审核 Teacher review</div>
+        <div class="ti"><span class="check">✓</span>学生审核 Student review</div>
+        <div class="ti"><span class="check">✓</span>真人签发 Human sign-off</div>
+        <div class="ti"><span class="check">✓</span>全中文学生页 Chinese-only student pages</div>
+      </div>
+    </div>
+    <div class="hero-r">
+      <img class="art" src="assets/art/autumn-cover-hero.jpg" alt="">
+      <img class="hero-momo" src="assets/momo-full.jpg" alt="Momo">
+      <div class="bubble">要一套秋天的包吗？告诉墨墨！<br><span style="font-weight:600;font-size:12px;color:var(--ink-soft)">Need an autumn pack? Tell Momo.</span></div>
+    </div>
+  </div>
+
+  <div class="section-h"><h2>本周的季节</h2><span class="en">This week's season · Sep 28 – Oct 2</span><a class="more" href="#classroom">季节开关 Season switch →</a></div>
+  <div class="week">
+    <div class="card wk"><img src="assets/art/pumpkin-day.jpg" alt=""><div><div class="when">万圣节 · 还有 31 天</div><h4>南瓜 & 蝙蝠周</h4><div class="words">南瓜 蝙蝠 月亮 黑猫</div></div></div>
+    <div class="card wk"><img src="assets/art/squirrel.jpg" alt=""><div><div class="when">秋天 · Oct 5 → Nov 25</div><h4>小松鼠的秋天</h4><div class="words">秋天 树叶 松鼠 松果</div></div></div>
+    <div class="card wk"><img src="assets/art/falling-leaves.jpg" alt=""><div><div class="when">周五游戏 Friday game</div><h4>宾果 Bingo Night</h4><div class="words">12 个秋天词语 · 投影</div></div></div>
+    <div class="card request-cta"><h4>定制一套教学包</h4><p>"一年级，12个秋天词语，2个游戏，1个手工" — ready the same school day.</p><div><a class="btn btn-pink" href="#request">告诉墨墨 Request a pack</a></div></div>
+  </div>
+
+  <div class="section-h"><h2>资源库</h2><span class="en">Library · QA-checked packs, built on our proven TPT templates</span></div>
+  <div class="lib">
+    <aside class="card filters" id="filters"></aside>
+    <div>
+      <div class="lib-top"><span class="count" id="libCount"></span><span class="sample">sample catalog</span><span style="margin-left:auto;font-weight:700;color:var(--ink-soft);font-size:13px">排序 Sort: 本季优先 Season first ▾</span></div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. PACK DETAIL -->
+<section class="screen" id="s-pack">
+  <div class="crumbs"><a href="#library">资源库 Library</a> › <span id="crumbSeason"></span> › <span id="crumbTitle"></span></div>
+  <div class="detail">
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div class="card gallery">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><h3 style="font-size:19px">预览 Preview pages</h3><span class="tag t-sage">学生页全中文 Chinese-only student pages</span><span style="margin-left:auto;font-weight:700;font-size:13px;color:var(--ink-soft)" id="pageCount"></span></div>
+        <div class="gal-main" id="gal"></div>
+        <div class="pages-strip" id="strip"></div>
+      </div>
+      <div class="card inside" id="insideBox"></div>
+    </div>
+    <div class="side">
+      <div class="card info">
+        <div class="row" style="display:flex;gap:6px;margin-bottom:10px" id="dBadges"></div>
+        <h1 id="dTitle"></h1>
+        <div class="sub" id="dSub"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px" id="dLevels"></div>
+        <div class="trust">
+          <div class="t-h"><span class="check">✓</span>Reviewed by teacher + student reviewers ✓ <span style="font-weight:600;font-size:12px">老师 + 学生审核</span></div>
+          <div class="steps"><span>✓ 老师审核 Teacher</span><span>✓ 学生审核 Student</span><span>✓ 真人签发 Signed off · JD</span><span>✓ Pumpkin v3 standard</span></div>
+          <div style="font-size:12px;font-weight:600;color:#2F6A48">No empty bottoms · 楷体 · real stroke order · unique art per word · QR to games</div>
+        </div>
+        <div class="dl">
+          <button class="btn btn-pink" onclick="toast('Download PDF — stamped with your email + date (mockup)')">下载 PDF · Download PDF</button>
+          <button class="btn btn-ghost" onclick="toast('Saved to My Classroom (mockup)')">收藏 Save</button>
+        </div>
+        <div style="margin-top:10px;font-size:12.5px;font-weight:600;color:var(--ink-soft)">也可以：<a href="#request" style="color:var(--pink-deep);font-weight:800">用我自己的词语定制这套 → Remix with my words</a></div>
+      </div>
+      <div class="card words-box">
+        <div style="display:flex;align-items:center;gap:8px"><h3 style="font-size:18px">本包词语</h3><span style="color:var(--ink-soft);font-weight:600">Included words</span><button class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12.5px" onclick="toast('Word list copied')">复制 Copy</button></div>
+        <div class="wordgrid" id="dWords"></div>
+      </div>
+      <div class="card games">
+        <div style="display:flex;align-items:center;gap:8px"><h3 style="font-size:18px">用这些词玩游戏</h3><span style="color:var(--ink-soft);font-weight:600">Play these words</span></div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-top:2px">Opens each Avery game preloaded · <code id="dPackId"></code></div>
+        <div class="game-btns" id="dGames"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. REQUEST -->
+<section class="screen" id="s-request">
+  <div class="req">
+    <div class="card form">
+      <h1>告诉墨墨你需要什么</h1>
+      <div class="lead">Request a pack in plain words. Same school day you get a leveled Chinese pack + the same words in Avery games.</div>
+      <div class="say">
+        <button class="mic" title="Speak (browser speech-to-text)" onclick="toast('Listening… (mockup)')">说</button>
+        <input id="plain" value="Grade 1, 12 autumn words, 2 games, a craft">
+        <button class="btn btn-ink" style="padding:10px 16px" onclick="fillFromPlain()">帮我填 Fill form</button>
+      </div>
+      <div class="f-row"><label class="l">年级<small>Grade</small></label>
+        <div class="chips" id="fGrade"></div></div>
+      <div class="f-row"><label class="l">词语<small>Words · paste, messy OK</small></label>
+        <div><textarea id="fWords">秋天 树叶,松鼠 (sōngshǔ)  松果
+1. 苹果  2. 篮子 稻草人 大雁 / 大风 树洞 南瓜 小兔子 树叶</textarea>
+        <div class="parsed" id="parsed"></div></div></div>
+      <div class="f-row"><label class="l">主题<small>Theme / season</small></label>
+        <div class="chips" id="fTheme"></div></div>
+      <div class="f-row"><label class="l">活动类型<small>Activity types</small></label>
+        <div class="chips" id="fAct"></div></div>
+      <div class="f-row"><label class="l">程度搭配<small>Level mix</small></label>
+        <div><div class="mix">
+          <div class="m" style="border-color:var(--sage);background:var(--sage-soft)"><b id="mx1">50%</b>初级 K–1 描字 trace</div>
+          <div class="m" style="border-color:var(--sky);background:var(--sky-soft)"><b id="mx2">35%</b>中级 1–3 看图写字</div>
+          <div class="m" style="border-color:var(--pink);background:var(--pink-soft)"><b id="mx3">15%</b>高级 2–5 写一段话</div>
+        </div>
+        <input type="range" min="10" max="80" value="50" id="mixR" style="margin-top:10px"><div style="font-size:12px;color:var(--ink-soft);font-weight:600">Slide toward more tracing or more writing · 简体 Simplified ▾ · 8 pages ▾</div></div></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:16px">
+        <button class="btn btn-pink" id="buildBtn" onclick="runBuild()">请墨墨做 · Build my pack</button>
+        <span style="font-size:12.5px;color:var(--ink-soft);font-weight:600">Founding members: 2 custom packs / month · ready within 1 school day</span>
+      </div>
+    </div>
+    <div class="card progress">
+      <h2>墨墨正在做你的教学包…</h2>
+      <div style="color:var(--ink-soft);font-weight:600">Momo is building your pack…</div>
+      <div class="momo-work"><img src="assets/momo-full.jpg" alt=""><div><div class="spin" id="momoSay">墨墨在写字… Momo is picking templates from the Pumpkin v3 library</div><div style="font-size:12.5px;color:var(--ink-soft);font-weight:600;margin-top:4px">一年级 · 秋天 · <span id="wc">12</span> 个词语 · 2 个游戏 · 1 个手工</div></div></div>
+      <ol class="steps-v" id="steps"></ol>
+      <div class="ready" id="ready">
+        <div style="display:flex;gap:14px;align-items:center">
+          <img src="assets/covers/autumn.jpg" style="width:90px;border-radius:14px" alt="">
+          <div><b style="font-family:var(--zh);font-size:17px">你的秋天教学包 · 一年级</b><div style="font-size:13px;font-weight:600;color:var(--ink-soft)">8 pages · 看字涂颜色 · 掷骰子 · 宾果 · 树叶手工 · 田字格</div>
+          <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-pink" style="padding:8px 14px;font-size:13px" onclick="toast('Download PDF (mockup)')">下载 PDF</button><a class="btn btn-sage" style="padding:8px 14px;font-size:13px" href="#classroom">玩这些词 Play these words</a></div></div>
+        </div>
+      </div>
+      <div class="eta" id="eta">Typical: draft in minutes · reviews + sign-off within 1 school day <span class="sample">sample timing</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. CLASSROOM -->
+<section class="screen" id="s-classroom">
+  <div class="cls">
+    <div class="card lists">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h3 style="font-size:19px">我的词语单</h3><span style="color:var(--ink-soft);font-weight:600;font-size:13px">My word lists</span></div>
+      <div id="lists"></div>
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px" onclick="toast('Paste a new list (mockup)')">+ 新词语单 New list</button>
+      <div class="priv" style="margin-top:14px;background:var(--sky-soft);padding:10px 12px;border-radius:14px">学生不用注册 · No student accounts. Kids join with a class code + first name; the room closes after 2 hours.</div>
+    </div>
+    <div class="card proj">
+      <div class="proj-top">
+        <h2>投影 · 现在玩</h2><span style="color:var(--ink-soft);font-weight:700">Projector · Play now</span>
+        <div class="seg" id="seasonSeg"></div>
+      </div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-top:6px">全班季节开关 Class-wide season switch: changes Momo's outfit, colors and the loaded word pack in every game · <code id="packParam">?pack=halloween-2026</code></div>
+      <div class="screen-frame"><div class="stage" id="stage"></div></div>
+      <div class="launch" id="launch"></div>
+      <div class="proj-cta">
+        <button class="btn btn-pink" style="font-size:17px;padding:14px 28px" onclick="toast('Opening projector window… (mockup)')">▶ 开始 Play now</button>
+        <span class="tag t-sage">教室代码 Class code: <b>MOMO</b></span>
+        <span class="priv">Bingo Night + Momo Says run on one projector, no kid devices needed.</span>
+      </div>
+    </div>
+  </div>
+  <div class="cls-bottom">
+    <div class="card saved"><div style="display:flex;align-items:center;gap:8px"><h3 style="font-size:19px">收藏的教学包</h3><span style="color:var(--ink-soft);font-weight:600;font-size:13px">Saved packs</span><a class="more" href="#library" style="margin-left:auto;font-weight:700;color:var(--pink-deep);text-decoration:none">资源库 →</a></div><div class="saved-row" id="saved"></div></div>
+    <div class="card insight"><div style="display:flex;align-items:center;gap:8px"><h3 style="font-size:19px">全班这周要多练的词</h3><span class="sample">sample data</span></div>
+      <div style="font-size:12.5px;color:var(--ink-soft);font-weight:600">答对率 % of the class correct · room-level only (no per-child records) · the next round reweights toward these words</div>
+      <div class="bar"><span class="hz">蝙蝠</span><span class="tr"><i style="width:62%"></i></span><span class="v">62%</span></div>
+      <div class="bar"><span class="hz">幽灵</span><span class="tr"><i style="width:55%"></i></span><span class="v">55%</span></div>
+      <div class="bar"><span class="hz">巫师帽</span><span class="tr"><i style="width:48%"></i></span><span class="v">48%</span></div>
+      <div class="bar"><span class="hz">月亮</span><span class="tr"><i style="width:81%;background:var(--sage)"></i></span><span class="v">81%</span></div>
+      <button class="btn btn-sage" style="margin-top:8px;padding:9px 16px;font-size:13.5px" onclick="toast('Next Trace Race round weighted toward 蝙蝠 幽灵 巫师帽')">多练这三个 Practice these next</button>
+    </div>
+  </div>
+</section>
+
+<!-- 5. PRICING -->
+<section class="screen" id="s-pricing">
+  <div class="price-hero">
+    <h1>成为创始老师</h1>
+    <p>Become a founding teacher · all six games, the whole library, and custom packs made for your class</p>
+    <div style="margin-top:10px"><span class="sample">draft pricing — not final</span></div>
+  </div>
+  <div class="plans">
+    <div class="card plan feature">
+      <div class="ribbon">创始老师 · 11月开放 Founding · November</div>
+      <h2>老师会员 Teacher</h2>
+      <div class="who">For one K–5 Chinese immersion teacher</div>
+      <div class="price"><b>$29</b><span>/ year</span><s>$39</s></div>
+      <div class="then">Founding price for the first 100 teachers, locked while you stay subscribed. Then $39/yr.</div>
+      <ul>
+        <li><span class="check">✓</span>完整资源库 Whole QA-checked library, K–5, every season</li>
+        <li><span class="check">✓</span>每月 2 套定制教学包 2 custom packs / month, same school day</li>
+        <li><span class="check">✓</span>六个游戏 All six games: Vocab Games, Trace Race 笔顺比赛, 猜猜我是谁, 田字格, 宾果 Bingo Night, 墨墨说 Momo Says</li>
+        <li><span class="check">✓</span>投影模式 + 季节开关 Projector mode + season switch</li>
+        <li><span class="check">✓</span>无限词语单 Unlimited saved word lists</li>
+      </ul>
+      <button class="btn btn-pink" style="width:100%;justify-content:center;font-size:16px" onclick="toast('Join the founding list (mockup)')">加入创始名单 Join the founding list</button>
+    </div>
+    <div class="card plan">
+      <h2>学校会员 Campus</h2>
+      <div class="who">For an immersion program or weekend Chinese school</div>
+      <div class="price"><b>$199</b><span>/ year</span></div>
+      <div class="then" style="color:var(--ink-soft)">Up to 10 teachers · +$15 per extra teacher</div>
+      <ul>
+        <li><span class="check">✓</span>老师会员的全部内容 Everything in Teacher, for every teacher</li>
+        <li><span class="check">✓</span>全校词语库 Shared school word bank</li>
+        <li><span class="check">✓</span>优先定制 Priority custom-pack requests</li>
+        <li><span class="check">✓</span>全班层面的使用情况 Room-level usage view (no student profiles)</li>
+        <li><span class="check">✓</span>发票 / PO Invoice and purchase orders</li>
+      </ul>
+      <button class="btn btn-ink" style="width:100%;justify-content:center;font-size:16px" onclick="toast('Campus one-pager (mockup)')">给协调员看 Send to my coordinator</button>
+    </div>
+  </div>
+  <div class="card bridge">
+    <div class="qr" id="qr"></div>
+    <div>
+      <h3 style="font-size:19px">已经买了 Avery 的 TPT 教学包？ <span style="font-weight:600;color:var(--ink-soft);font-size:15px">Already own an Avery pack from TPT?</span></h3>
+      <div class="flow" style="margin-top:10px"><span>TPT 教学包 pack</span><i>→</i><span>课堂游戏页 QR</span><i>→</i><span>解锁游戏 + 资源库 Unlock the games + library</span><i>→</i><span>创始名单 Founding list</span></div>
+    </div>
+    <img src="assets/momo-face.jpg" style="width:110px;border-radius:16px;mix-blend-mode:multiply" alt="">
+  </div>
+  <div class="faq">
+    <div class="card"><h4>谁来检查内容？Who checks it?</h4><p>Every pack passes our Teacher Review and Student Review against the Pumpkin v3 standard, then a person signs off before you see it.</p></div>
+    <div class="card"><h4>学生隐私 Student privacy</h4><p>No student accounts. First name + class code, room-level results only, nothing kept after the room closes.</p></div>
+    <div class="card"><h4>还在 TPT 上吗？Still on TPT?</h4><p>Yes. Our reviewed seasonal packs stay on TPT. Membership adds the games, the full library and packs made from your own words.</p></div>
+  </div>
+</section>
+
+</main>
+<footer><div class="wrap">Avery Studio · 墨墨 Momo · averystudio.org — MOCKUP for internal planning (2026-09-30). Covers and pages are real Avery TPT art; counts, timings, reviews and class data are sample.</div></footer>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
