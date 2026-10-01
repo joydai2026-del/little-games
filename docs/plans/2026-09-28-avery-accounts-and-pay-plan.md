@@ -2,13 +2,15 @@
 date: 2026-09-28
 revised: 2026-09-29
 topic: Avery accounts and pay (Google sign-in, D1, Stripe under Ownly Network LLC)
-status: plan version 3.2 (v3.1 after review round 1, then a final consistency patch from the round-2 reviews; no further review round)
+status: plan version 3.3 (v3.3, 2026-10-01: no refunds, owner decision, one NY price-rise exception kept; v3.2 was v3.1 after review round 1 plus a final consistency patch)
 branch: feat/avery-accounts-pay-plan
 owner notes (private vault): projects/little-games/2026-09-29-avery-pay-jj-setup-steps.html, projects/little-games/2026-09-28-pricing-and-stripe-options.html
 review files: see review files (local), not in this repo
 ---
 
-# Avery accounts and pay: build plan (version 3.2)
+# Avery accounts and pay: build plan (version 3.3)
+
+**v3.3, 2026-10-01: no refunds (owner decision). One narrow New York price-rise exception kept, done by hand with no tool.**
 
 ## In one minute
 
@@ -47,7 +49,7 @@ Non-blocking owner items: the per-file font and art licence check for the packs;
 | 9 | **Hard paywall, no free tier.** "If they don't pay, then don't play." One free round per game (vocab app = one game), then "Sign in and subscribe to keep playing". No calendar trial. | JJ, 2026-09-29 | "The gate" |
 | 10 | **$29.00 a year (`avery_yearly_v2`) or $4.99 a month (`avery_monthly_v2`).** v1 prices are never created in live mode. | JJ, 2026-09-29 | "Stripe" |
 | 11 | **Paid = everything** (all six games and modes, unlimited lists, classes, history, the 1-hour ranking, the Tianzige Generator and the writing-pack engine); the **yearly** plan adds the brand's printable packs (after a font and art licence check) and a "Tell us what you need" request button (1 a month, filled by hand, 60-day pilot). How a pack is personalised is not JJ's decision; see D11. | JJ, 2026-09-29 | "Materials" |
-| 12 | **Refunds:** yearly, full refund within 14 days of the first purchase and of each renewal, and a refund ends access; monthly, cancel any time, no refund. 7-day grace after a cancel at period end, only when the teacher asked for it. | JJ, 2026-09-29 | `accessFor` |
+| 12 | **Refunds:** no refunds, and no refund engineering is built. One exception only: if the monthly price is ever raised, a monthly teacher who cancels within 14 days after her first charge at the higher price gets back the unused part of that month (NY GBL 527-a), done by hand. A refund or dispute that still arrives from Stripe or a bank ends access (defensive rule). Cancel any time; 7-day grace after a cancel at period end, only when the teacher asked for it. | JJ, 2026-09-29 | `accessFor` |
 | 13 | **Hosting:** six games on `*.averystudio.org`; hub `hub.averystudio.org`, staging `avery-hub-staging.joyd-ai-2026.workers.dev`; support `hello@averystudio.org`; legal page `https://www.averystudio.org/legal/policies` (`#terms #privacy #children #refunds`); house-rule reword little-games PR #24 merges before the hub. | JJ, 2026-09-29 | S0c, S5 |
 | 14 | **One live game session per game per hub session** (a new hand-off ends the previous game session of that game). | JJ, 2026-09-29 | built (S1) |
 
@@ -73,7 +75,7 @@ Each row says why, so a later review round cannot flip it silently.
 | D10 | **(pending JJ)** **Download cap 20 a day** (`DOWNLOADS_PER_DAY`, UTC day). | Stops bulk scraping; far above what one teacher prints. |
 | D11 | **Packs are stamped with the teacher's sign-in email and the UTC date** ("Licensed to x@school.org, 2026-09-29"), never her display name; an email with a non-ASCII local part falls back to her short teacher id; a non-ASCII domain prints in punycode. | Emails fit the built-in Helvetica font, so no Chinese font file or second PDF dependency is needed; a display name like 王老师 would not print. |
 | D12 | **Anonymous rooms:** the free round is used up at room creation (cookie checked and set there); round starts inside the room check only the room's pass, which allows exactly one round. | Checking the cookie again at `/start` would refuse the free round the room just granted (Dictation Dash solo is a room, A). |
-| D13 | **Monthly pro-rata refund after a price rise:** a monthly teacher who cancels within 14 days after her first charge at a higher price gets back the unused part. This is the one narrow exception to "monthly, no refund", which otherwise stands as JJ decided (row 12). | Legal: New York GBL 527-a(1)(b-1) requires either consent to the higher price or this 14-day pro-rata cancel. |
+| D13 | **Monthly pro-rata refund after a price rise:** a monthly teacher who cancels within 14 days after her first charge at a higher price gets back the unused part. This is the one narrow exception to "no refunds" (row 12). It is handled by hand: no pro-rata refund tool is built. | Legal: New York GBL 527-a(1)(b-1) requires either consent to the higher price or this 14-day pro-rata cancel. |
 
 **Kept from version 2, for the law.** A device id that lives in the browser links a child across rooms and days, which the FTC treats as personal information unless used only to run the service (A, FTC COPPA FAQ, read 2026-09-28). So the 1-hour board uses a **room-only participant id**, and the **long-term class ranking stays BLOCKED** until a school and parent notice and consent path exists.
 
@@ -312,7 +314,7 @@ Events: `checkout.session.completed`, `customer.subscription.created/.updated/.d
 | `canceled`, any other way (refund, lost dispute, deletion, failed payments) | none |
 | `incomplete`, `incomplete_expired`, `unpaid`, `paused` | none |
 
-**Refunds are never re-granted:** the refund-then-cancel workflow (refund, cancel now without proration, mark `refunded_full`, bump the version), each step in `billing_ops`, safe to re-run; a Dashboard refund triggers steps 2 and 3; reconciliation never clears a refund or an open dispute from a subscription fetch alone. Runbooks `docs/ops/refund.md`, `dispute.md` (built).
+**Refunds are never re-granted:** a full refund of the latest paid charge or a dispute that arrives from Stripe or a bank (for example a chargeback) ends access (a partial refund, such as the price-rise exception's unused-part refund, changes nothing), and reconciliation never clears a refund or an open dispute from a subscription fetch alone. No refund-then-cancel tool and no admin refund tool are built. Runbook `docs/ops/dispute.md` (built).
 
 ### Reconciliation (daily, `RECONCILE_HOUR_UTC`)
 
@@ -322,11 +324,11 @@ Lists every subscription **of the Avery product** (all statuses), maps by `metad
 
 Issues in `joydai2026-del/avery-hub` (private, S0d), labels `avery-alert` (`avery-alert-staging`) and `avery-request`, opened with a token that can only write issues there. Issue bodies carry ids only (never an email, name or request text). `ALERT_CHANNEL`, `ALERT_GITHUB_REPO` are config. Before any live endpoint is added, a read-only inventory of every webhook on the Ownly account is written to the private repo; live endpoints subscribed to charge or subscription events must ignore `app=avery` objects.
 
-### Refunds, receipts, price changes
+### No refunds, receipts, price changes
 
-- Yearly: full refund within `REFUND_WINDOW_DAYS` (14) of the first purchase and each renewal; access ends at once (D3). Monthly: cancel any time, no refund, access to period end plus grace when she asked (D5).
-- **Price increase (legal checklist, NY GBL 527-a(1)(b-1)):** notice 14 to 30 days before the new price (`PRICE_CHANGE_NOTICE_DAYS` window); a monthly teacher may cancel within 14 days after the first higher charge and gets a pro-rata refund of the unused part (D13; the admin refund tool takes a pro-rata amount; runbook step). Yearly renewals are already covered by the 14-day refund.
-- Stripe keeps processing fees on refunds (A, docs.stripe.com/refunds); about $1.14 per $29 refund (C). S5 records the real fee lines.
+- No refunds, yearly or monthly (row 12). Cancel any time; access runs to period end plus grace when she asked (D5). A refund or dispute that arrives anyway ends access at once (D3).
+- **Price increase (legal checklist, NY GBL 527-a(1)(b-1)):** notice 14 to 30 days before the new price (`PRICE_CHANGE_NOTICE_DAYS` window); a monthly teacher may cancel within 14 days after the first higher charge and gets back the unused part, refunded by hand in the Stripe Dashboard (D13; no refund tool is built). Yearly renewals are not affected, since a yearly teacher can already cancel before renewal.
+- Stripe keeps processing fees on disputes and on the rare price-rise refund (A, docs.stripe.com/refunds). S5 records the real fee lines.
 - Receipts and Stripe's built-in upcoming-renewal email are turned on (B); automatic delivery is proven on the first live purchase.
 
 ### Tax gate before live mode
@@ -340,7 +342,7 @@ Secrets (separate staging and production values): `STRIPE_SECRET_KEY`, `STRIPE_W
 | Config var | State | Default |
 |---|---|---|
 | `ANON_FREE_ROUNDS_PER_GAME`, `ROUND_GRANT_MINUTES`, `ENTITLEMENT_CACHE_HOURS`, `ROOM_PASS_MINUTES` (per game), `NICKNAME_MAX_CHARS` | new (games; hub reads the first for screens) | 1, 10, 24, room lifetime + 15, 12 |
-| `TRIAL_DAYS`, `ACCESS_END_GRACE_DAYS`, `PAST_DUE_GRACE_DAYS`, `DISPUTE_ACTION`, `REFUND_WINDOW_DAYS` | kept (S2a, validated with maxima) | 0, 7, 7, pause, 14 |
+| `TRIAL_DAYS`, `ACCESS_END_GRACE_DAYS`, `PAST_DUE_GRACE_DAYS`, `DISPUTE_ACTION` | kept (S2a, validated with maxima) | 0, 7, 7, pause |
 | `GRANT_COUNTS_AS`, `REQUESTS_PER_MONTH`, `REQUEST_MAX_CHARS`, `REQUEST_RETENTION_MONTHS`, `DOWNLOADS_PER_DAY`, `PACK_FOOTER_TEMPLATE`, `PRICE_CHANGE_NOTICE_DAYS` | new | yearly, 1, 1000, 12, 20, "Licensed to {email}, {date}. One classroom only; please do not share.", 14-30 |
 | `DB_READY`, `SESSION_ROTATE_OVERLAP_SECONDS`, `AUTH_ADDRESS_LIMITER` (binding) | built in S1 fix round 1 (A) | false in production until migrated, 30 |
 | `ROOM_PASS_HOURS` | built (flat 4); **replaced** by per-game `ROOM_PASS_MINUTES` in S2b | removed |
@@ -434,13 +436,13 @@ Assumptions: at most **3 parallel builders** and **1 review panel at a time**. R
 | **S2a-fix** | fix round 3 (round 2's dispute, paused-collection, charge-id and `prevented` fixes are committed at `a3e29d1`); v2 prices and lookup keys; v1 archive and test-subscription cancel; `interval` output | 0.5 | 0.5 (full) | 1 | 2 | S1-fix, S0c | JJ test key (can finish on fakes) | hub `src/stripe/`, `scripts/stripe-setup.ts`, `docs/ops/*`, `tests/stripe/` |
 | **S0c** | legal page changes above | 1 | 0.5 (default, 2 rounds max) | 0 | 1.5 | S1-fix, S2a-fix | JJ wording approval | joydong.org `legal/policies.html` |
 | **S0d** | `git subtree split` of `avery-hub/` into private `joydai2026-del/avery-hub` with full history, then `avery-hub/` is removed from little-games with NO archive copy left in the public repo: the private repo with full history IS the archive (house rule "archive, never delete" satisfied); CI and deploy from the new repo; ops receipts and issues live there | 0.5 | 0.5 (default) | 0 | 1 | none | S1-fix, S2a-fix merged | the new repo; removal of `avery-hub/` from little-games |
-| **S2b** | Checkout (Stripe-list check, open-session expiry, auto-renew and yearly-only text, plan page terms), BillingDO webhooks, per-charge dispute resolution, reconciliation by product with cursor, alerts, refund tools (including pro-rata), `authorizeRound` with one-time grants, per-game `ROOM_PASS_MINUTES`, `interval` in `entitlement`, seat grants, hub-down tests, full test-mode run | 4.5 | 1.5 (full) | 1 | 7 | S0c | S0d | hub `src/billing/`, `src/do/billing-do.ts`, `src/rpc/` gate methods, hub shared files |
+| **S2b** | Checkout (Stripe-list check, open-session expiry, auto-renew and yearly-only text, plan page terms), BillingDO webhooks, per-charge dispute resolution, reconciliation by product with cursor, alerts, `authorizeRound` with one-time grants, per-game `ROOM_PASS_MINUTES`, `interval` in `entitlement`, seat grants, hub-down tests, full test-mode run | 4.5 | 1.5 (full) | 1 | 7 | S0c | S0d | hub `src/billing/`, `src/do/billing-do.ts`, `src/rpc/` gate methods, hub shared files |
 | **S2c** | the seven integration steps in the vocab app; server-built questions; both room paths; `ROOM_TTL_MS` to config; nickname filter; logs off; custom-domain branch confirmed; contract tests | 2.5 | 1 (full) | 1 | 4.5 | S2d, S6 | S2b | vocab `src/worker/*`, `src/client/*`, `wrangler.jsonc`, `package.json` |
 | **S2d** | (1) `avery-gate/` shared module and contract tests, one builder, contract reviewed (default panel) before branching; (2) five game builders, one per game, **each game's change gets the default panel (one Claude reviewer plus Codex) before it merges**; (3) one integration commit and a six-game bypass suite on the merged SHA, which gets the **full panel** | 1 + 5 + 0.5 | 2.75 (0.5 contract default, 5 x 0.25 per-game default, 1 merged full) | 1 | 10.25 | S2c, S6 | S2b | `avery-gate/` (step 1); `<game>/` of its own game (step 2); integration owner (step 3) |
 | **S6** | R2, `packs.json` with licence receipts and validation, `/downloads` with stamping after the safety scan, request form, delivery, `/admin/requests`, retention cron, pilot report rules | 3 | 1 (full) | 1 | 5 | S2c, S2d | S2b; owner licence receipts before any pack shows | hub `src/{downloads,requests}/`, `config/{packs,materials-pilot}.json`, hub shared files after S2b |
 | **S3** | room-only participant id, 1-hour board in paid rooms, nickname rule, clear-on-end tests | 1.5 | 0.5 (full: kid data) | 1 | 3 | S4 | S2c, S2d | vocab and game ranking files, Room DO ranking slot |
 | **S4** | teacher-only loader and route shutdown, the 11 events, analytics tests, pricing and pilot report script | 1.5 | 0.5 (full: teacher data, production writes) | 1 | 3 | S3 | S2c, S2d, S6 | vocab `analytics.ts`, `avery-gate/analytics.ts`, hub `src/analytics/`, `scripts/pricing-test-report.ts` |
-| **S5** | production D1, R2, namespaces; published consent screen; live key, provisioning, readback; tax gate passed; first real purchase, cancel, refund on the live site; receipts; fee lines; demos re-recorded (free round and paywall; paid screens with a `grantAccess` staff account) | 1.5 | 0.5 (full) | 1 | 3 | none | all above; S0c live; For JJ items 1-3 | ops docs, demo outputs |
+| **S5** | production D1, R2, namespaces; published consent screen; live key, provisioning, readback; tax gate passed; first real purchase and cancel on the live site; receipts; fee lines; demos re-recorded (free round and paywall; paid screens with a `grantAccess` staff account) | 1.5 | 0.5 (full) | 1 | 3 | none | all above; S0c live; For JJ items 1-3 | ops docs, demo outputs |
 
 **Totals:** build 23.5, review 9.75, fix 9: **42.25 days of work, about 51 with 20% contingency** (42.25 x 1.2 = 50.7; one session at a time).
 
@@ -510,7 +512,7 @@ S0c (any time, live before S5)  |                                     |         
 
 1. `tsc --noEmit` on the hub, the vocab app and each gated game.
 2. Tests green: `accessFor` rows, token protocol, gate per game, grants, cache, concurrency, isolation, webhooks, hub-down, analytics, downloads, requests, kid-privacy checks.
-3. Live on staging: real Google sign-in with two accounts; in each game the free round then the paywall; an anonymous room's end on a teacher screen and a second tablet; a second anonymous room refused at creation; test purchases of both plans; paid rounds in every game; a paid room from a second tablet; portal cancel and grace; refund ends access at the next round; a stamped pack opened and its footer read; a request delivered as a download; sign out everywhere reaches every game. State what was live and what is assumed.
+3. Live on staging: real Google sign-in with two accounts; in each game the free round then the paywall; an anonymous room's end on a teacher screen and a second tablet; a second anonymous room refused at creation; test purchases of both plans; paid rounds in every game; a paid room from a second tablet; portal cancel and grace; a dispute or refund event ends access at the next round; a stamped pack opened and its footer read; a request delivered as a download; sign out everywhere reaches every game. State what was live and what is assumed.
 4. Visual check on a phone and a tablet: paywall, subscribe card, "Signed in as", account page, packs page, stamped footer on every page size, device picker, ranking, kid join screen with its privacy link.
 5. Re-record each gated game's demo on the live site after S5.
 6. Reviews per slice; Codex reviews before anything reaches JJ.
