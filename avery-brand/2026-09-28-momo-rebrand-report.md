@@ -61,7 +61,7 @@ Note: white on pink-deep is 4.04:1, so it passes only as large text, not at body
 
 - **Spikes (PR #8): skipped** on the coordinator's instruction (JJ found them confusing). Before that
   instruction arrived, `feat/avery-brand-momo` had been merged into `feat/momo-fun-spikes` in
-  `/Users/joyd/lg-spikes` (merge commit `c3cb476`). No spike file was edited. That merge commit is now on
+  `~/lg-spikes` (merge commit `c3cb476`). No spike file was edited. That merge commit is now on
   `origin/feat/momo-fun-spikes`. This session did not push it; it was pushed from somewhere else. It was
   left as it is (house rules forbid reset).
 - The header lockup renders Baloo 2 and Quicksand from Google Fonts. The `/api/sheet` agent page
