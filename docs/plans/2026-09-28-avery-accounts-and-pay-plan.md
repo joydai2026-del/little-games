@@ -2,13 +2,15 @@
 date: 2026-09-28
 revised: 2026-09-29
 topic: Avery accounts and pay (Google sign-in, D1, Stripe under Ownly Network LLC)
-status: plan version 3.4 (v3.4, 2026-10-01: two free rounds per game, set by ANON_FREE_ROUNDS_PER_GAME (owner decision); v3.3, 2026-10-01: no refunds, owner decision, one NY price-rise exception kept; v3.2 was v3.1 after review round 1 plus a final consistency patch)
+status: plan version 3.5 (v3.5, 2026-10-02: brought in line with the decisions made while building the hub's phase 2; v3.4, 2026-10-01: two free rounds per game, set by ANON_FREE_ROUNDS_PER_GAME (owner decision); v3.3, 2026-10-01: no refunds, owner decision, one NY price-rise exception kept; v3.2 was v3.1 after review round 1 plus a final consistency patch)
 branch: feat/avery-accounts-pay-plan
 owner notes (private vault): projects/little-games/2026-09-29-avery-pay-jj-setup-steps.html, projects/little-games/2026-09-28-pricing-and-stripe-options.html
 review files: see review files (local), not in this repo
 ---
 
-# Avery accounts and pay: build plan (version 3.4)
+# Avery accounts and pay: build plan (version 3.5)
+
+**v3.5 (2026-10-02): brought in line with the decisions made while building the hub's phase 2**
 
 **v3.4 (2026-10-01): two free rounds per game, set by ANON_FREE_ROUNDS_PER_GAME (owner decision)**
 
@@ -51,10 +53,11 @@ Non-blocking owner items: the per-file font and art licence check for the packs;
 | 9 | **Hard paywall, no free tier.** "If they don't pay, then don't play." Two free rounds per game (set by `ANON_FREE_ROUNDS_PER_GAME`; vocab app = one game), then "Sign in and subscribe to keep playing". No calendar trial. | JJ, 2026-09-29 | "The gate" |
 | 10 | **$29.00 a year (`avery_yearly_v2`) or $4.99 a month (`avery_monthly_v2`).** v1 prices are never created in live mode. | JJ, 2026-09-29 | "Stripe" |
 | 11 | **Paid = everything** (all six games and modes, unlimited lists, classes, history, the 1-hour ranking, the Tianzige Generator and the writing-pack engine); the **yearly** plan adds the brand's printable packs (after a font and art licence check) and a "Tell us what you need" request button (1 a month, filled by hand, 60-day pilot). How a pack is personalised is not JJ's decision; see D11. | JJ, 2026-09-29 | "Materials" |
-| 12 | **Refunds:** no refunds, and no refund engineering is built. One exception only: if the monthly price is ever raised, a monthly teacher who cancels within 14 days after her first charge at the higher price gets back the unused part of that month (NY GBL 527-a), done by hand. A refund or dispute that still arrives from Stripe or a bank ends access (defensive rule). Cancel any time; 7-day grace after a cancel at period end, only when the teacher asked for it. | JJ, 2026-09-29 | `accessFor` |
+| 12 | **Refunds:** no refunds, and no refund engineering is built. One exception only: if the monthly price is ever raised, a monthly teacher who cancels within 14 days after her first charge at the higher price gets back the unused part of that month (NY GBL 527-a), done by hand. A full refund of the latest paid charge or a lost dispute that still arrives from Stripe or a bank makes the hub cancel the plan now, once, with no proration (defensive rule); the hub never issues a refund. Cancel any time; 7-day grace after a cancel at period end, only when the teacher asked for it. | JJ, 2026-09-29 | `accessFor` |
 | 13 | **Hosting:** six games on `*.averystudio.org`; hub `hub.averystudio.org`, staging `avery-hub-staging.joyd-ai-2026.workers.dev`; support `hello@averystudio.org`; legal page `https://www.averystudio.org/legal/policies` (`#terms #privacy #children #refunds`); house-rule reword little-games PR #24 merges before the hub. | JJ, 2026-09-29 | S0c, S5 |
 | 14 | **One live game session per game per hub session** (a new hand-off ends the previous game session of that game). | JJ, 2026-09-29 | built (S1) |
 | 15 | **Two free rounds per game, not one.** The count is the setting `ANON_FREE_ROUNDS_PER_GAME` (game side, per game per browser, no sign-in), default 2; 0 turns free rounds off. Supersedes the count in row 9; everything else in row 9 is unchanged (hard paywall, then sign in and subscribe, no calendar trial). | JJ, 2026-10-01 | `ANON_FREE_ROUNDS_PER_GAME`, the gate |
+| 16 | **A newer payment wins over an earlier refund.** If a refund was recorded and a newer (or same-second) PAID charge of the same plan then arrives, access returns, the plan is not cancelled, and one alert goes to the owner. A refund that later fails also sends one alert and does not change access automatically: a person decides. | JJ, 2026-10-01 (standing rule) | `accessFor`, alerts |
 
 Rows 4 (free-mode switch and taste rounds) and 7 (unlimited anonymous play) of version 2 are superseded by row 9.
 
@@ -77,7 +80,7 @@ Each row says why, so a later review round cannot flip it silently.
 | D9 | **(pending JJ)** **Seat and manual grants count as yearly** for packs and requests (`GRANT_COUNTS_AS` = `yearly`). | School purchase orders are yearly by nature. |
 | D10 | **(pending JJ)** **Download cap 20 a day** (`DOWNLOADS_PER_DAY`, UTC day). | Stops bulk scraping; far above what one teacher prints. |
 | D11 | **Packs are stamped with the teacher's sign-in email and the UTC date** ("Licensed to x@school.org, 2026-09-29"), never her display name; an email with a non-ASCII local part falls back to her short teacher id; a non-ASCII domain prints in punycode. | Emails fit the built-in Helvetica font, so no Chinese font file or second PDF dependency is needed; a display name like 王老师 would not print. |
-| D12 | **Anonymous rooms:** an anonymous room uses up ONE of the browser's free rounds at creation (the counter is checked and incremented there); round starts inside the room check only the room's pass, which allows exactly one round. | Checking the counter again at `/start` would refuse the free round the room just granted (Dictation Dash solo is a room, A). |
+| D12 | **Anonymous rooms:** an anonymous room uses up ONE of the browser's free rounds at creation (the counter is checked and incremented there); round starts inside the room check only the room's pass, which allows exactly one round. Room rounds never use one-time grants. | Checking the counter again at `/start` would refuse the free round the room just granted (Dictation Dash solo is a room, A). |
 | D13 | **Monthly pro-rata refund after a price rise:** a monthly teacher who cancels within 14 days after her first charge at a higher price gets back the unused part. This is the one narrow exception to "no refunds" (row 12). It is handled by hand: no pro-rata refund tool is built. | Legal: New York GBL 527-a(1)(b-1) requires either consent to the higher price or this 14-day pro-rata cancel. |
 
 **Kept from version 2, for the law.** A device id that lives in the browser links a child across rooms and days, which the FTC treats as personal information unless used only to run the service (A, FTC COPPA FAQ, read 2026-09-28). So the 1-hour board uses a **room-only participant id**, and the **long-term class ranking stays BLOCKED** until a school and parent notice and consent path exists.
@@ -94,7 +97,7 @@ Version 2 of this plan had two review rounds, **both FIX-FIRST**, with fixes app
 | S0b legal page and house rule | joydong.org PR #88; little-games PR #24 | n/a | not published | no | two review rounds each; the page still describes version 2 (S0c) |
 | Custom domains for the five little-games Workers | little-games PR #23, merged (A) | per game | yes (A) | yes, live gates passed (A) | done |
 
-What S1 already built from this plan (A, `85901f9`, HUB-API doc): one game session per game per browser (row 14); `FREE_TIER_ENABLED` = `false` by default, so `useTaste` and `switchFreeMode` are refused; `entitlement` returns `{ plan: "free" | "paid", accessUntil }` ("free" means not subscribed); every method may return `unavailable` and never throws across RPC; `DB_READY` guard; `AUTH_ADDRESS_LIMITER` abuse bucket; rotation keeps the previous session id valid for `SESSION_ROTATE_OVERLAP_SECONDS` (30); migrations `0001_init.sql` and `0002_rotation_overlap.sql` exist, so the next is **`0003_v3.sql`**. Open finding counts: S1 round 1 is fixed pending re-review; S2a is in fix round 3 (details kept privately, not in this public file).
+What S1 already built from this plan (A, `85901f9`, HUB-API doc): one game session per game per browser (row 14); `FREE_TIER_ENABLED` = `false` by default, so `useTaste` and `switchFreeMode` are refused; `entitlement` returns `{ plan: "free" | "paid", accessUntil }` ("free" means not subscribed); every method may return `unavailable` and never throws across RPC; `DB_READY` guard; `AUTH_ADDRESS_LIMITER` abuse bucket; rotation keeps the previous session id valid for `SESSION_ROTATE_OVERLAP_SECONDS` (30); migrations `0001_init.sql` and `0002_rotation_overlap.sql` exist, so the next is **`0004`**. Open finding counts: S1 round 1 is fixed pending re-review; S2a is in fix round 3 (details kept privately, not in this public file).
 
 ## Pricing test (the rules, written in)
 
@@ -131,14 +134,14 @@ Built in S1: the hub's `fetch` serves only `/auth/*`, `/me`, `/me/*`, `/billing/
 | `redeemHandoff(caller, token, bindingValue)` | one-time token to game session; ends the previous session of the same game and hub session | token bound to this game and browser |
 | `resolveSession`, `signOut` | who is this; end this device's hub session and all its game sessions | game session |
 | `entitlement(caller, gs)` | screen only: `{ plan, accessUntil }` today; S2b adds `interval: "yearly" \| "monthly" \| "grant"` | game session |
-| `authorizeRound(caller, gs, mode, roomCode or null)` | one paid round grant (below); anonymous rounds never reach the hub | game session, paid |
+| `authorizeRound(caller, gs, mode, roomCode or null)` | one paid round grant for a single-screen or browser-run round (below); room rounds never use it; anonymous rounds never reach the hub | game session, paid |
 | `listLists / getList / saveList / deleteList`, `listClasses / saveClass / deleteClass` | paid only; the paid check is inside each statement (built) | game session, paid |
 | `mintRoomPass`, `checkRoomPass` | pass for a paid teacher's room (one conditional insert, built); any `valid: false` means stop paid rounds | game session / pass of this game |
 | `useTaste`, `switchFreeMode` | refused while `FREE_TIER_ENABLED` is `false` (built); removed from every game's `methods` list | none |
 
 ### Round grants (paid)
 
-A grant is one-time, expires after `ROUND_GRANT_MINUTES` (10), and is bound to the game, the mode and (where one exists) the room code. In a room, the grant is written to the Room DO and consumed there, one at a time. For single-screen modes the grant is consumed in the same response that returns the round's content (server-built questions, the sheet, the solo list), so there is nothing to replay. Any round-start route not in the six-game table below fails closed; a test calls every other `/api/*` POST route with a round-like body and asserts no round starts.
+A grant is one-time, expires after `ROUND_GRANT_MINUTES` (hub config, validated with a minimum and a maximum; default 10), and is bound to the game, the mode and the game session it was issued to. The HUB records and consumes it (one record, no replay): the game asks the hub for a grant and redeems it in the same request, from the same game session, with the same response that returns the round's content (server-built questions, the sheet, the solo list). A grant can only be spent by the game session it was issued to. A room round never uses a one-time grant: it checks only the room pass held in the Room Durable Object. Any round-start route not in the six-game table below fails closed; a test calls every other `/api/*` POST route with a round-like body and asserts no round starts.
 
 ### One token protocol (built in S1; unchanged rules)
 
@@ -147,7 +150,7 @@ A grant is one-time, expires after `ROUND_GRANT_MINUTES` (10), and is bound to t
 | Binding cookie | `__Host-avery_bind` (32 random bytes, 10 minutes); only its SHA-256 goes to `hub/auth/start`. Login-CSRF defence. |
 | Hand-off token | 32 random bytes in the URL fragment; stored only as an HMAC with key version in a TokenDO; burned first, then checked (game, bind, 60 s expiry); a missing key returns `unavailable`. OAuth state and device-picker values carry their key version. |
 | Game session | minted and stored by the hub; cookie `__Host-avery_game` holds only the id; **one live game session per game per hub session** (row 14). |
-| Revocation | ending a hub session ends its game sessions; sign out everywhere, device limit, admin revoke and delete act in the hub; a token minted before "sign out everywhere" cannot be redeemed after it. |
+| Revocation | ending a hub session ends its game sessions (a room pass already held in a Room DO is not ended by signing out, see Room pass); sign out everywhere, device limit, admin revoke and delete act in the hub; a token minted before "sign out everywhere" cannot be redeemed after it. |
 | Lifetimes | hub idle 30 days, absolute 90, rotated every 7 with a 30 s overlap; game session absolute 12 hours, idle 4. |
 | CSRF | POST only, `Origin` allowlist, SameSite=Lax, per-session CSRF token; hub pages send `Referrer-Policy: same-origin` so browsers keep the Origin on form posts. |
 | Rate limits | bind hash and game id plus an address bucket held only in the limiter's memory, never stored; separate namespace ids per environment. |
@@ -182,13 +185,13 @@ Rule: anything that saves or spends fails closed; a paid teacher keeps playing o
 
 **Entitlement cache (D4, HOW, C):** after each successful `entitlement` or `authorizeRound`, the game sets `__Host-avery_ent`: `{ gameSessionHash, paid, until, issuedAt }` signed with a game-local HMAC key. It is read only when the hub is unreachable, and only if `issuedAt` is within `ENTITLEMENT_CACHE_HOURS` and `until` is in the future. No server storage.
 
-**Room pass:** pass id, game id, room code, teacher id, allowed modes, entitlement version, issued, expires. Stored in the Room DO, never sent to a device. It is short-lived operational data (it holds a teacher id and a room code) and is deleted by the expiry clean-up. Expiry is per game: `ROOM_PASS_MINUTES` = that game's room lifetime + 15 (config per game; vocab rooms live 2 hours, A, `room-do.ts` line 70; the five little-games rooms extend their life on every round (A, S1 review), so while the hub answers, a `valid` answer re-mints the pass). A refund, dispute, cancel-now, admin revoke, delete or move bumps `entitlement_version`, and `checkRoomPass` answers `revoked`.
+**Room pass:** pass id, game id, room code, teacher id, allowed modes, entitlement version, issued, expires. Stored in the Room DO, never sent to a device. A room round checks ONLY this pass. It is short-lived operational data (it holds a teacher id and a room code) and is deleted by the expiry clean-up. Expiry is per game: `ROOM_PASS_MINUTES` = that game's room lifetime + 15 (set per game on each game's registry entry IN THE HUB and validated; today 135 for the five room games, and the generator tool has no rooms; vocab rooms live 2 hours, A, `room-do.ts` line 70; the five little-games rooms extend their life on every round (A, S1 review), so while the hub answers, a `valid` answer re-mints the pass). A refund, dispute, cancel-now, admin revoke, delete or move bumps `entitlement_version`, and `checkRoomPass` answers `revoked`. A room pass ends ONLY on an access change (refund, lost dispute, cancel-now, admin revoke or grant change, seat change), account deletion, an admin move, or its own expiry. Signing out the device that created the room, even "sign out everywhere", does not end it.
 
 Tests: each row with a throwing HubService binding; a refund during a hub outage ends play at pass expiry or cache expiry, whichever comes first.
 
 ## Data model and per-teacher isolation
 
-`0001_init.sql` and `0002_rotation_overlap.sql` are built (A). Version 3 adds **`0003_v3.sql`** (additive only).
+`0001_init.sql` and `0002_rotation_overlap.sql` are built (A). Version 3 adds **`0004`** (additive only).
 
 | Table | Built | v3 change |
 |---|---|---|
@@ -199,7 +202,7 @@ Tests: each row with a throwing HubService binding; a refund during a hub outage
 | `pack_downloads` (new) | none | `id`, `teacher_id` (CASCADE), `pack_id`, `pack_sha256`, `at`; one row per **successful** download |
 | `reconcile_cursor` (new) | none | durable cursor for refunds and disputes (below) |
 
-Deleting a teacher is a tombstone: only `id`, `stripe_customer_id`, `deleted_at` remain; her lists, classes, history, sessions, requests (and their R2 files) and download log are deleted; an attached seat grant's email is hashed. Billing rows stay for tax. No kid data is stored in D1.
+Deleting a teacher is a tombstone: only `id`, `stripe_customer_id`, `deleted_at` remain; her lists, classes, history, sessions, requests (and their R2 files) and download log are deleted; an attached seat grant's email is hashed at deletion. Billing rows stay for tax. No kid data is stored in D1.
 
 **Isolation rule (built):** all SQL in `src/db/`; teacher data only through `forTeacher(db, teacherId)`; `teacherId` only from a session the hub resolved; admin code only under `/admin/*`; the paid predicate inside the same statement as every paid read or write; typed errors at the RPC boundary. Batches are transactions (A, developers.cloudflare.com/d1/worker-api/d1-database/).
 
@@ -241,7 +244,7 @@ Kid screens never show a price, "subscribe" or a sign-in button (a test opens ev
 
 ### Per-game integration steps (the same for every game)
 
-1. **Binding:** service binding `HUB` to `avery-hub` with `"entrypoint": "HubService"` (staging binds `avery-hub-staging`); vars `GAME_ID`, `ANON_FREE_ROUNDS_PER_GAME`, `ROOM_PASS_MINUTES`, `ROUND_GRANT_MINUTES`, `ENTITLEMENT_CACHE_HOURS`, `NICKNAME_MAX_CHARS`; secrets `HUB_GAME_KEY` (32 random bytes) and the cache HMAC key. Key hashes go to the hub's `GAME_REGISTRY` through the hub's shared-files owner (below).
+1. **Binding:** service binding `HUB` to `avery-hub` with `"entrypoint": "HubService"` (staging binds `avery-hub-staging`); vars `GAME_ID`, `ANON_FREE_ROUNDS_PER_GAME`, `ENTITLEMENT_CACHE_HOURS`, `NICKNAME_MAX_CHARS` (`ROUND_GRANT_MINUTES` and `ROOM_PASS_MINUTES` live in the hub, not in the game); secrets `HUB_GAME_KEY` (32 random bytes) and the cache HMAC key. Key hashes go to the hub's `GAME_REGISTRY` through the hub's shared-files owner (below).
 2. **Hand-off:** `GET /auth/finish`, `POST /api/auth/redeem`, `POST /api/auth/signout`, `GET /api/me` (teacher screens only).
 3. **`POST /api/round/start {mode}`** for single-screen and browser-run modes: game cookie and paid (hub or fresh cache) gives a grant; else taste counter at the limit gives the subscribe message; else grant the free round and increment the counter on this response.
 4. **Rooms:** `POST /api/rooms` checks paid first (`mintRoomPass`), then the taste counter (D12). Every round start inside the room checks only the pass (and `checkRoomPass` when the hub answers).
@@ -306,7 +309,8 @@ Events: `checkout.session.completed`, `customer.subscription.created/.updated/.d
 | an open dispute on any charge of this subscription | none while open (`DISPUTE_ACTION` pause) |
 | dispute won or prevented | back to the subscription's state |
 | unknown dispute status | none, with an alert |
-| latest paid charge fully refunded, or a completed refund op | none, at once (D3) |
+| latest paid charge fully refunded, or a completed refund op | none, at once (D3), unless a newer or same-second PAID charge of the same plan exists (row 16): then access returns, no cancel, one alert |
+| a refund that later fails | no automatic change; one alert to the owner; a person decides |
 | partial refund | no change |
 | `trialing` | until `trial_end` (D8) |
 | `active` with `pause_collection` | until the last PAID period end, no grace (D6) |
@@ -314,18 +318,18 @@ Events: `checkout.session.completed`, `customer.subscription.created/.updated/.d
 | `active` (renewing or cancelling at period end), current period paid | period end + `ACCESS_END_GRACE_DAYS` (D5) |
 | `past_due` | start of the unpaid period + `PAST_DUE_GRACE_DAYS` (D7) |
 | `canceled`, teacher asked (`cancellation_requested`) and `ended_at >= current_period_end` | min(period end, last paid period end) + 7 days (D5) |
-| `canceled`, any other way (refund, lost dispute, deletion, failed payments) | none |
+| `canceled`, any other way (refund, lost dispute, cancel-now, failed payments) | none |
 | `incomplete`, `incomplete_expired`, `unpaid`, `paused` | none |
 
-**Refunds are never re-granted:** a full refund of the latest paid charge or a dispute that arrives from Stripe or a bank (for example a chargeback) ends access (a partial refund, such as the price-rise exception's unused-part refund, changes nothing), and reconciliation never clears a refund or an open dispute from a subscription fetch alone. No refund-then-cancel tool and no admin refund tool are built. Runbook `docs/ops/dispute.md` (built).
+**Refunds are never re-granted:** a full refund of the latest paid charge or a dispute that arrives from Stripe or a bank (for example a chargeback) ends access (a partial refund, such as the price-rise exception's unused-part refund, changes nothing), and reconciliation never clears a refund or an open dispute from a subscription fetch alone. When such a full refund of the latest paid charge, or a lost dispute, arrives anyway, the hub cancels the plan now, no proration, once; it never issues a refund. There is no refund tool (no refund-then-cancel tool and no admin refund tool). A newer or same-second PAID charge of the same plan wins over an earlier refund (row 16): access returns, no cancel, one alert to the owner. A refund that later fails sends one alert and changes nothing automatically; a person decides. Runbook `docs/ops/dispute.md` (built).
 
 ### Reconciliation (daily, `RECONCILE_HOUR_UTC`)
 
-Lists every subscription **of the Avery product** (all statuses), maps by `metadata.teacher_id`; reads refunds and disputes since the durable `reconcile_cursor` (with a one-day overlap), not a fixed 35-day window, so an event missed during a long webhook failure is still found; runs each customer through its BillingDO; alerts on any fix, two live subscriptions, an unknown Avery subscription, a still-billing tombstone, or a missed run.
+Lists every subscription **of the Avery product** (all statuses), maps by `metadata.teacher_id`; reads refunds and disputes since the durable `reconcile_cursor` (with a one-day overlap), not a fixed 35-day window, so an event missed during a long webhook failure is still found; runs each customer through its BillingDO; alerts on any fix, two live subscriptions, an unknown Avery subscription, a still-billing tombstone, or a missed run. One daily run covers roughly 60 customers; more runs per day is a future change.
 
 ### Alerts and requests go to the private hub repo
 
-Issues in `joydai2026-del/avery-hub` (private, S0d), labels `avery-alert` (`avery-alert-staging`) and `avery-request`, opened with a token that can only write issues there. Issue bodies carry ids only (never an email, name or request text). `ALERT_CHANNEL`, `ALERT_GITHUB_REPO` are config. Before any live endpoint is added, a read-only inventory of every webhook on the Ownly account is written to the private repo; live endpoints subscribed to charge or subscription events must ignore `app=avery` objects.
+Decided: alerts are GitHub issues in the PRIVATE hub repo `joydai2026-del/avery-hub` (S0d), labels `avery-alert` (`avery-alert-staging`) and `avery-request`, opened with a token that can only write issues there. Issue bodies carry ids only (never an email, name or request text). `ALERT_CHANNEL`, `ALERT_GITHUB_REPO` are config. Before any live endpoint is added, a read-only inventory of every webhook on the Ownly account is written to the private repo; live endpoints subscribed to charge or subscription events must ignore `app=avery` objects.
 
 ### No refunds, receipts, price changes
 
@@ -344,11 +348,13 @@ Secrets (separate staging and production values): `STRIPE_SECRET_KEY`, `STRIPE_W
 
 | Config var | State | Default |
 |---|---|---|
-| `ANON_FREE_ROUNDS_PER_GAME`, `ROUND_GRANT_MINUTES`, `ENTITLEMENT_CACHE_HOURS`, `ROOM_PASS_MINUTES` (per game), `NICKNAME_MAX_CHARS` | new (games; hub reads the first for screens) | 2, 10, 24, room lifetime + 15, 12 |
+| `ANON_FREE_ROUNDS_PER_GAME`, `ENTITLEMENT_CACHE_HOURS`, `NICKNAME_MAX_CHARS` | new (games; hub reads the first for screens) | 2, 24, 12 |
+| `ROUND_GRANT_MINUTES` | new (hub config, validated with a minimum and a maximum) | 10 |
+| `ROOM_PASS_MINUTES` (per game, on each game's `GAME_REGISTRY` entry in the hub, validated) | new (hub) | 135 for the five room games; the generator tool has no rooms |
 | `TRIAL_DAYS`, `ACCESS_END_GRACE_DAYS`, `PAST_DUE_GRACE_DAYS`, `DISPUTE_ACTION` | kept (S2a, validated with maxima) | 0, 7, 7, pause |
 | `GRANT_COUNTS_AS`, `REQUESTS_PER_MONTH`, `REQUEST_MAX_CHARS`, `REQUEST_RETENTION_MONTHS`, `DOWNLOADS_PER_DAY`, `PACK_FOOTER_TEMPLATE`, `PRICE_CHANGE_NOTICE_DAYS` | new | yearly, 1, 1000, 12, 20, "Licensed to {email}, {date}. One classroom only; please do not share.", 14-30 |
 | `DB_READY`, `SESSION_ROTATE_OVERLAP_SECONDS`, `AUTH_ADDRESS_LIMITER` (binding) | built in S1 fix round 1 (A) | false in production until migrated, 30 |
-| `ROOM_PASS_HOURS` | built (flat 4); **replaced** by per-game `ROOM_PASS_MINUTES` in S2b | removed |
+| `ROOM_PASS_HOURS` | built (flat 4); **replaced** by per-game `ROOM_PASS_MINUTES` (hub registry) in S2b | removed |
 | `FREE_TIER_ENABLED` and the free-tier vars (`FREE_LIST_LIMIT`, `FREE_TASTE_ROUNDS_PER_DAY`, `FREE_MODE_SWITCH_COOLDOWN_DAYS`, `FREE_GAME_COUNT`, `FREE_GAME_CHOICES`, `ANON_FREE_ROUNDS`) | **deprecated** (built, A). `FREE_TIER_ENABLED` stays `false`; the rest are unread while it is false and are removed in the same later release that drops the four columns | false |
 
 Also config: `GOOGLE_CLIENT_ID`, `POSTHOG_PROJECT_KEY`, price ids, portal id, `GAME_REGISTRY`, `PACKS`, `SESSION_HASH_KEY_CURRENT`, `ALERT_CHANNEL`, `ALERT_GITHUB_REPO`, `STRIPE_MODE`, `SUPPORT_EMAIL`.
@@ -403,7 +409,7 @@ Events: `teacher_signed_in`, `free_round_used`, `paywall_shown`, `subscribe_card
 |---|---|
 | Email change, two accounts, lost school account | as built: `sub` is identity; `moveTeacher` by JJ after a receipt check |
 | Export | lists, classes, history, subscription summary, seat grants, requests |
-| Delete my account | typed DELETE; cancels any subscription at once; deletes lists, classes, history, sessions, requests and their files, download log; tombstone |
+| Delete my account | typed DELETE; a subscribed teacher must cancel first (the cancel button is shown); a cancelled teacher can delete and gives up the paid time left; deletion never cancels Stripe; deletes lists, classes, history, sessions, requests and their files, download log; tombstone |
 | After paid access ends | lists and classes hidden 90 days (`KEEP_AFTER_END_DAYS`), then deleted; subscribing again brings them back |
 | Never paid or stopped | deleted after 400 days without sign-in (`INACTIVE_DELETE_DAYS`); never with a live subscription or seat |
 | Expired rows | a daily cron removes expired sessions, game sessions, room passes |
@@ -435,7 +441,7 @@ Assumptions: at most **3 parallel builders** and **1 review panel at a time**. R
 
 | Slice | Work | Build | Review (tier) | Fix | Total | Parallel with | Depends on | Files it owns |
 |---|---|---|---|---|---|---|---|---|
-| **S1-fix** | round-2 full panel on `85901f9` and its fixes; `0003_v3.sql`; localhost return URLs to a `dev` env; expired-row cron; Time Travel rehearsal | 0.5 | 0.5 (full) | 1 | 2 | S2a-fix, S0c | nothing | hub `src/{db,rpc,auth,admin,routes,pages}`, migrations, hub shared files |
+| **S1-fix** | round-2 full panel on `85901f9` and its fixes; `0004`; localhost return URLs to a `dev` env; expired-row cron; Time Travel rehearsal | 0.5 | 0.5 (full) | 1 | 2 | S2a-fix, S0c | nothing | hub `src/{db,rpc,auth,admin,routes,pages}`, migrations, hub shared files |
 | **S2a-fix** | fix round 3 (round 2's dispute, paused-collection, charge-id and `prevented` fixes are committed at `a3e29d1`); v2 prices and lookup keys; v1 archive and test-subscription cancel; `interval` output | 0.5 | 0.5 (full) | 1 | 2 | S1-fix, S0c | JJ test key (can finish on fakes) | hub `src/stripe/`, `scripts/stripe-setup.ts`, `docs/ops/*`, `tests/stripe/` |
 | **S0c** | legal page changes above | 1 | 0.5 (default, 2 rounds max) | 0 | 1.5 | S1-fix, S2a-fix | JJ wording approval | joydong.org `legal/policies.html` |
 | **S0d** | `git subtree split` of `avery-hub/` into private `joydai2026-del/avery-hub` with full history, then `avery-hub/` is removed from little-games with NO archive copy left in the public repo: the private repo with full history IS the archive (house rule "archive, never delete" satisfied); CI and deploy from the new repo; ops receipts and issues live there | 0.5 | 0.5 (default) | 0 | 1 | none | S1-fix, S2a-fix merged | the new repo; removal of `avery-hub/` from little-games |
